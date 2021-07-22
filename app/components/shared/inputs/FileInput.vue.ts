@@ -9,23 +9,35 @@ export default class FileInput extends BaseInput<string, IFileMetadata> {
   @Prop() readonly metadata: IFileMetadata;
   @Prop() readonly title: string;
 
-  showFileDialog() {
-    const options: Electron.OpenDialogOptions = {
-      defaultPath: this.value,
-      filters: this.metadata.filters,
-      properties: [],
-    };
+  async showFileDialog() {
+    if (this.metadata.save) {
+      const options: Electron.SaveDialogOptions = {
+        defaultPath: this.value,
+        filters: this.metadata.filters,
+        properties: [],
+      };
 
-    if (this.metadata.directory) {
-      options.properties.push('openDirectory');
+      const { filePath } = await electron.remote.dialog.showSaveDialog(options);
+
+      if (filePath) this.emitInput(filePath);
     } else {
-      options.properties.push('openFile');
-    }
+      const options: Electron.OpenDialogOptions = {
+        defaultPath: this.value,
+        filters: this.metadata.filters,
+        properties: [],
+      };
 
-    const paths = electron.remote.dialog.showOpenDialog(options);
+      if (this.metadata.directory) {
+        options.properties.push('openDirectory');
+      } else {
+        options.properties.push('openFile');
+      }
 
-    if (paths) {
-      this.emitInput(paths[0]);
+      const { filePaths } = await electron.remote.dialog.showOpenDialog(options);
+
+      if (filePaths[0]) {
+        this.emitInput(filePaths[0]);
+      }
     }
   }
 }

@@ -8,6 +8,9 @@ import { Inject } from 'services/core/injector';
 import { ENudgeDirection } from './commands/nudge-items';
 import { SceneCollectionsService } from 'services/scene-collections';
 import electron from 'electron';
+import Utils from 'services/utils';
+import { BehaviorSubject } from 'rxjs';
+import { UsageStatisticsService } from 'services/usage-statistics';
 
 const COMMANDS = { ...commands };
 
@@ -29,6 +32,7 @@ interface IEditorCommandsServiceState {
 export class EditorCommandsService extends StatefulService<IEditorCommandsServiceState> {
   @Inject() private selectionService: SelectionService;
   @Inject() private sceneCollectionsService: SceneCollectionsService;
+  @Inject() private usageStatisticsService: UsageStatisticsService;
 
   static initialState: IEditorCommandsServiceState = {
     undoMetadata: [],
@@ -40,6 +44,11 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   // this service's vuex state.
   undoHistory: Command[] = [];
   redoHistory: Command[] = [];
+
+  undoHistorySize = new BehaviorSubject<{ undoLength: number; redoLength: number }>({
+    undoLength: 0,
+    redoLength: 0,
+  });
 
   combineActive = false;
 
@@ -62,11 +71,14 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
   executeCommand<TCommand extends keyof typeof COMMANDS>(
     commandType: TCommand,
+    // eslint-disable-next-line prettier/prettier
     ...commandArgs: ConstructorParameters<(typeof COMMANDS)[TCommand]>
-  ): ReturnType<InstanceType<(typeof COMMANDS)[TCommand]>['execute']> {
+  ): // eslint-disable-next-line prettier/prettier
+    ReturnType<InstanceType<(typeof COMMANDS)[TCommand]>['execute']> {
     // Executing any command clears out the redo history, since we are
     // creating a new branch in the timeline.
     this.redoHistory = [];
+    this.updateUndoHistoryLength();
     this.CLEAR_REDO_METADATA();
 
     const instance: Command = new (COMMANDS[commandType] as any)(...commandArgs);
@@ -95,10 +107,12 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
     }
 
     this.undoHistory.push(instance);
+    this.updateUndoHistoryLength();
     this.PUSH_UNDO_METADATA({ description: instance.description });
 
     if (this.undoHistory.length > MAX_HISTORY_SIZE) {
       this.undoHistory.shift();
+      this.updateUndoHistoryLength();
       this.SHIFT_UNDO_METADATA();
     }
 
@@ -109,7 +123,10 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   undo() {
     if (this.state.operationInProgress) return;
 
+    this.usageStatisticsService.recordFeatureUsage('Undo');
+
     const command = this.undoHistory.pop();
+    this.updateUndoHistoryLength();
     this.POP_UNDO_METADATA();
 
     if (command) {
@@ -117,7 +134,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
       try {
         ret = command.rollback();
-      } catch (e) {
+      } catch (e: unknown) {
         this.handleUndoRedoError(true, e);
         return;
       }
@@ -133,6 +150,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
       }
 
       this.redoHistory.push(command);
+      this.updateUndoHistoryLength();
       this.PUSH_REDO_METADATA({ description: command.description });
     }
   }
@@ -142,6 +160,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
     if (this.state.operationInProgress) return;
 
     const command = this.redoHistory.pop();
+    this.updateUndoHistoryLength();
     this.POP_REDO_METADATA();
 
     if (command) {
@@ -149,7 +168,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
       try {
         ret = command.execute();
-      } catch (e) {
+      } catch (e: unknown) {
         this.handleUndoRedoError(false, e);
         return;
       }
@@ -165,13 +184,14 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
       }
 
       this.undoHistory.push(command);
+      this.updateUndoHistoryLength();
       this.PUSH_UNDO_METADATA({ description: command.description });
     }
   }
 
   private handleUndoRedoError(undo: boolean, e: any) {
     console.error(`Error performing ${undo ? 'undo' : 'redo'} operation`, e);
-    electron.remote.dialog.showMessageBox({
+    electron.remote.dialog.showMessageBox(Utils.getMainWindow(), {
       title: 'Error',
       message: `An error occurred while ${undo ? 'undoing' : 'redoing'} the operation.`,
       type: 'error',
@@ -185,6 +205,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   private clear() {
     this.undoHistory = [];
     this.redoHistory = [];
+    this.updateUndoHistoryLength();
     this.CLEAR_UNDO_METADATA();
     this.CLEAR_REDO_METADATA();
   }
@@ -212,7 +233,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   }
 
   @shortcut('ArrowRight')
-  nudgeActiveItemRight() {
+  nudgeActiveItemsRight() {
     this.nudgeActiveItems(ENudgeDirection.Right);
   }
 
@@ -227,11 +248,19 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   }
 
   private nudgeActiveItems(direction: ENudgeDirection) {
-    const selection = this.selectionService.getActiveSelection();
+    const selection = this.selectionService.views.globalSelection;
 
     if (!selection.getNodes().length) return;
+    if (selection.isAnyLocked()) return;
 
     this.executeCommand('NudgeItemsCommand', selection, direction);
+  }
+
+  private updateUndoHistoryLength() {
+    this.undoHistorySize.next({
+      undoLength: this.undoHistory.length,
+      redoLength: this.redoHistory.length,
+    });
   }
 
   @mutation()

@@ -1,11 +1,20 @@
 import { Node } from './node';
 import { HotkeysNode } from './hotkeys';
-import { SourcesService, TSourceType, TPropertiesManager } from 'services/sources';
+import {
+  SourcesService,
+  TSourceType,
+  TPropertiesManager,
+  macSources,
+  windowsSources,
+} from 'services/sources';
 import { AudioService } from 'services/audio';
 import { Inject } from '../../core/injector';
 import * as obs from '../../../../obs-api';
 import { ScenesService } from 'services/scenes';
 import defaultTo from 'lodash/defaultTo';
+import { byOS, OS } from 'util/operating-systems';
+import { UsageStatisticsService } from 'services/usage-statistics';
+import { TSourceFilterType } from 'services/source-filters';
 
 interface ISchema {
   items: ISourceInfo[];
@@ -13,7 +22,7 @@ interface ISchema {
 
 interface IFilterInfo {
   name: string;
-  type: string;
+  type: TSourceFilterType;
   settings: obs.ISettings;
   enabled?: boolean;
 }
@@ -43,18 +52,19 @@ export interface ISourceInfo {
 }
 
 export class SourcesNode extends Node<ISchema, {}> {
-  schemaVersion = 3;
+  schemaVersion = 4;
 
   @Inject() private sourcesService: SourcesService;
   @Inject() private audioService: AudioService;
   @Inject() private scenesService: ScenesService;
+  @Inject() private usageStatisticsService: UsageStatisticsService;
 
   getItems() {
-    const linkedSourcesIds = this.scenesService
+    const linkedSourcesIds = this.scenesService.views
       .getSceneItems()
       .map(sceneItem => sceneItem.sourceId);
 
-    return this.sourcesService.sources.filter(source => {
+    return this.sourcesService.views.sources.filter(source => {
       // we store scenes in separated config
       if (source.type === 'scene') return false;
 
@@ -72,7 +82,7 @@ export class SourcesNode extends Node<ISchema, {}> {
         const hotkeys = new HotkeysNode();
 
         return hotkeys.save({ sourceId: source.sourceId }).then(() => {
-          const audioSource = this.audioService.getSource(source.sourceId);
+          const audioSource = this.audioService.views.getSource(source.sourceId);
 
           const obsInput = source.getObsInput();
 
@@ -98,7 +108,7 @@ export class SourcesNode extends Node<ISchema, {}> {
 
                 return {
                   name: filter.name,
-                  type: filter.id,
+                  type: filter.id as TSourceFilterType,
                   settings: filter.settings,
                   enabled: filter.enabled,
                 };
@@ -159,25 +169,55 @@ export class SourcesNode extends Node<ISchema, {}> {
     });
   }
 
+  /**
+   * Returns true if this scene collection only contains sources
+   * supported by the current operating system.
+   */
+  isAllSupported() {
+    const supportedSources = byOS({ [OS.Windows]: windowsSources, [OS.Mac]: macSources });
+    return this.data.items.every(source => supportedSources.includes(source.type));
+  }
+
   load(context: {}): Promise<void> {
     this.sanitizeSources();
 
+    const supportedSources = this.data.items.filter(source => {
+      return byOS({
+        [OS.Windows]: () => windowsSources.includes(source.type),
+        [OS.Mac]: () => macSources.includes(source.type),
+      });
+    });
+
     // This shit is complicated, IPC sucks
-    const sourceCreateData = this.data.items.map(source => {
+    const sourceCreateData = supportedSources.map(source => {
+      // Universally disabled for security reasons
+      if (source.settings.is_media_flag) {
+        source.settings.is_media_flag = false;
+      }
+
       return {
         name: source.id,
         type: source.type,
         muted: source.muted || false,
         settings: source.settings,
         volume: source.volume,
-        filters: source.filters.items.map(filter => {
-          return {
-            name: filter.name,
-            type: filter.type,
-            settings: filter.settings,
-            enabled: filter.enabled === void 0 ? true : filter.enabled,
-          };
-        }),
+        syncOffset: source.syncOffset,
+        filters: source.filters.items
+          .filter(filter => {
+            return filter.type !== 'face_mask_filter';
+          })
+          .map(filter => {
+            if (filter.type === 'vst_filter') {
+              this.usageStatisticsService.recordFeatureUsage('VST');
+            }
+
+            return {
+              name: filter.name,
+              type: filter.type,
+              settings: filter.settings,
+              enabled: filter.enabled === void 0 ? true : filter.enabled,
+            };
+          }),
       };
     });
 
@@ -189,16 +229,16 @@ export class SourcesNode extends Node<ISchema, {}> {
     const promises: Promise<void>[] = [];
 
     sources.forEach((source, index) => {
-      const sourceInfo = this.data.items[index];
+      const sourceInfo = supportedSources[index];
 
-      this.sourcesService.addSource(source, this.data.items[index].name, {
+      this.sourcesService.addSource(source, supportedSources[index].name, {
         channel: sourceInfo.channel,
         propertiesManager: sourceInfo.propertiesManager,
         propertiesManagerSettings: sourceInfo.propertiesManagerSettings || {},
       });
 
       if (source.audioMixers) {
-        this.audioService
+        this.audioService.views
           .getSource(sourceInfo.id)
           .setMul(sourceInfo.volume != null ? sourceInfo.volume : 1);
 
@@ -207,7 +247,7 @@ export class SourcesNode extends Node<ISchema, {}> {
             ? obs.EMonitoringType.MonitoringOnly
             : obs.EMonitoringType.None;
 
-        this.audioService.getSource(sourceInfo.id).setSettings({
+        this.audioService.views.getSource(sourceInfo.id).setSettings({
           forceMono: defaultTo(sourceInfo.forceMono, false),
           syncOffset: AudioService.timeSpecToMs(
             defaultTo(sourceInfo.syncOffset, { sec: 0, nsec: 0 }),
@@ -215,11 +255,11 @@ export class SourcesNode extends Node<ISchema, {}> {
           audioMixers: defaultTo(sourceInfo.audioMixers, 255),
           monitoringType: defaultTo(sourceInfo.monitoringType, defaultMonitoring),
         });
-        this.audioService.getSource(sourceInfo.id).setHidden(!!sourceInfo.mixerHidden);
+        this.audioService.views.getSource(sourceInfo.id).setHidden(!!sourceInfo.mixerHidden);
       }
 
       if (sourceInfo.hotkeys) {
-        promises.push(this.data.items[index].hotkeys.load({ sourceId: sourceInfo.id }));
+        promises.push(supportedSources[index].hotkeys.load({ sourceId: sourceInfo.id }));
       }
     });
 
@@ -246,6 +286,17 @@ export class SourcesNode extends Node<ISchema, {}> {
           // tslint:disable-next-line:prefer-template
           source.name = 'Mic/Aux' + (index > 1 ? ' ' + index : '');
           return;
+        }
+      });
+    }
+
+    // Migrate media sources to turn off HW decoding. This property previously
+    // had no effect and now it does, so to make sure nothing changes, we are
+    // reverting this flag to false for everyone.
+    if (version < 4) {
+      this.data.items.forEach(source => {
+        if (source.type === 'ffmpeg_source') {
+          source.settings.hw_decode = false;
         }
       });
     }

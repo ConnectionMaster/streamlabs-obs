@@ -54,6 +54,7 @@ export default class NumberInput extends BaseInput<number | string, INumberMetad
 
   handleInput(value: string) {
     this.displayValue = value;
+    if (value === '-' || value === '') return;
     if (this.options.isInteger) {
       this.updateValue(value);
     } else {
@@ -72,8 +73,8 @@ export default class NumberInput extends BaseInput<number | string, INumberMetad
   private adjust(val: number) {
     if (this.options.disabled) return;
     const newVal = Number(this.displayValue) + val;
-    const min = this.options.min !== void 0 ? this.options.min : -Infinity;
-    const max = this.options.max !== void 0 ? this.options.max : Infinity;
+    const min = this.options.min ?? -Infinity;
+    const max = this.options.max ?? Infinity;
     if (newVal < min || newVal > max) return;
     this.updateValue(String(newVal));
   }

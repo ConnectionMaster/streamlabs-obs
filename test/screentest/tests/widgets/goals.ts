@@ -4,7 +4,7 @@ import { makeScreenshots, useScreentest } from '../../screenshoter';
 import { FormMonkey } from '../../../helpers/form-monkey';
 import { addWidget, EWidgetType, waitForWidgetSettingsSync } from '../../../helpers/widget-helpers';
 
-useSpectron({ appArgs: '--nosync', restartAppAfterEachTest: false });
+useSpectron({ restartAppAfterEachTest: false });
 useScreentest();
 
 testGoal('Donation Goal', EWidgetType.DonationGoal);
@@ -12,17 +12,20 @@ testGoal('Follower Goal', EWidgetType.FollowerGoal);
 testGoal('Bit Goal', EWidgetType.BitGoal);
 
 function testGoal(goalType: string, widgetType: EWidgetType) {
-  test(`${goalType} create and delete`, async (t: TExecutionContext) => {
+  // TODO: fix api
+  test.skip(`${goalType} create and delete`, async (t: TExecutionContext) => {
     await logIn(t);
     const client = t.context.app.client;
     await addWidget(t, widgetType, goalType);
 
+    const $endGoal = await client.$('button=End Goal');
+
     // end goal if it's already exist
-    if (await client.isVisible('button=End Goal')) {
-      await client.click('button=End Goal');
+    if (await $endGoal.isDisplayed()) {
+      await $endGoal.click();
     }
 
-    await client.waitForVisible('button=Start Goal', 20000);
+    await (await client.$('button=Start Goal')).waitForDisplayed({ timeout: 200000 });
 
     await makeScreenshots(t, 'Empty Form');
 
@@ -36,9 +39,9 @@ function testGoal(goalType: string, widgetType: EWidgetType) {
 
     await makeScreenshots(t, 'Filled Form');
 
-    await client.click('button=Start Goal');
-    await client.waitForVisible('button=End Goal');
-    t.true(await client.isExisting('span=My Goal'));
+    await (await client.$('button=Start Goal')).click();
+    await (await client.$('button=End Goal')).waitForDisplayed();
+    t.true(await (await client.$('span=My Goal')).isExisting());
 
     // because of a different latency of api.streamlabs.com
     // we may see a different date after goal creation
@@ -58,8 +61,8 @@ function testGoal(goalType: string, widgetType: EWidgetType) {
     const client = t.context.app.client;
     await addWidget(t, widgetType, goalType);
 
-    await client.waitForExist('li=Visual Settings');
-    await client.click('li=Visual Settings');
+    await (await client.$('li=Visual Settings')).waitForExist();
+    await (await client.$('li=Visual Settings')).click();
 
     const formMonkey = new FormMonkey(t, 'form[name=visual-properties-form]');
 

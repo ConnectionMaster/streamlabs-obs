@@ -1,84 +1,235 @@
-@import "./styles/index";
+@import './styles/colors';
 
 // Variables for use
 :root {
   --white: #fff;
   --black: #000;
 
-  // Brand Colors
-  --teal: @teal;
-  --teal-semi: @teal-semi;
-  --accent: @purple;
-  --blue: @blue;
-  --warning: @red;
-  --warning-hover: lighten(@red, 4%);
-  --new: @yellow;
-  --info-dark: @yellow-dark;
-  --info-light: @yellow-light;
-  --info-semi: @yellow-dark-semi;
+  // Day Theme Colors
+  --primary: @teal-light;
+  --teal: @teal-light;
+  --teal-semi: fade(@teal-light, 8%);
+  --teal-hover: lighten(@teal-light, 4%);
+  --accent: @purple-light;
+  --blue: @blue-light;
+  --warning: @red-light;
+  --warning-hover: lighten(@red-light, 4%);
+  --warning-bg: fade(@red-light, 28%);
+  --warning-button-bg: fade(@red-light, 36%);
+  --info: @yellow-light;
+  --info-semi: fade(@yellow-light, 8%);
+  --red: @red-light;
+  --red-semi: fade(@red-light, 8%);
   --icon: @light-5;
+  --icon-active: @teal-light;
   --icon-semi: fade(@light-5, 15%);
-  --prime: @goldenrod;
+  --prime: @prime-light;
+  --prime-semi: fade(@prime-light, 15%);
+  --prime-hover: darken(@prime-light, 8%);
+  --new-badge: fade(@purple-light, 15%);
+  --new-badge-text: @purple-light;
+  --beta-text: @purple-light;
+  --highlighter-icon: @light-4;
 
-  // Theme Colors
-  --background: @light-1;
-  --section: @light-2;
-  --section-alt: @light-2;
+  --background: @light-2;
+  --section: @light-3;
+  --section-alt: @light-3;
+  --titlebar: @dark-4;
   --title: @dark-2;
-  --paragraph: @dark-5;
-  --border: @light-2;
-  --button: @light-3;
-  --button-hover: darken(@light-3, 8%);
+  --titlebar-title: @light-5;
+  --paragraph: @dark-4;
+  --border: @light-4;
+  --button: @light-4;
+  --slider-bg: @dark-2;
+  --action-button-text: @light-1;
+  --button-hover: darken(@light-4, 8%);
   --link: @dark-5;
   --link-active: @dark-2;
   --input-bg: @light-1;
-  --input-border: @light-3;
-  --focus-border: darken(@light-3, 4%);
-  --solid-input: @light-3;
-  --dropdown-bg: @light-2;
-  --dropdown-alt-bg: darken(@light-2, 4%);
-  --dropdown-border: @light-2;
-  --hover: @light-2;
-  --scrollbar: @light-1;
+  --focus-border: darken(@light-4, 4%);
+  --solid-input: @light-2;
+  --dropdown-bg: @light-1;
+  --dropdown-alt-bg: darken(@light-1, 4%);
   --midtone: @light-5;
-  --nav-border: @dark-2;
   --nav-icon-inactive: @dark-4;
-  --slider-bg: @light-3;
   --slider-progress: @dark-5;
   --shadow: rgba(55, 71, 79, 0.12);
-  --new-badge: @purple-semi;
-  --new-badge-text: @purple;
   --modal-overlay: rgba(0, 0, 0, 0.3);
-  --prime-hover: darken(@goldenrod, 8%);
+  --studio-tabs: @light-2;
+
+  // 3rd Party Colors
+  --twitch: @twitch;
+  --twitch-hover: lighten(@twitch, 4%);
+  --facebook: @facebook;
+  --facebook-hover: lighten(@facebook, 4%);
+  --youtube: @youtube;
+  --youtube-hover: lighten(@youtube, 4%);
+  --tiktok: @black;
+  --tiktok-inverse: @white;
+  --tiktok-hover: lighten(@black, 4%);
+  --twitter: @twitter;
+  --twitter-hover: lighten(@twitter, 4%);
 }
 
 .night-theme {
+
+  --primary: @teal-dark;
+  --teal: @teal-dark;
+  --teal-semi: fade(@teal-dark, 8%);
+  --teal-hover: darken(@teal-dark, 4%);
+  --accent: @purple-dark;
+  --blue: @blue-dark;
+  --warning: @red-dark;
+  --warning-hover: darken(@red-dark, 4%);
+  --warning-bg: fade(@red-dark, 28%);
+  --warning-button-bg: fade(@red-dark, 36%);
+  --info: @yellow-dark;
+  --info-semi: fade(@yellow-dark, 8%);
+  --red: @red-dark;
+  --red-semi: fade(@red-dark, 8%);
+  --icon: @light-5;
+  --icon-active: @teal-dark;
+  --icon-semi: fade(@light-5, 15%);
+  --prime: @prime-dark;
+  --prime-semi: fade(@prime-dark, 15%);
+  --prime-hover: lighten(@prime-dark, 8%);
+  --new-badge: fade(@purple-dark, 15%);
+  --new-badge-text: @purple-dark;
+  --beta-text: @purple-dark;
+
   --background: @dark-3;
   --section: @dark-2;
   --section-alt: @dark-4;
+  --titlebar: @dark-1;
+  --titlebar-title: @light-5;
   --title: @light-1;
   --paragraph: @light-4;
   --border: @dark-4;
   --button: @dark-5;
+  --slider-bg: @dark-5;
+  --action-button-text: @light-1;
   --button-hover: lighten(@dark-5, 8%);
   --link: @light-4;
   --link-active: @light-1;
   --input-bg: transparent;
-  --input-border: @dark-5;
   --focus-border: lighten(@dark-5, 4%);
   --solid-input: @dark-4;
   --dropdown-bg: @dark-4;
   --dropdown-alt-bg: darken(@dark-4, 4%);
-  --dropdown-border: @dark-4;
-  --hover: @dark-4;
-  --scrollbar: @dark-4;
   --midtone: @dark-5;
-  --nav-border: @light-1;
   --nav-icon-inactive: @light-5;
-  --slider-bg: @dark-4;
   --shadow: rgba(1, 2, 2, 0.16);
-  --new-badge: @purple;
-  --new-badge-text: @light-1;
   --modal-overlay: rgba(0, 0, 0, 0.5);
-  --prime-hover: lighten(@goldenrod, 8%);
+  --studio-tabs: @dark-2;
+
+  --tiktok: @white;
+  --tiktok-inverse: @black;
+  --tiktok-hover: darken(@white, 4%);
+}
+
+.prime-dark {
+  --primary: @prime-dark;
+  --teal: @prime-dark;
+  --teal-semi: fade(@prime-dark, 8%);
+  --teal-hover: darken(@prime-dark, 4%);
+  --accent: @prime-dark;
+  --blue: @blue-dark;
+  --warning: @red-dark;
+  --warning-hover: darken(@red-dark, 4%);
+  --warning-bg: fade(@red-dark, 28%);
+  --warning-button-bg: fade(@red-dark, 36%);
+  --info: @prime-dark;
+  --info-semi: fade(@prime-dark, 8%);
+  --red: @red-dark;
+  --red-semi: fade(@red-dark, 8%);
+  --icon: @prime-dark;
+  --icon-active: @primelight-1;
+  --icon-semi: fade(@light-5, 15%);
+  --prime: @prime-dark;
+  --prime-semi: fade(@prime-dark, 15%);
+  --prime-hover: lighten(@prime-dark, 8%);
+  --new-badge: @prime-dark;
+  --new-badge-text: @primelight-1;
+  --beta-text: @prime-dark;
+
+  --background: @primedark-3;
+  --section: @primedark-2;
+  --section-alt: @primedark-4;
+  --titlebar: @primedark-1;
+  --titlebar-title: @primelight-1;
+  --title: @primelight-1;
+  --paragraph: @primelight-3;
+  --border: @primedark-4;
+  --button: @primelight-5;
+  --slider-bg: @prime-dark;
+  --action-button-text: @primedark-1;
+  --button-hover: lighten(@primedark-5, 8%);
+  --link: @primelight-4;
+  --link-active: @primelight-1;
+  --input-bg: transparent;
+  --focus-border: lighten(@primedark-5, 4%);
+  --solid-input: @primedark-4;
+  --dropdown-bg: @primedark-4;
+  --dropdown-alt-bg: darken(@primedark-4, 4%);
+  --midtone: @primedark-5;
+  --nav-icon-inactive: @primelight-5;
+  --shadow: rgba(1, 2, 2, 0.16);
+  --modal-overlay: rgba(0, 0, 0, 0.5);
+  --studio-tabs: @primedark-2;
+
+  --tiktok: @white;
+  --tiktok-inverse: @black;
+  --tiktok-hover: darken(@white, 4%);
+}
+
+.prime-light {
+  --primary: @prime-light;
+  --teal: @prime-light;
+  --teal-semi: fade(@prime-light, 8%);
+  --teal-hover: lighten(@prime-light, 4%);
+  --accent: @prime-light;
+  --blue: @blue-light;
+  --warning: @red-light;
+  --warning-hover: lighten(@red-light, 4%);
+  --warning-bg: fade(@red-light, 28%);
+  --warning-button-bg: fade(@red-light, 36%);
+  --info: @yellow-light;
+  --info-semi: fade(@yellow-light, 8%);
+  --red: @red-light;
+  --red-semi: fade(@red-light, 8%);
+  --icon: @prime-light;
+  --icon-active: @primedark-2;
+  --icon-semi: fade(@light-5, 15%);
+  --prime: @prime-light;
+  --prime-semi: fade(@prime-light, 15%);
+  --prime-hover: darken(@prime-light, 8%);
+  --new-badge: @prime-light;
+  --new-badge-text: @primelight-1;
+  --beta-text: @prime-light;
+
+  --background: @primelight-1;
+  --section: @primelight-2;
+  --section-alt: @primelight-4;
+  --titlebar: @primedark-4;
+  --title: @primedark-2;
+  --titlebar-title: @primelight-1;
+  --paragraph: @primedark-4;
+  --border: @primelight-4;
+  --button: @primelight-3;
+  --slider-bg: @prime-light;
+  --action-button-text: @primelight-1;
+  --button-hover: darken(@primelight-3, 8%);
+  --link: @primedark-5;
+  --link-active: @primedark-2;
+  --input-bg: @primelight-1;
+  --focus-border: darken(@primelight-4, 4%);
+  --solid-input: @primelight-3;
+  --dropdown-bg: @primelight-1;
+  --dropdown-alt-bg: darken(@primelight-1, 4%);
+  --midtone: @primelight-5;
+  --nav-icon-inactive: @primedark-4;
+  --slider-progress: @primedark-5;
+  --shadow: rgba(55, 71, 79, 0.12);
+  --modal-overlay: rgba(0, 0, 0, 0.3);
+  --studio-tabs: @primelight-2;
 }

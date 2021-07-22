@@ -3,10 +3,11 @@ import { UserService } from './user';
 import { HostsService } from './hosts';
 import { AppService } from 'services/app';
 import { Inject } from './core/injector';
-import { authorizedHeaders } from '../util/requests';
+import { authorizedHeaders, jfetch } from '../util/requests';
 import path from 'path';
 import fs from 'fs';
 import { PatchNotesService } from 'services/patch-notes';
+import { I18nService } from 'services/i18n';
 
 interface IAnnouncementsInfo {
   id: number;
@@ -25,6 +26,7 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
   @Inject() private userService: UserService;
   @Inject() private appService: AppService;
   @Inject() private patchNotesService: PatchNotesService;
+  @Inject() private i18nService: I18nService;
 
   static initialState: IAnnouncementsInfo = {
     id: null,
@@ -47,12 +49,12 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
     return this.state.id !== null;
   }
 
-  async closeBanner() {
-    await this.postBannerClose();
+  async closeBanner(clickType: 'action' | 'dismissal') {
+    await this.postBannerClose(clickType);
   }
 
   private get installDateProxyFilePath() {
-    return path.join(this.appService.appDataDirectory, 'log.log');
+    return path.join(this.appService.appDataDirectory, 'app.log');
   }
 
   private async fileExists(path: string): Promise<boolean> {
@@ -106,17 +108,15 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
   private async fetchBanner() {
     const recentlyInstalled = await this.recentlyInstalled();
 
-    if (!this.userService.isLoggedIn() || recentlyInstalled || this.recentlyUpdatedTo017) {
+    if (!this.userService.isLoggedIn || recentlyInstalled || this.recentlyUpdatedTo017) {
       return this.state;
     }
-    const endpoint = `api/v5/slobs/announcement/get?clientId=${this.userService.getLocalUserId()}`;
+    const endpoint = `api/v5/slobs/announcement/get?clientId=${this.userService.getLocalUserId()}&locale=${
+      this.i18nService.state.locale
+    }`;
     const req = this.formRequest(endpoint);
     try {
-      const newState = await fetch(req).then(rawResp => rawResp.json());
-      // TODO: remove for next release after BE switches over
-      if (newState.link_target) {
-        newState.linkTarget = newState.link_target;
-      }
+      const newState = await jfetch<IAnnouncementsInfo>(req);
 
       // splits out params for local links eg PlatformAppStore?appId=<app-id>
       const queryString = newState.link.split('?')[1];
@@ -130,16 +130,17 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
       }
 
       return newState.id ? newState : this.state;
-    } catch (e) {
+    } catch (e: unknown) {
       return this.state;
     }
   }
 
-  private async postBannerClose() {
+  private async postBannerClose(clickType: 'action' | 'dismissal') {
     const endpoint = 'api/v5/slobs/announcement/close';
     const postData = {
       method: 'POST',
       body: JSON.stringify({
+        clickType,
         clientId: this.userService.getLocalUserId(),
         announcementId: this.state.id,
       }),
@@ -149,7 +150,7 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
     try {
       await fetch(req);
       this.CLEAR_BANNER();
-    } catch (e) {}
+    } catch (e: unknown) {}
   }
 
   private formRequest(endpoint: string, options: any = {}) {

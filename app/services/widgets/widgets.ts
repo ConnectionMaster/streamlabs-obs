@@ -15,19 +15,21 @@ import { ISerializableWidget, IWidgetSource, IWidgetsServiceApi } from './widget
 import { WidgetType, WidgetDefinitions, WidgetTesters } from './widgets-data';
 import { mutation, StatefulService } from '../core/stateful-service';
 import { WidgetSource } from './widget-source';
-import { InitAfter } from '../core/service-initialization-observer';
+import { InitAfter } from 'services/core/service-initialization-observer';
 import Vue from 'vue';
 import cloneDeep from 'lodash/cloneDeep';
 import { Subscription } from 'rxjs';
 import { Throttle } from 'lodash-decorators';
 import { EditorCommandsService } from 'services/editor-commands';
+import { TWindowComponentName } from '../windows';
 
 export interface IWidgetSourcesState {
   widgetSources: Dictionary<IWidgetSource>;
 }
 
 @InitAfter('SourcesService')
-export class WidgetsService extends StatefulService<IWidgetSourcesState>
+export class WidgetsService
+  extends StatefulService<IWidgetSourcesState>
   implements IWidgetsServiceApi {
   static initialState: IWidgetSourcesState = {
     widgetSources: {},
@@ -69,15 +71,15 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
   }
 
   createWidget(type: WidgetType, name?: string): SceneItem {
-    if (!this.userService.isLoggedIn()) return;
+    if (!this.userService.isLoggedIn) return;
 
-    const scene = this.scenesService.activeScene;
+    const scene = this.scenesService.views.activeScene;
     const widget = WidgetDefinitions[type];
 
     const suggestedName =
       name ||
       namingHelpers.suggestName(name || widget.name, (name: string) => {
-        return this.sourcesService.getSourcesByName(name).length;
+        return this.sourcesService.views.getSourcesByName(name).length;
       });
 
     // Calculate initial position
@@ -90,15 +92,11 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
 
     const item = this.editorCommandsService.executeCommand(
       'CreateNewItemCommand',
-      this.scenesService.activeSceneId,
+      this.scenesService.views.activeSceneId,
       suggestedName,
       'browser_source',
       {
-        url: widget.url(
-          this.hostsService.streamlabs,
-          this.userService.widgetToken,
-          this.userService.platform.type,
-        ),
+        url: widget.url(this.hostsService.streamlabs, this.userService.widgetToken),
         width: widget.width,
         height: widget.height,
       },
@@ -121,21 +119,21 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     return item;
   }
 
+  getWidgetSources(): WidgetSource[] {
+    return Object.keys(this.state.widgetSources).map(id => this.getWidgetSource(id));
+  }
+
   getWidgetSource(sourceId: string): WidgetSource {
     return this.state.widgetSources[sourceId] ? new WidgetSource(sourceId) : null;
   }
 
   getWidgetUrl(type: WidgetType) {
-    if (!this.userService.isLoggedIn()) return;
-    return WidgetDefinitions[type].url(
-      this.hostsService.streamlabs,
-      this.userService.widgetToken,
-      this.userService.platform.type,
-    );
+    if (!this.userService.isLoggedIn || !WidgetDefinitions[type]) return;
+    return WidgetDefinitions[type].url(this.hostsService.streamlabs, this.userService.widgetToken);
   }
 
-  getWidgetComponent(type: WidgetType): string {
-    return WidgetType[type];
+  getWidgetComponent(type: WidgetType): TWindowComponentName {
+    return WidgetType[type] as TWindowComponentName;
   }
 
   getWidgetSettingsService(type: WidgetType): WidgetSettingsService<any> {
@@ -145,7 +143,7 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
   }
 
   getTesters(): { name: string; url: string }[] {
-    if (!this.userService.isLoggedIn()) return;
+    if (!this.userService.isLoggedIn) return;
     return WidgetTesters.filter(tester => {
       return tester.platforms.includes(this.userService.platform.type);
     }).map(tester => {
@@ -199,11 +197,11 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
    * @param widgetItemId the id of the widget to save
    */
   async saveWidgetFile(path: string, widgetItemId: string) {
-    const widgetItem = this.scenesService.getSceneItem(widgetItemId);
+    const widgetItem = this.scenesService.views.getSceneItem(widgetItemId);
     const data = this.exportWidgetJSON(widgetItem);
     const json = JSON.stringify(data, null, 2);
 
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       fs.writeFile(path, json, err => {
         if (err) {
           reject(err);
@@ -214,8 +212,26 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     });
   }
 
+  /**
+   * Detects widget type by URL
+   * Used for converting browser_source to streamlabs widgets when importing OBS scene collection
+   * returns -1 if it's no type detected
+   */
+  getWidgetTypeByUrl(url: string): WidgetType {
+    const type = Number(
+      Object.keys(WidgetDefinitions).find(WidgetType => {
+        let regExpStr = WidgetDefinitions[WidgetType].url(this.hostsService.streamlabs, '')
+          .split('?')[0]
+          .replace(/\//g, '\\/');
+        regExpStr = `${regExpStr}([A-z0-9]+)?(\\?token=[A-z0-9]+)?$`; // allow only 'token' get param
+        return new RegExp(regExpStr).test(url);
+      }),
+    );
+    return isNaN(type) ? -1 : type;
+  }
+
   private register(sourceId: string) {
-    const source = this.sourcesService.getSource(sourceId);
+    const source = this.sourcesService.views.getSource(sourceId);
     if (source.getPropertiesManagerType() !== 'widget') return;
     const widgetType = source.getPropertiesManagerSettings().widgetType;
 
@@ -265,7 +281,7 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
    * @param sceneId the id of the scene to load into
    */
   async loadWidgetFile(path: string, sceneId: string) {
-    const scene = this.scenesService.getScene(sceneId);
+    const scene = this.scenesService.views.getScene(sceneId);
     const json = await new Promise<string>((resolve, reject) => {
       fs.readFile(path, (err, data) => {
         if (err) {

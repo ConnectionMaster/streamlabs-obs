@@ -5,8 +5,10 @@ import { CustomizationService } from 'services/customization';
 import { Inject } from 'services/core/injector';
 import { AppService } from 'services/app';
 import TsxComponent from 'components/tsx-component';
+import { OS, getOS } from 'util/operating-systems';
+import Scrollable from 'components/shared/Scrollable';
 
-@Component({})
+@Component({ components: { Scrollable } })
 export default class ModalLayout extends TsxComponent<{
   showControls?: boolean;
   showCancel?: boolean;
@@ -18,6 +20,7 @@ export default class ModalLayout extends TsxComponent<{
   contentStyles?: Dictionary<string>;
   fixedSectionHeight?: number;
   customControls?: boolean;
+  hasTitleBar?: boolean;
 }> {
   contentStyle: Object = {};
   fixedStyle: Object = {};
@@ -72,7 +75,6 @@ export default class ModalLayout extends TsxComponent<{
   created() {
     const contentStyle = {
       padding: '16px',
-      overflowY: 'auto',
     };
 
     Object.assign(contentStyle, this.contentStyles);
@@ -86,11 +88,11 @@ export default class ModalLayout extends TsxComponent<{
   }
 
   get wrapperClassNames() {
-    if (this.hasTitleBar) {
-      return [this.customizationService.currentTheme, 'has-titlebar'].join(' ');
-    }
-
-    return this.customizationService.currentTheme;
+    return {
+      [this.customizationService.currentTheme]: true,
+      'has-titlebar': this.hasTitleBar,
+      'modal-layout-mac': getOS() === OS.Mac,
+    };
   }
 
   cancel() {

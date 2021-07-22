@@ -1,5 +1,4 @@
 import Vue from 'vue';
-import { Prop } from 'vue-property-decorator';
 import * as obs from '../../../../obs-api';
 import {
   isEditableListProperty,
@@ -9,7 +8,8 @@ import {
   isPathProperty,
   isTextProperty,
 } from '../../../util/properties-type-guards';
-import { $t } from 'services/i18n/index';
+import { $translateIfExist } from 'services/i18n';
+import TsxComponent from 'components/tsx-component';
 
 /**
  * all possible OBS properties types
@@ -65,6 +65,7 @@ export interface IObsListOption<TValue> {
 
 export interface IObsPathInputValue extends IObsInput<string> {
   filters: IElectronOpenDialogFilter[];
+  defaultPath: string;
 }
 
 export interface IObsNumberInputValue extends IObsInput<number> {
@@ -97,7 +98,7 @@ export interface IGoogleFont {
   face: string;
   flags: number;
   path?: string;
-  size?: string;
+  size?: number;
 }
 
 export type TObsStringList = { value: string }[];
@@ -174,7 +175,6 @@ export function obsValuesToInputValues(
       obsValue = obsValue.value;
     }
 
-    prop.description = $t(prop.description);
     prop.value = obsValue;
     prop.masked = !!obsProp.masked;
     prop.enabled = !!obsProp.enabled;
@@ -191,7 +191,7 @@ export function obsValuesToInputValues(
         for (const listOption of obsProp.values || []) {
           listOptions.push({
             value: listOption[Object.keys(listOption)[0]],
-            description: $t(Object.keys(listOption)[0]),
+            description: $translateIfExist(Object.keys(listOption)[0]),
           });
         }
       }
@@ -353,7 +353,7 @@ export function getPropertiesFormData(obsSource: obs.ISource): TObsFormData {
     const formItem: IObsInput<TObsValue> = {
       value: obsProp.value,
       name: obsProp.name,
-      description: $t(obsProp.description),
+      description: $translateIfExist(obsProp.description),
       enabled: obsProp.enabled,
       visible: obsProp.visible,
       type: obsType,
@@ -409,7 +409,13 @@ export function getPropertiesFormData(obsSource: obs.ISource): TObsFormData {
   return formData;
 }
 
-export function setPropertiesFormData(obsSource: obs.ISource, form: TObsFormData) {
+/**
+ * Apply formData and returns applied settings
+ */
+export function setPropertiesFormData(
+  obsSource: obs.ISource,
+  form: TObsFormData,
+): Dictionary<TObsValue> {
   const buttons: IObsInput<boolean>[] = [];
   const formInputs: IObsInput<TObsValue>[] = [];
   let properties = null;
@@ -431,7 +437,7 @@ export function setPropertiesFormData(obsSource: obs.ISource, form: TObsFormData
     obsButtonProp.buttonClicked(obsSource);
   }
 
-  const settings: Dictionary<any> = {};
+  let settings: Dictionary<TObsValue> = {};
   formInputs.forEach(property => {
     settings[property.name] = property.value;
 
@@ -452,6 +458,10 @@ export function setPropertiesFormData(obsSource: obs.ISource, form: TObsFormData
   updatedFormData.forEach(prop => {
     if (prop.type !== 'OBS_PROPERTY_LIST') return;
     const listProp = prop as IObsListInput<TObsValue>;
+
+    // Special case a misbehaving plugin on mac
+    if (obsSource.id === 'av_capture_input' && listProp.value === -1) return;
+
     if (!listProp.options.length) return;
     const optionExists = !!listProp.options.find(option => option.value === listProp.value);
     if (optionExists) return;
@@ -459,10 +469,14 @@ export function setPropertiesFormData(obsSource: obs.ISource, form: TObsFormData
     needUpdatePropsAgain = true;
     listProp.value = listProp.options[0].value;
   });
-  if (needUpdatePropsAgain) setPropertiesFormData(obsSource, updatedFormData);
+  if (needUpdatePropsAgain) settings = setPropertiesFormData(obsSource, updatedFormData);
+  return settings;
 }
 
-export abstract class ObsInput<TValueType> extends Vue {
+export abstract class ObsInput<TValueType> extends TsxComponent<{
+  value: TValueType;
+  onInput: (value: TValueType) => void;
+}> {
   abstract value: TValueType;
 
   emitInput(eventData: TValueType) {

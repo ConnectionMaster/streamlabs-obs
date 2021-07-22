@@ -1,9 +1,10 @@
 import electron from 'electron';
-import { StatefulService } from 'services/core/stateful-service';
+import { StatefulService, ViewHandler } from 'services/core/stateful-service';
 import fs from 'fs';
 import path from 'path';
 import { ScenesService } from 'services/scenes';
-import { SourcesService } from 'services/sources';
+import { SourcesService, TPropertiesManager } from 'services/sources';
+import { WidgetsService } from 'services/widgets';
 import { TSourceType } from 'services/sources/sources-api';
 import { SourceFiltersService, TSourceFilterType } from 'services/source-filters';
 import { TransitionsService, ETransitionType } from 'services/transitions';
@@ -15,6 +16,7 @@ import { SettingsService } from 'services/settings';
 import { AppService } from 'services/app';
 import { RunInLoadingMode } from 'services/app/app-decorators';
 import defaultTo from 'lodash/defaultTo';
+import { $t } from 'services/i18n';
 
 interface Source {
   name?: string;
@@ -42,6 +44,9 @@ interface IOBSConfigSceneItem {
   pos: IVec2;
   scale: IVec2;
   visible: boolean;
+  bounds: IVec2;
+  bounds_align: number;
+  bounds_type: number;
 }
 
 interface IOBSConfigSource {
@@ -50,6 +55,7 @@ interface IOBSConfigSource {
   settings: {
     shutdown?: boolean;
     items?: IOBSConfigSceneItem[];
+    url?: string;
   };
   channel?: number;
   muted: boolean;
@@ -73,9 +79,28 @@ interface IOBSConfigJSON {
   transition_duration: number;
 }
 
+class ObsImporterViews extends ViewHandler<{ progress: number; total: number }> {
+  get OBSconfigFileDirectory() {
+    return path.join(electron.remote.app.getPath('appData'), 'obs-studio');
+  }
+
+  get sceneCollectionsDirectory() {
+    return path.join(this.OBSconfigFileDirectory, 'basic/scenes/');
+  }
+
+  get profilesDirectory() {
+    return path.join(this.OBSconfigFileDirectory, 'basic/profiles');
+  }
+
+  isOBSinstalled() {
+    return fs.existsSync(this.OBSconfigFileDirectory);
+  }
+}
+
 export class ObsImporterService extends StatefulService<{ progress: number; total: number }> {
   @Inject() scenesService: ScenesService;
   @Inject() sourcesService: SourcesService;
+  @Inject() widgetsService: WidgetsService;
   @Inject('SourceFiltersService') filtersService: SourceFiltersService;
   @Inject() transitionsService: TransitionsService;
   @Inject() sceneCollectionsService: SceneCollectionsService;
@@ -83,13 +108,17 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
   @Inject() settingsService: SettingsService;
   @Inject() appService: AppService;
 
+  get views() {
+    return new ObsImporterViews(this.state);
+  }
+
   @RunInLoadingMode()
   async import() {
     await this.load();
   }
 
   async load(selectedProfile?: string) {
-    if (!this.isOBSinstalled()) return;
+    if (!this.views.isOBSinstalled()) return;
     // Scene collections
     const collections = this.getSceneCollections();
     for (const collection of collections) {
@@ -100,7 +129,7 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
     if (selectedProfile) this.importProfile(selectedProfile);
 
     // Select current scene collection
-    const globalConfigFile = path.join(this.OBSconfigFileDirectory, 'global.ini');
+    const globalConfigFile = path.join(this.views.OBSconfigFileDirectory, 'global.ini');
 
     const data = fs.readFileSync(globalConfigFile).toString();
 
@@ -120,7 +149,13 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
   }
 
   private async importCollection(collection: ISceneCollection) {
-    const sceneCollectionPath = path.join(this.sceneCollectionsDirectory, collection.filename);
+    const sceneCollectionPath = path.join(
+      this.views.sceneCollectionsDirectory,
+      collection.filename,
+    );
+    if (sceneCollectionPath.indexOf('.json') === -1) {
+      return true;
+    }
     const configJSON: IOBSConfigJSON = JSON.parse(fs.readFileSync(sceneCollectionPath).toString());
 
     await this.sceneCollectionsService.create({
@@ -132,7 +167,7 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
         this.importMixerSources(configJSON);
         this.importTransitions(configJSON);
 
-        return this.scenesService.scenes.length !== 0;
+        return this.scenesService.views.scenes.length !== 0;
       },
     });
   }
@@ -145,7 +180,7 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
         });
 
         if (isFilterAvailable) {
-          const sourceId = this.sourcesService.getSourcesByName(source.name)[0].sourceId;
+          const sourceId = this.sourcesService.views.getSourcesByName(source.name)[0].sourceId;
 
           const filter = this.filtersService.add(sourceId, filterJSON.id, filterJSON.name);
           filter.enabled = filterJSON.enabled;
@@ -182,8 +217,16 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
 
         if (isSourceAvailable) {
           if (sourceJSON.id !== 'scene') {
+            let propertiesManager: TPropertiesManager = 'default';
+            let propertiesManagerSettings: Dictionary<any> = {};
+
             if (sourceJSON.id === 'browser_source') {
               sourceJSON.settings.shutdown = true;
+              const widgetType = this.widgetsService.getWidgetTypeByUrl(sourceJSON.settings.url);
+              if (widgetType !== -1) {
+                propertiesManager = 'widget';
+                propertiesManagerSettings = { widgetType };
+              }
             }
 
             // Check "Shutdown source when not visible" by default for browser sources
@@ -192,6 +235,8 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
               sourceJSON.id,
               sourceJSON.settings,
               {
+                propertiesManager,
+                propertiesManagerSettings,
                 channel: sourceJSON.channel !== 0 ? sourceJSON.channel : void 0,
               },
             );
@@ -202,9 +247,9 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
                   ? obs.EMonitoringType.MonitoringOnly
                   : obs.EMonitoringType.None;
 
-              this.audioService.getSource(source.sourceId).setMuted(sourceJSON.muted);
-              this.audioService.getSource(source.sourceId).setMul(sourceJSON.volume);
-              this.audioService.getSource(source.sourceId).setSettings({
+              this.audioService.views.getSource(source.sourceId).setMuted(sourceJSON.muted);
+              this.audioService.views.getSource(source.sourceId).setMul(sourceJSON.volume);
+              this.audioService.views.getSource(source.sourceId).setSettings({
                 audioMixers: defaultTo(sourceJSON.mixers, 255),
                 monitoringType: defaultTo(sourceJSON.monitoring_type, defaultMonitoring),
                 syncOffset: defaultTo(sourceJSON.sync / 1000000, 0),
@@ -245,14 +290,14 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
       // Add all the sceneItems to every scene
       sourcesJSON.forEach(sourceJSON => {
         if (sourceJSON.id === 'scene') {
-          const scene = this.scenesService.getScene(nameToIdMap[sourceJSON.name]);
+          const scene = this.scenesService.views.getScene(nameToIdMap[sourceJSON.name]);
           if (!scene) return;
 
           const sceneItems = sourceJSON.settings.items;
           if (Array.isArray(sceneItems)) {
             // Looking for the source to add to the scene
             sceneItems.forEach(item => {
-              const sourceToAdd = this.sourcesService.getSources().find(source => {
+              const sourceToAdd = this.sourcesService.views.getSources().find(source => {
                 return source.name === item.name;
               });
               if (sourceToAdd) {
@@ -266,6 +311,35 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
                 };
                 const pos = item.pos;
                 const scale = item.scale;
+
+                if (
+                  item.bounds &&
+                  item.bounds.x &&
+                  item.bounds.y &&
+                  item.bounds_align === 0 &&
+                  [1, 2].includes(item.bounds_type)
+                ) {
+                  // Stretch
+                  scale.x = item.bounds.x / sourceToAdd.width;
+                  scale.y = item.bounds.y / sourceToAdd.height;
+
+                  // Fit
+                  if (item.bounds_type === 2) {
+                    if (scale.x > scale.y) {
+                      scale.x = scale.y;
+
+                      // Account for centering in the bounding box
+                      const actualWidth = sourceToAdd.width * scale.x;
+                      pos.x += (item.bounds.x - actualWidth) / 2;
+                    } else {
+                      scale.y = scale.x;
+
+                      // Account for centering in the bounding box
+                      const actualHeight = sourceToAdd.height * scale.y;
+                      pos.y += (item.bounds.y - actualHeight) / 2;
+                    }
+                  }
+                }
 
                 sceneItem.setSettings({
                   visible: item.visible,
@@ -286,7 +360,7 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
   importSceneOrder(configJSON: IOBSConfigJSON) {
     const sceneNames: string[] = [];
     const sceneOrderJSON = configJSON.scene_order;
-    const listScene = this.scenesService.scenes;
+    const listScene = this.scenesService.views.scenes;
 
     if (Array.isArray(sceneOrderJSON)) {
       sceneOrderJSON.forEach(obsScene => {
@@ -309,22 +383,30 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
       'AuxAudioDevice3',
     ];
     channelNames.forEach((channelName, i) => {
-      const audioSource = configJSON[channelName];
-      if (audioSource) {
+      const obsAudioSource = configJSON[channelName];
+      if (obsAudioSource) {
+        const isSourceAvailable = this.sourcesService
+          .getAvailableSourcesTypes()
+          .includes(obsAudioSource.id);
+
+        if (!isSourceAvailable) return;
+
         const newSource = this.sourcesService.createSource(
-          audioSource.name,
-          audioSource.id,
-          {},
+          obsAudioSource.name,
+          obsAudioSource.id,
+          { device_id: obsAudioSource.settings.device_id },
           { channel: i + 1 },
         );
 
-        this.audioService.getSource(newSource.sourceId).setMuted(audioSource.muted);
-        this.audioService.getSource(newSource.sourceId).setMul(audioSource.volume);
-        this.audioService.getSource(newSource.sourceId).setSettings({
-          ['audioMixers']: audioSource.mixers,
-          ['monitoringType']: audioSource.monitoring_type,
-          ['syncOffset']: audioSource.sync / 1000000,
-          ['forceMono']: !!(audioSource.flags & obs.ESourceFlags.ForceMono),
+        const audioSource = this.audioService.views.getSource(newSource.sourceId);
+
+        audioSource.setMuted(obsAudioSource.muted);
+        audioSource.setMul(obsAudioSource.volume);
+        audioSource.setSettings({
+          audioMixers: obsAudioSource.mixers,
+          monitoringType: obsAudioSource.monitoring_type,
+          syncOffset: obsAudioSource.sync / 1000000,
+          forceMono: !!(obsAudioSource.flags & obs.ESourceFlags.ForceMono),
         });
       }
     });
@@ -338,14 +420,14 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
       this.transitionsService.deleteAllTransitions();
       this.transitionsService.createTransition(
         configJSON.transitions[0].id as ETransitionType,
-        'Global Transition',
+        $t('Global Transition'),
         { duration: configJSON.transition_duration },
       );
     }
   }
 
   importProfile(profile: string) {
-    const profileDirectory = path.join(this.profilesDirectory, profile);
+    const profileDirectory = path.join(this.views.profilesDirectory, profile);
     const files = fs.readdirSync(profileDirectory);
 
     files.forEach(file => {
@@ -362,10 +444,10 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
   }
 
   getSceneCollections(): ISceneCollection[] {
-    if (!this.isOBSinstalled()) return [];
-    if (!fs.existsSync(this.sceneCollectionsDirectory)) return [];
+    if (!this.views.isOBSinstalled()) return [];
+    if (!fs.existsSync(this.views.sceneCollectionsDirectory)) return [];
 
-    let files = fs.readdirSync(this.sceneCollectionsDirectory);
+    let files = fs.readdirSync(this.views.sceneCollectionsDirectory);
 
     files = files.filter(file => !file.match(/\.bak$/));
     return files.map(file => {
@@ -377,26 +459,10 @@ export class ObsImporterService extends StatefulService<{ progress: number; tota
   }
 
   getProfiles(): string[] {
-    if (!this.isOBSinstalled()) return [];
+    if (!this.views.isOBSinstalled()) return [];
 
-    let profiles = fs.readdirSync(this.profilesDirectory);
+    let profiles = fs.readdirSync(this.views.profilesDirectory);
     profiles = profiles.filter(profile => !profile.match(/\./));
     return profiles;
-  }
-
-  get OBSconfigFileDirectory() {
-    return path.join(electron.remote.app.getPath('appData'), 'obs-studio');
-  }
-
-  get sceneCollectionsDirectory() {
-    return path.join(this.OBSconfigFileDirectory, 'basic/scenes/');
-  }
-
-  get profilesDirectory() {
-    return path.join(this.OBSconfigFileDirectory, 'basic/profiles');
-  }
-
-  isOBSinstalled() {
-    return fs.existsSync(this.OBSconfigFileDirectory);
   }
 }

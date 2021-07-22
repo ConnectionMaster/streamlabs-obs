@@ -1,4 +1,10 @@
-import { IWidgetData, IWidgetSettings, WidgetSettingsService, WidgetType } from 'services/widgets';
+import {
+  IWidgetData,
+  IWidgetSettings,
+  WidgetDefinitions,
+  WidgetSettingsService,
+  WidgetType,
+} from 'services/widgets';
 import { metadata } from 'components/widgets/inputs/index';
 import { WIDGET_INITIAL_STATE } from './widget-settings';
 import { InheritMutations } from 'services/core/stateful-service';
@@ -58,7 +64,7 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
   getApiSettings() {
     return {
       type: WidgetType.EventList,
-      url: `https://${this.getHost()}/widgets/event-list/v1/${this.getWidgetToken()}`,
+      url: WidgetDefinitions[WidgetType.EventList].url(this.getHost(), this.getWidgetToken()),
       previewUrl: `https://${this.getHost()}/widgets/event-list/v1/${this.getWidgetToken()}?simulate=1`,
       dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/eventlist`,
       settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/eventlist`,
@@ -99,13 +105,39 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
         { key: 'show_bits', title: $t('Bits') },
         { key: 'show_raids', title: $t('Raids') },
       ],
-      facebook: [],
+      facebook: [
+        { key: 'show_follows', title: $t('Follows') },
+        { key: 'show_stars', title: $t('Stars') },
+        { key: 'show_supports', title: $t('Supporters') },
+        { key: 'show_likes', title: $t('Likes') },
+        { key: 'show_shares', title: $t('Shares') },
+      ],
       youtube: [
         { key: 'show_subscriptions', title: $t('Subscriptions') },
         { key: 'show_sponsors', title: $t('Members') },
         { key: 'show_fanfundings', title: $t('Super Chats') },
       ],
-      mixer: [{ key: 'show_resubs', title: $t('Show Resubs') }],
     }[platform];
+  }
+
+  minsByPlatform(): { key: string; title: string; tooltip?: string }[] {
+    const platform = this.userService.platform.type;
+    return {
+      twitch: [
+        {
+          key: 'bits_minimum',
+          title: $t('Min. Bits'),
+
+          tooltip: $t(
+            'The smallest amount of bits a cheer must have for an event to be shown.' +
+              ' Setting this to 0 will make every cheer trigger an event.',
+          ),
+        },
+      ],
+    }[platform as 'twitch'];
+  }
+
+  protected patchBeforeSend(data: IEventListSettings): any {
+    return { ...data };
   }
 }

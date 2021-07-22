@@ -1,12 +1,11 @@
-import Vue from 'vue';
-import { Component, Prop } from 'vue-property-decorator';
+import { Component } from 'vue-property-decorator';
 import { Subscription } from 'rxjs';
-import { AudioSource } from 'services/audio';
+import { AudioSource, AudioService, IVolmeter } from 'services/audio';
 import { Inject } from 'services/core/injector';
 import { CustomizationService } from 'services/customization';
-import { compileShader, createProgram } from 'util/webgl/utils';
-import vShaderSrc from 'util/webgl/shaders/volmeter.vert';
-import fShaderSrc from 'util/webgl/shaders/volmeter.frag';
+import electron from 'electron';
+import TsxComponent, { createProps } from './tsx-component';
+import { WindowsService } from 'services/windows';
 
 // Configuration
 const CHANNEL_HEIGHT = 3;
@@ -20,12 +19,22 @@ const DANGER_LEVEL = -9;
 const GREEN = [49, 195, 162];
 const YELLOW = [255, 205, 71];
 const RED = [252, 62, 63];
+const FPS_LIMIT = 40;
 
-@Component({})
-export default class MixerVolmeter extends Vue {
-  @Prop() audioSource: AudioSource;
+class MixerVolmeterProps {
+  audioSource: AudioSource = null;
+  volmetersEnabled = true;
+}
 
+/**
+ * Render volmeters on canvas
+ * To render multiple volmeters use more optimized Volmeters.tsx instead
+ */
+@Component({ props: createProps(MixerVolmeterProps) })
+export default class MixerVolmeter extends TsxComponent<MixerVolmeterProps> {
   @Inject() customizationService: CustomizationService;
+  @Inject() audioService: AudioService;
+  @Inject() windowsService: WindowsService;
 
   volmeterSubscription: Subscription;
 
@@ -37,106 +46,126 @@ export default class MixerVolmeter extends Vue {
   // Used for Canvas 2D rendering
   ctx: CanvasRenderingContext2D;
 
-  // Used for WebGL rendering
-  gl: WebGLRenderingContext;
-  program: WebGLProgram;
-
-  // GL Attribute locations
-  positionLocation: number;
-
-  // GL Uniform locations
-  resolutionLocation: WebGLUniformLocation;
-  translationLocation: WebGLUniformLocation;
-  scaleLocation: WebGLUniformLocation;
-  volumeLocation: WebGLUniformLocation;
-  peakHoldLocation: WebGLUniformLocation;
-  bgMultiplierLocation: WebGLUniformLocation;
-
   peakHoldCounters: number[];
   peakHolds: number[];
+
   canvasWidth: number;
   canvasWidthInterval: number;
   channelCount: number;
   canvasHeight: number;
 
+  // Used to force recreation of the canvas element
+  canvasId = 1;
+
+  // Used for lazy initialization of the canvas rendering
+  renderingInitialized = false;
+
+  // Current peak values
+  currentPeaks: number[];
+  // Store prevPeaks and interpolatedPeaks values for smooth interpolated rendering
+  prevPeaks: number[];
+  interpolatedPeaks: number[];
+  // the time of last received peaks
+  lastEventTime: number;
+  // time between 2 received peaks.
+  // Used to render extra interpolated frames
+  interpolationTime = 35;
+  bg: { r: number; g: number; b: number };
+
+  firstFrameTime: number;
+  frameNumber: number;
+  styleBlockersSubscription: Subscription;
+
   mounted() {
     this.subscribeVolmeter();
     this.peakHoldCounters = [];
     this.peakHolds = [];
-    this.setChannelCount(1);
-    this.canvasWidthInterval = window.setInterval(() => this.setCanvasWidth(), 500);
 
-    this.gl = this.$refs.canvas.getContext('webgl', { alpha: false });
-
-    if (this.gl) {
-      this.initWebglRendering();
-    } else {
-      // This machine does not support hardware acceleration, or it has been
-      // disabled, so we fall back to canvas 2D rendering.
-      this.ctx = this.$refs.canvas.getContext('2d', { alpha: false });
-    }
+    this.setupNewCanvas();
   }
 
-  destroyed() {
+  beforeDestroy() {
     clearInterval(this.canvasWidthInterval);
     this.unsubscribeVolmeter();
+    if (this.styleBlockersSubscription) this.styleBlockersSubscription.unsubscribe();
   }
 
-  private initWebglRendering() {
-    const vShader = compileShader(this.gl, vShaderSrc, this.gl.VERTEX_SHADER);
-    const fShader = compileShader(this.gl, fShaderSrc, this.gl.FRAGMENT_SHADER);
-    this.program = createProgram(this.gl, vShader, fShader);
+  private setupNewCanvas() {
+    // Make sure all state is cleared out
+    this.ctx = null;
+    this.canvasWidth = null;
+    this.channelCount = null;
+    this.canvasHeight = null;
 
-    const positionBuffer = this.gl.createBuffer();
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, positionBuffer);
+    this.renderingInitialized = false;
 
-    // Vertex geometry for a unit square
-    // tslint:disable-next-line
-    const positions = [
-      0, 0,
-      0, 1,
-      1, 0,
-      1, 0,
-      0, 1,
-      1, 1,
-    ];
+    // Assume 2 channels until we know otherwise. This prevents too much
+    // visual jank as the volmeters are initializing.
+    this.setChannelCount(2);
 
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(positions), this.gl.STATIC_DRAW);
+    this.setCanvasWidth();
 
-    // look up where the vertex data needs to go.
-    this.positionLocation = this.gl.getAttribLocation(this.program, 'a_position');
+    this.canvasWidthInterval = window.setInterval(() => this.setCanvasWidth(), 500);
+    if (this.props.volmetersEnabled) {
+      requestAnimationFrame(t => this.onRequestAnimationFrameHandler(t));
+    }
 
-    // lookup uniforms
-    this.resolutionLocation = this.gl.getUniformLocation(this.program, 'u_resolution');
-    this.translationLocation = this.gl.getUniformLocation(this.program, 'u_translation');
-    this.scaleLocation = this.gl.getUniformLocation(this.program, 'u_scale');
-    this.volumeLocation = this.gl.getUniformLocation(this.program, 'u_volume');
-    this.peakHoldLocation = this.gl.getUniformLocation(this.program, 'u_peakHold');
-    this.bgMultiplierLocation = this.gl.getUniformLocation(this.program, 'u_bgMultiplier');
-
-    this.gl.useProgram(this.program);
-
-    const warningLocation = this.gl.getUniformLocation(this.program, 'u_warning');
-    this.gl.uniform1f(warningLocation, this.dbToUnitScalar(WARNING_LEVEL));
-
-    const dangerLocation = this.gl.getUniformLocation(this.program, 'u_danger');
-    this.gl.uniform1f(dangerLocation, this.dbToUnitScalar(DANGER_LEVEL));
-
-    // Set colors
-    this.setColorUniform('u_green', GREEN);
-    this.setColorUniform('u_yellow', YELLOW);
-    this.setColorUniform('u_red', RED);
+    // Style blockers are always hidden whenever something happens that causes main
+    // window elements to change width. We can improve performance by just listening
+    // the style blocker change event.
+    this.styleBlockersSubscription = this.windowsService.styleBlockersUpdated.subscribe(
+      blockers => {
+        if (blockers.windowId === 'main' && !blockers.hideStyleBlockers) {
+          this.setCanvasWidth();
+        }
+      },
+    );
   }
 
-  private setColorUniform(uniform: string, color: number[]) {
-    const location = this.gl.getUniformLocation(this.program, uniform);
-    this.gl.uniform3fv(location, color.map(c => c / 255));
+  /**
+   * Render volmeters with FPS capping
+   */
+  private onRequestAnimationFrameHandler(now: DOMHighResTimeStamp) {
+    // init first rendering frame
+    if (!this.frameNumber) {
+      this.frameNumber = -1;
+      this.firstFrameTime = now;
+    }
+
+    const timeElapsed = now - this.firstFrameTime;
+    const timeBetweenFrames = 1000 / FPS_LIMIT;
+    const currentFrameNumber = Math.ceil(timeElapsed / timeBetweenFrames);
+
+    if (currentFrameNumber !== this.frameNumber) {
+      // it's time to render next frame
+      this.frameNumber = currentFrameNumber;
+      // don't render sources then channelsCount is 0
+      // happens when the browser source stops playing audio
+      if (this.renderingInitialized && this.currentPeaks && this.currentPeaks.length) {
+        this.drawVolmeterC2d(this.currentPeaks);
+      }
+    }
+    requestAnimationFrame(t => this.onRequestAnimationFrameHandler(t));
+  }
+
+  private initRenderingContext() {
+    if (this.renderingInitialized) return;
+    if (!this.props.volmetersEnabled) return;
+
+    this.ctx = this.$refs.canvas.getContext('2d', { alpha: false });
+    this.renderingInitialized = true;
   }
 
   private setChannelCount(channels: number) {
     if (channels !== this.channelCount) {
       this.channelCount = channels;
-      this.canvasHeight = channels * (CHANNEL_HEIGHT + PADDING_HEIGHT) - PADDING_HEIGHT;
+      this.canvasHeight = Math.max(
+        channels * (CHANNEL_HEIGHT + PADDING_HEIGHT) - PADDING_HEIGHT,
+        0,
+      );
+
+      if (!this.$refs.canvas) return;
+
       this.$refs.canvas.height = this.canvasHeight;
       this.$refs.canvas.style.height = `${this.canvasHeight}px`;
       this.$refs.spacer.style.height = `${this.canvasHeight}px`;
@@ -151,6 +180,7 @@ export default class MixerVolmeter extends Vue {
       this.$refs.canvas.width = width;
       this.$refs.canvas.style.width = `${width}px`;
     }
+    this.bg = this.customizationService.themeBackground;
   }
 
   private getBgMultiplier() {
@@ -158,51 +188,10 @@ export default class MixerVolmeter extends Vue {
     return this.customizationService.isDarkTheme ? 0.2 : 0.5;
   }
 
-  private drawVolmeterWebgl(peaks: number[]) {
-    const bg = this.customizationService.themeBackground;
-
-    this.gl.clearColor(bg.r / 255, bg.g / 255, bg.b / 255, 1);
-    this.gl.clear(this.gl.COLOR_BUFFER_BIT);
-
-    if (this.canvasWidth < 0 || this.canvasHeight < 0) return;
-
-    this.gl.viewport(0, 0, this.canvasWidth, this.canvasHeight);
-
-    this.gl.enableVertexAttribArray(this.positionLocation);
-    this.gl.vertexAttribPointer(this.positionLocation, 2, this.gl.FLOAT, false, 0, 0);
-
-    // Set uniforms
-    this.gl.uniform2f(this.resolutionLocation, 1, this.canvasHeight);
-
-    this.gl.uniform1f(this.bgMultiplierLocation, this.getBgMultiplier());
-
-    peaks.forEach((peak, channel) => {
-      this.drawVolmeterChannelWebgl(peak, channel);
-    });
-  }
-
-  private drawVolmeterChannelWebgl(peak: number, channel: number) {
-    this.updatePeakHold(peak, channel);
-
-    this.gl.uniform2f(this.scaleLocation, 1, CHANNEL_HEIGHT);
-    this.gl.uniform2f(this.translationLocation, 0, channel * (CHANNEL_HEIGHT + PADDING_HEIGHT));
-    this.gl.uniform1f(this.volumeLocation, this.dbToUnitScalar(peak));
-
-    // X component is the location of peak hold from 0 to 1
-    // Y component is width of the peak hold from 0 to 1
-    this.gl.uniform2f(
-      this.peakHoldLocation,
-      this.dbToUnitScalar(this.peakHolds[channel]),
-      PEAK_WIDTH / this.canvasWidth,
-    );
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
-  }
-
   private drawVolmeterC2d(peaks: number[]) {
     if (this.canvasWidth < 0 || this.canvasHeight < 0) return;
 
-    const bg = this.customizationService.themeBackground;
+    const bg = this.customizationService.sectionBackground;
     this.ctx.fillStyle = this.rgbToCss([bg.r, bg.g, bg.b]);
     this.ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
 
@@ -255,10 +244,6 @@ export default class MixerVolmeter extends Vue {
     );
   }
 
-  private dbToUnitScalar(db: number) {
-    return Math.max((db + 60) * (1 / 60), 0);
-  }
-
   private dbToPx(db: number) {
     return Math.round((db + 60) * (this.canvasWidth / 60));
   }
@@ -283,19 +268,47 @@ export default class MixerVolmeter extends Vue {
     this.peakHoldCounters[channel] -= 1;
   }
 
-  subscribeVolmeter() {
-    this.volmeterSubscription = this.audioSource.subscribeVolmeter(volmeter => {
-      this.setChannelCount(volmeter.peak.length);
+  workerId: number;
 
-      if (this.gl) {
-        this.drawVolmeterWebgl(volmeter.peak);
-      } else {
-        this.drawVolmeterC2d(volmeter.peak);
+  listener: (e: Electron.Event, volmeter: IVolmeter) => void;
+
+  subscribeVolmeter() {
+    this.listener = (e: Electron.Event, volmeter: IVolmeter) => {
+      if (this.$refs.canvas) {
+        // don't init context for inactive sources
+        if (!volmeter.peak.length && !this.renderingInitialized) return;
+
+        this.initRenderingContext();
+        this.setChannelCount(volmeter.peak.length);
+
+        // save peaks value to render it in the next animationFrame
+        this.prevPeaks = this.interpolatedPeaks;
+        this.currentPeaks = Array.from(volmeter.peak);
+        this.lastEventTime = performance.now();
       }
-    });
+    };
+
+    electron.ipcRenderer.on(`volmeter-${this.props.audioSource.sourceId}`, this.listener);
+
+    // TODO: Remove sync
+    this.workerId = electron.ipcRenderer.sendSync('getWorkerWindowId');
+
+    electron.ipcRenderer.sendTo(
+      this.workerId,
+      'volmeterSubscribe',
+      this.props.audioSource.sourceId,
+    );
   }
 
   unsubscribeVolmeter() {
-    this.volmeterSubscription && this.volmeterSubscription.unsubscribe();
+    electron.ipcRenderer.removeListener(
+      `volmeter-${this.props.audioSource.sourceId}`,
+      this.listener,
+    );
+    electron.ipcRenderer.sendTo(
+      this.workerId,
+      'volmeterUnsubscribe',
+      this.props.audioSource.sourceId,
+    );
   }
 }

@@ -1,7 +1,7 @@
 import { ArrayNode } from '../array-node';
 import { SceneItem, Scene, TSceneNode, ScenesService } from 'services/scenes';
 import { VideoService } from 'services/video';
-import { SourcesService } from 'services/sources';
+import { SourcesService, TSourceType } from 'services/sources';
 import { SourceFiltersService, TSourceFilterType } from 'services/source-filters';
 import { Inject } from 'services/core/injector';
 import { ImageNode } from './image';
@@ -9,11 +9,15 @@ import { TextNode } from './text';
 import { WebcamNode } from './webcam';
 import { VideoNode } from './video';
 import { StreamlabelNode } from './streamlabel';
+import { IconLibraryNode } from './icon-library';
 import { WidgetNode } from './widget';
 import { SceneSourceNode } from './scene';
 import { AudioService } from 'services/audio';
 import * as obs from '../../../../../obs-api';
 import { WidgetType } from '../../../widgets';
+import { byOS, OS, getOS } from 'util/operating-systems';
+import { GameCaptureNode } from './game-capture';
+import { Node } from '../node';
 
 type TContent =
   | ImageNode
@@ -22,7 +26,9 @@ type TContent =
   | VideoNode
   | StreamlabelNode
   | WidgetNode
-  | SceneSourceNode;
+  | SceneSourceNode
+  | GameCaptureNode
+  | IconLibraryNode;
 
 interface IFilterInfo {
   name: string;
@@ -63,6 +69,7 @@ export type TSlotSchema = IItemSchema | IFolderSchema;
 interface IContext {
   assetsPath: string;
   scene: Scene;
+  savedAssets: Dictionary<string>;
 }
 
 export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
@@ -75,10 +82,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
   @Inject() audioService: AudioService;
 
   getItems(context: IContext) {
-    return context.scene
-      .getNodes()
-      .slice()
-      .reverse();
+    return context.scene.getNodes().slice().reverse();
   }
 
   async saveItem(sceneNode: TSceneNode, context: IContext): Promise<TSlotSchema> {
@@ -113,7 +117,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
     };
 
     if (sceneNode.getObsInput().audioMixers) {
-      details.mixerHidden = this.audioService.getSource(sceneNode.sourceId).mixerHidden;
+      details.mixerHidden = this.audioService.views.getSource(sceneNode.sourceId).mixerHidden;
     }
 
     const manager = sceneNode.source.getPropertiesManagerType();
@@ -130,9 +134,23 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       return { ...details, content } as IItemSchema;
     }
 
+    if (manager === 'iconLibrary') {
+      const content = new IconLibraryNode();
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
+      return { ...details, content } as IItemSchema;
+    }
+
     if (sceneNode.type === 'image_source') {
       const content = new ImageNode();
-      await content.save({ sceneItem: sceneNode, assetsPath: context.assetsPath });
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
       return { ...details, content } as IItemSchema;
     }
 
@@ -150,6 +168,16 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
 
     if (sceneNode.type === 'ffmpeg_source') {
       const content = new VideoNode();
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
+      return { ...details, content } as IItemSchema;
+    }
+
+    if (sceneNode.type === 'game_capture') {
+      const content = new GameCaptureNode();
       await content.save({ sceneItem: sceneNode, assetsPath: context.assetsPath });
       return { ...details, content } as IItemSchema;
     }
@@ -171,9 +199,17 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       return;
     }
 
+    // This was something we don't recognize
+    if (!(obj.content instanceof Node)) return;
+
+    const webcamSourceType = byOS<TSourceType>({
+      [OS.Windows]: 'dshow_input',
+      [OS.Mac]: 'av_capture_input',
+    });
+
     if (obj.content instanceof WebcamNode) {
-      const existingWebcam = this.sourcesService.sources.find(source => {
-        return source.type === 'dshow_input';
+      const existingWebcam = this.sourcesService.views.sources.find(source => {
+        return source.type === webcamSourceType;
       });
 
       if (existingWebcam) {
@@ -181,7 +217,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       } else {
         sceneItem = context.scene.createAndAddSource(
           obj.name,
-          'dshow_input',
+          webcamSourceType,
           {},
           { id, select: false },
         );
@@ -210,10 +246,22 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
         {},
         { id, select: false },
       );
+    } else if (obj.content instanceof GameCaptureNode) {
+      if (getOS() === OS.Windows) {
+        sceneItem = context.scene.createAndAddSource(
+          obj.name,
+          'game_capture',
+          {},
+          { id, select: false },
+        );
+      } else {
+        // We will not load this source at all on mac
+        return;
+      }
     } else if (obj.content instanceof TextNode) {
       sceneItem = context.scene.createAndAddSource(
         obj.name,
-        'text_gdiplus',
+        byOS({ [OS.Windows]: 'text_gdiplus', [OS.Mac]: 'text_ft2_source' }),
         {},
         { id, select: false },
       );
@@ -224,10 +272,17 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
         {},
         { id, select: false },
       );
+    } else if (obj.content instanceof IconLibraryNode) {
+      sceneItem = context.scene.createAndAddSource(
+        obj.name,
+        'image_source',
+        {},
+        { id, select: false, sourceAddOptions: { propertiesManager: 'iconLibrary' } },
+      );
     } else if (obj.content instanceof StreamlabelNode) {
       sceneItem = context.scene.createAndAddSource(
         obj.name,
-        'text_gdiplus',
+        byOS({ [OS.Windows]: 'text_gdiplus', [OS.Mac]: 'text_ft2_source' }),
         {},
         { id, select: false },
       );
@@ -235,7 +290,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       // Check for already existing widgets of the same type instead
       const widgetType = obj.content.data.type;
 
-      this.sourcesService.sources.forEach(source => {
+      this.sourcesService.views.sources.forEach(source => {
         if (source.getPropertiesManagerType() === 'widget') {
           const type: WidgetType = source.getPropertiesManagerSettings().widgetType;
 
@@ -260,10 +315,16 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
     }
 
     this.adjustTransform(sceneItem, obj);
-    if (!existing) await obj.content.load({ sceneItem, assetsPath: context.assetsPath });
+    if (!existing) {
+      await obj.content.load({
+        sceneItem,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
+    }
 
     if (sceneItem.getObsInput().audioMixers) {
-      this.audioService.getSource(sceneItem.sourceId).setHidden(obj.mixerHidden);
+      this.audioService.views.getSource(sceneItem.sourceId).setHidden(obj.mixerHidden);
     }
 
     if (obj.filters) {

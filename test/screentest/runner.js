@@ -1,78 +1,88 @@
 require('dotenv').config();
 const rimraf = require('rimraf');
-const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const AWS = require('aws-sdk');
 const uuid = require('uuid');
 const recursiveReadDir = require('recursive-readdir');
 const { GithubClient } = require('../../scripts/github-client');
+const { exec, checkoutBranch, getCommitSHA } = require('../helpers/repo');
 const {
   AWS_ACCESS_KEY,
   AWS_SECRET_KEY,
   AWS_BUCKET,
-  CI,
   STREAMLABS_BOT_ID,
   STREAMLABS_BOT_KEY,
   BUILD_REPOSITORY_NAME,
-  BUILD_BUILD_ID,
+  BUILD_BUILDID,
+  SYSTEM_JOBID,
 } = process.env;
 const CONFIG = require('./config.json');
 const commitSHA = getCommitSHA();
 const args = process.argv.slice(2);
 
-(async function main() {
+console.log(process.env);
 
+
+(async function main() {
   // prepare the dist dir
   rimraf.sync(CONFIG.dist);
   fs.mkdirSync(CONFIG.dist, { recursive: true });
 
+  const baseBranch = await detectBaseBranchName();
+
   // make screenshots for each branch
-  const branches = [
-    'current',
-    CONFIG.baseBranch
-  ];
+  const branches = ['current', baseBranch];
   for (const branchName of branches) {
-    checkoutBranch(branchName);
-    exec(`yarn test-flaky ${CONFIG.compiledTestsDist}/screentest/tests/**/*.js ${args.join(' ')}`);
+    checkoutBranch(branchName, baseBranch, CONFIG);
+    exec(
+      `yarn ci:tests yarn test:file ${
+        CONFIG.compiledTestsDist
+      }/screentest/tests/**/*.js ${args.join(' ')}`,
+    );
   }
   // return to the current branch
-  checkoutBranch('current');
+  checkoutBranch('current', baseBranch, CONFIG);
 
   // compile the test folder
-  exec(`tsc -p test`);
+  exec('tsc -p test');
 
   // compare screenshots
   exec(`node ${CONFIG.compiledTestsDist}/screentest/comparator.js ${branches[0]} ${branches[1]}`);
 
   // send the status to the GitHub check and upload screenshots
-  await updateCheck();
-})();
-
-
-function checkoutBranch(branchName) {
-  const branchPath = `${CONFIG.dist}/${branchName}`;
-  if (!fs.existsSync(branchPath)) fs.mkdirSync(branchPath);
-  const checkoutTarget = branchName === 'current' ? commitSHA : branchName;
-  rimraf.sync(CONFIG.compiledTestsDist);
-  exec(`git reset --hard`);
-  exec(`git checkout ${checkoutTarget}`);
-  if (branchName !== CONFIG.baseBranch) {
-    // the base branch may have changes, so merge it
-    exec(`git pull origin ${CONFIG.baseBranch}`);
+  await updateCheckAndUploadScreenshots();
+})().catch(async e => {
+  try {
+    // report a failed status to the GitHub check
+    await updateCheckAndUploadScreenshots();
+  } finally {
+    process.exit(-1);
   }
-  exec('yarn install --frozen-lockfile --check-files');
-  exec('yarn compile:ci');
-  // save current branch name to the file
-  // screenshoter.js will use this value
-  fs.writeFileSync(`${CONFIG.dist}/current-branch.txt`, branchName);
+});
+
+async function detectBaseBranchName() {
+  const commit = getCommitSHA();
+  let prs = [];
+  try {
+    const github = await getGithubClient();
+    const res = await github.getPullRequestsForCommit(commit);
+    prs = res.data;
+  } catch (e) {
+    console.error(e);
+  }
+  if (!prs.length) {
+    throw new Error(`No pull requests found for ${commit}`);
+  }
+  return prs[0].base.ref;
 }
 
-
-async function updateCheck() {
-
+async function updateCheckAndUploadScreenshots() {
+  console.log('try  updateCheckAndUploadScreenshots');
   if (!STREAMLABS_BOT_ID || !STREAMLABS_BOT_KEY) {
-    console.info('STREAMLABS_BOT_ID or STREAMLABS_BOT_KEY is not set. Skipping GitCheck status update');
+    console.log(
+      'STREAMLABS_BOT_ID or STREAMLABS_BOT_KEY is not set. Skipping GitCheck status update',
+    );
     return;
   }
 
@@ -83,6 +93,7 @@ async function updateCheck() {
   } catch (e) {
     console.error('No results found for screentest');
   }
+
 
   // create a conclusion
   let conclusion = '';
@@ -95,68 +106,41 @@ async function updateCheck() {
     title = `Changes are detected in ${testResults.changedScreens} screenshots`;
   } else {
     conclusion = 'success';
-    title = `${testResults.totalScreens} screenshots have been checked.` + `\n` +
-            `${testResults.newScreens} new screenshots have been found`;
+    title =
+      `${testResults.totalScreens} screenshots have been checked.` +
+      '\n' +
+      `${testResults.newScreens} new screenshots have been found`;
   }
 
   // upload screenshots if any changes present
+  console.log('conclusion is', conclusion);
   let screenshotsUrl = '';
-  if (conclusion === 'action_required' || testResults.newScreens > 1) {
+  if (conclusion === 'action_required' || (testResults && testResults.newScreens > 1)) {
     screenshotsUrl = await uploadScreenshots();
   }
 
-  console.info('Updating the GithubCheck', conclusion, title);
+  console.log('Updating the GithubCheck', conclusion, title);
 
-  // AzurePipelines doesn't support multiline variables.
-  // All new-line characters are replaced with `;`
-  const botKey = STREAMLABS_BOT_KEY.replace(/;/g, '\n');
-
-  const [owner, repo] = BUILD_REPOSITORY_NAME.split('/');
-  const github = new GithubClient(STREAMLABS_BOT_ID, botKey, owner, repo);
+  const summary = `[Build Url](https://dev.azure.com/streamlabs/Streamlabs%20OBS/_build/results?buildId=${BUILD_BUILDID}&view=logs&j=${SYSTEM_JOBID})`;
 
   try {
+    const github = await getGithubClient();
     await github.login();
     await github.postCheck({
       name: 'Screenshots',
       head_sha: commitSHA,
-      conclusion: 'success',
+      conclusion,
       completed_at: new Date().toISOString(),
       details_url: screenshotsUrl || 'https://github.com/stream-labs/streamlabs-obs',
       output: {
-        title: title,
-        summary: ''
-      }
+        title,
+        summary,
+      },
     });
   } catch (e) {
-    console.error('Unable to update GithubCheck status');
+    console.log('Unable to update GithubCheck status');
     console.error(e);
   }
-
-}
-
-/**
- * exec sync or die
- */
-function exec(cmd) {
-  try {
-    console.log('RUN', cmd);
-    return execSync(cmd, { stdio: [0, 1, 2] });
-  } catch (e) {
-    console.error(e);
-    process.exit(1);
-  }
-}
-
-function getCommitSHA() {
-  // fetching the commit SHA
-  const lastCommits = execSync('git log -n 2 --pretty=oneline')
-    .toString()
-    .split('\n')
-    .map(log => log.split(' ')[0]);
-
-  // the repo is in the detached state for CI
-  // we need to take a one commit before to take a commit that has been associated to the PR
-  return CI ? lastCommits[1] : lastCommits[0];
 }
 
 async function uploadScreenshots() {
@@ -165,12 +149,12 @@ async function uploadScreenshots() {
     return;
   }
 
-  console.info(`Uploading screenshots to the s3 bucket`);
+  console.info('Uploading screenshots to the s3 bucket');
   const Bucket = AWS_BUCKET;
   const awsCredentials = new AWS.Credentials(AWS_ACCESS_KEY, AWS_SECRET_KEY);
-  const s3Options = {credentials : awsCredentials};
+  const s3Options = { credentials: awsCredentials };
   const s3Client = new AWS.S3(s3Options);
-  const bucketDir = BUILD_BUILD_ID || uuid();
+  const bucketDir = BUILD_BUILDID || uuid();
 
   try {
     const files = await recursiveReadDir(CONFIG.dist);
@@ -180,10 +164,10 @@ async function uploadScreenshots() {
       const stream = fs.createReadStream(filePath);
       const params = {
         Bucket,
-        Key : `${bucketDir}/${relativePath}`,
+        Key: `${bucketDir}/${relativePath}`,
         ContentType: 'text/html',
-        ACL : 'public-read',
-        Body : stream
+        ACL: 'public-read',
+        Body: stream,
       };
       await s3Client.upload(params).promise();
     }
@@ -194,5 +178,18 @@ async function uploadScreenshots() {
     console.error('Failed to upload screenshots');
     console.error(e);
   }
+}
 
+/**
+ * returns github client in the logged-in state
+ */
+async function getGithubClient() {
+  // AzurePipelines doesn't support multiline variables.
+  // All new-line characters are replaced with `;`
+  const botKey = STREAMLABS_BOT_KEY.replace(/;/g, '\n');
+
+  const [owner, repo] = BUILD_REPOSITORY_NAME.split('/');
+  const github = new GithubClient(STREAMLABS_BOT_ID, botKey, owner, repo);
+  await github.login();
+  return github;
 }

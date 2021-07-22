@@ -30,6 +30,8 @@ export enum WidgetType {
   SubGoal = 15,
   StarsGoal = 16,
   SupporterGoal = 17,
+  CharityGoal = 18,
+  Poll = 19,
 }
 
 export const WidgetTesters: IWidgetTester[] = [
@@ -38,7 +40,7 @@ export const WidgetTesters: IWidgetTester[] = [
     url(host, platform) {
       return `https://${host}/api/v5/slobs/test/${platform}_account/follow`;
     },
-    platforms: ['twitch', 'mixer'],
+    platforms: ['twitch', 'facebook'],
   },
   {
     name: 'Subscriber',
@@ -52,7 +54,7 @@ export const WidgetTesters: IWidgetTester[] = [
     url(host, platform) {
       return `https://${host}/api/v5/slobs/test/${platform}_account/subscription`;
     },
-    platforms: ['twitch', 'mixer'],
+    platforms: ['twitch'],
   },
   {
     name: 'Membership',
@@ -66,7 +68,7 @@ export const WidgetTesters: IWidgetTester[] = [
     url(host) {
       return `https://${host}/api/v5/slobs/test/streamlabs/donation`;
     },
-    platforms: ['twitch', 'youtube', 'mixer', 'facebook'],
+    platforms: ['twitch', 'youtube', 'facebook', 'tiktok'],
   },
   {
     name: 'Bits',
@@ -240,6 +242,21 @@ export const WidgetDefinitions: { [x: number]: IWidget } = {
     anchor: AnchorPoint.SouthWest,
   },
 
+  [WidgetType.CharityGoal]: {
+    name: 'Streamlabs Charity Goal',
+    url(host, token) {
+      return `https://${host}/widgets/streamlabs-charity-donation-goal?token=${token}`;
+    },
+
+    width: 600,
+    height: 200,
+
+    x: 0,
+    y: 1,
+
+    anchor: AnchorPoint.SouthWest,
+  },
+
   [WidgetType.DonationTicker]: {
     name: 'Donation Ticker',
     url(host, token) {
@@ -389,6 +406,20 @@ export const WidgetDefinitions: { [x: number]: IWidget } = {
 
     anchor: AnchorPoint.North,
   },
+  [WidgetType.Poll]: {
+    name: 'Poll',
+    url(host, token) {
+      return `https://${host}/widgets/poll/${token}`;
+    },
+
+    width: 800,
+    height: 400,
+
+    x: 0.5,
+    y: 0.5,
+
+    anchor: AnchorPoint.Center,
+  },
 };
 
 export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisplayData } => ({
@@ -411,15 +442,15 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     description: $t('Set a goal for your viewers to help you reach.'),
     demoVideo: false,
     demoFilename: 'source-follower-goal.png',
-    platforms: new Set(['twitch', 'mixer']),
-    supportList: [$t('Twitch Follows'), $t('Mixer Follows')],
+    platforms: new Set(['twitch', 'facebook']),
+    supportList: [$t('Twitch Follows'), $t('Facebook Follows')],
   },
   [WidgetType.SubscriberGoal]: {
     name: $t('Subscription Goal'),
     description: $t('Set a goal for your viewers to help you reach.'),
     demoVideo: false,
     demoFilename: 'source-follower-goal.png',
-    supportList: [$t('Youtube Subscribers')],
+    supportList: [$t('YouTube Subscribers')],
     platforms: new Set(['youtube']),
   },
   [WidgetType.SubGoal]: {
@@ -427,8 +458,8 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     description: $t('Set a goal for your viewers to help you reach.'),
     demoVideo: false,
     demoFilename: 'source-follower-goal.png',
-    supportList: [$t('Twitch Subscribers'), $t('Youtube Members'), $t('Mixer Subscriptions')],
-    platforms: new Set(['twitch', 'youtube', 'mixer']),
+    supportList: [$t('Twitch Subscribers'), $t('YouTube Members')],
+    platforms: new Set(['twitch', 'youtube']),
   },
   [WidgetType.BitGoal]: {
     name: $t('Bit Goal'),
@@ -454,8 +485,16 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     supportList: [$t('Facebook Supporters')],
     platforms: new Set(['facebook']),
   },
+  [WidgetType.CharityGoal]: {
+    name: $t('Streamlabs Charity Goal'),
+    description: $t('Set a goal for your viewers to help you reach.'),
+    demoVideo: true,
+    demoFilename: 'source-donation-goal.mp4',
+    supportList: [$t('Streamlabs Charity Donations')],
+    platforms: new Set(['twitch', 'youtube', 'facebook']),
+  },
   [WidgetType.DonationTicker]: {
-    name: $t('Donation Ticker'),
+    name: $t('Tip Ticker'),
     description: $t('Show off your most recent donations to your viewers.'),
     demoVideo: true,
     demoFilename: 'source-donation-ticker.mp4',
@@ -466,7 +505,7 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     description: $t("Include your channel's chat into your stream."),
     demoVideo: true,
     demoFilename: 'source-chatbox.mp4',
-    supportList: [$t('Twitch chat'), $t('Youtube chat'), $t('Mixer chat'), $t('Facebook chat')],
+    supportList: [$t('Twitch chat'), $t('YouTube chat'), $t('Facebook chat')],
   },
   [WidgetType.EventList]: {
     name: $t('Event List'),
@@ -494,7 +533,7 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     description: $t('Show off your viewers from multiple platforms.'),
     demoVideo: false,
     demoFilename: 'source-viewer-count.png',
-    supportList: ['Youtube', 'Twitch', 'Mixer'],
+    supportList: ['YouTube', 'Twitch', 'Facebook'],
   },
   [WidgetType.StreamBoss]: {
     name: $t('Stream Boss'),
@@ -509,6 +548,7 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     demoVideo: true,
     demoFilename: 'source-credits.mp4',
     supportList: [$t('New Followers'), $t('New Subscribers'), $t('Cheers'), $t('Donations')],
+    platforms: new Set(['twitch', 'youtube']),
   },
   [WidgetType.SponsorBanner]: {
     name: $t('Sponsor Banner'),
@@ -535,6 +575,13 @@ export const WidgetDisplayData = (platform?: string): { [x: number]: IWidgetDisp
     ),
     demoVideo: false,
     demoFilename: 'source-sponsor-banner.png',
+    supportList: [],
+  },
+  [WidgetType.Poll]: {
+    name: $t('Poll'),
+    description: $t('Let your viewers vote on a result'),
+    demoVideo: false,
+    demoFilename: 'poll.png',
     supportList: [],
   },
 });

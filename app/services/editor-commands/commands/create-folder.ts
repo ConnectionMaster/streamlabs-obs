@@ -13,6 +13,7 @@ export class CreateFolderCommand extends Command {
 
   constructor(private sceneId: string, private name: string, private items?: Selection) {
     super();
+    if (this.items) this.items.freeze();
   }
 
   get description() {
@@ -20,7 +21,7 @@ export class CreateFolderCommand extends Command {
   }
 
   execute() {
-    const folder = this.scenesService
+    const folder = this.scenesService.views
       .getScene(this.sceneId)
       .createFolder(this.name, { id: this.folderId });
     this.folderId = folder.id;
@@ -38,6 +39,6 @@ export class CreateFolderCommand extends Command {
   rollback() {
     if (this.moveToFolderSubCommand) this.moveToFolderSubCommand.rollback();
 
-    this.scenesService.getScene(this.sceneId).removeFolder(this.folderId);
+    this.scenesService.views.getScene(this.sceneId).removeFolder(this.folderId);
   }
 }

@@ -6,6 +6,8 @@ import { WindowsService } from 'services/windows';
 import { ScalableRectangle } from 'util/ScalableRectangle';
 import { SelectionService } from 'services/selection';
 import { EditorCommandsService } from 'services/editor-commands';
+import { IMouseEvent } from 'services/editor';
+import { byOS, OS } from './operating-systems';
 
 /*
  * An edge looks like:
@@ -88,32 +90,41 @@ export class DragHandler {
    * @param startEvent the mouse event for this drag
    * @param options drag handler options
    */
-  constructor(startEvent: MouseEvent, options: IDragHandlerOptions) {
+  constructor(startEvent: IMouseEvent, options: IDragHandlerOptions) {
     // Load some settings we care about
-    this.snapEnabled = this.settingsService.state.General.SnappingEnabled;
-    this.renderedSnapDistance = this.settingsService.state.General.SnapDistance;
-    this.screenSnapping = this.settingsService.state.General.ScreenSnapping;
-    this.sourceSnapping = this.settingsService.state.General.SourceSnapping;
-    this.centerSnapping = this.settingsService.state.General.CenterSnapping;
+    this.snapEnabled = this.settingsService.views.values.General.SnappingEnabled;
+    this.renderedSnapDistance = this.settingsService.views.values.General.SnapDistance;
+    this.screenSnapping = this.settingsService.views.values.General.ScreenSnapping;
+    this.sourceSnapping = this.settingsService.views.values.General.SourceSnapping;
+    this.centerSnapping = this.settingsService.views.values.General.CenterSnapping;
 
     // Load some attributes about the video canvas
     this.baseWidth = this.videoService.baseWidth;
     this.baseHeight = this.videoService.baseHeight;
     this.displaySize = options.displaySize;
     this.displayOffset = options.displayOffset;
-    this.scaleFactor = this.windowsService.state.main.scaleFactor;
+
+    // We don't need to adjust mac coordinates for scale factor
+    this.scaleFactor = byOS({
+      [OS.Windows]: this.windowsService.state.main.scaleFactor,
+      [OS.Mac]: 1,
+    });
+
     this.snapDistance =
       (this.renderedSnapDistance * this.scaleFactor * this.baseWidth) / this.displaySize.x;
 
     // Load some attributes about sources
-    this.draggedSource = this.selectionService.getLastSelected();
-    this.otherSources = this.selectionService
+    const lastDragged = this.selectionService.views.globalSelection.getLastSelected();
+
+    if (lastDragged.isItem()) this.draggedSource = lastDragged;
+
+    this.otherSources = this.selectionService.views.globalSelection
       .clone()
       .invert()
       .getItems()
       .filter(item => item.isVisualSource);
 
-    const rect = this.draggedSource.getRectangle();
+    const rect = new ScalableRectangle(this.draggedSource.rectangle);
     rect.normalize();
 
     const pos = this.mousePositionInCanvasSpace(startEvent);
@@ -126,8 +137,8 @@ export class DragHandler {
   }
 
   // Should be called when the mouse moves
-  move(event: MouseEvent) {
-    const rect = this.draggedSource.getRectangle();
+  move(event: IMouseEvent) {
+    const rect = new ScalableRectangle(this.draggedSource.rectangle);
     const denormalize = rect.normalize();
 
     const mousePos = this.mousePositionInCanvasSpace(event);
@@ -177,12 +188,12 @@ export class DragHandler {
 
     this.editorCommandsService.executeCommand(
       'MoveItemsCommand',
-      this.selectionService.getActiveSelection(),
+      this.selectionService.views.globalSelection,
       { x: deltaX, y: deltaY },
     );
   }
 
-  private mousePositionInCanvasSpace(event: MouseEvent): IVec2 {
+  private mousePositionInCanvasSpace(event: IMouseEvent): IVec2 {
     return this.pageSpaceToCanvasSpace({
       x: event.pageX - this.displayOffset.x,
       y: event.pageY - this.displayOffset.y,
@@ -276,7 +287,7 @@ export class DragHandler {
     // Source edge snapping:
     if (this.sourceSnapping) {
       this.otherSources.forEach(source => {
-        const edges = this.generateSourceEdges(source.getRectangle());
+        const edges = this.generateSourceEdges(new ScalableRectangle(source.rectangle));
 
         // The dragged source snaps to the adjacent edge
         // of other sources.  So the right edge snaps to

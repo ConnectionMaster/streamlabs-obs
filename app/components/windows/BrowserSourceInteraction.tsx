@@ -1,11 +1,12 @@
 import TsxComponent from 'components/tsx-component';
 import { Component } from 'vue-property-decorator';
 import ModalLayout from '../ModalLayout.vue';
-import Display from 'components/shared/Display.vue';
+import { Display } from 'components/shared/ReactComponent';
 import { WindowsService } from 'services/windows';
 import { Inject } from 'services';
 import Utils from 'services/utils';
 import { SourcesService } from 'services/sources';
+import { byOS, OS } from 'util/operating-systems';
 
 @Component({})
 export default class BrowserSourceInteraction extends TsxComponent<{}> {
@@ -22,7 +23,7 @@ export default class BrowserSourceInteraction extends TsxComponent<{}> {
   }
 
   get source() {
-    return this.sourcesService.getSource(this.sourceId);
+    return this.sourcesService.views.getSource(this.sourceId);
   }
 
   currentRegion: IRectangle = { x: 0, y: 0, width: 1, height: 1 };
@@ -32,7 +33,7 @@ export default class BrowserSourceInteraction extends TsxComponent<{}> {
   }
 
   eventLocationInSourceSpace(e: MouseEvent): IVec2 {
-    const factor = this.windowsService.state.child.scaleFactor;
+    const factor = byOS({ [OS.Windows]: this.windowsService.state.child.scaleFactor, [OS.Mac]: 1 });
 
     return {
       x:
@@ -101,7 +102,7 @@ export default class BrowserSourceInteraction extends TsxComponent<{}> {
     this.$refs.eventDiv.focus();
   }
 
-  render(h: Function) {
+  render() {
     return (
       <ModalLayout showControls={false} contentStyles={{ padding: '0px' }}>
         <div
@@ -113,10 +114,15 @@ export default class BrowserSourceInteraction extends TsxComponent<{}> {
           onKeydown={this.onKeydown}
           onKeyup={this.onKeyup}
           tabindex="0"
-          style={{ outline: 'none' }}
+          style={{ outline: 'none', height: '100%' }}
           ref="eventDiv"
         >
-          <Display sourceId={this.sourceId} onOutputResize={this.onOutputResize} />
+          <Display
+            componentProps={{
+              sourceId: this.sourceId,
+              onOutputResize: (rect: IRectangle) => this.onOutputResize(rect),
+            }}
+          />
         </div>
       </ModalLayout>
     );

@@ -1,0 +1,89 @@
+@import "../../styles/index.less";
+
+.container {
+  padding: 0 16px;
+  height: 150px;
+  overflow: none;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.flex-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.category-header {
+  :global(.checkbox label) {
+    font-weight: 500;
+    font-family: 'Roboto', sans-serif;
+    font-size: 16px;
+    margin-bottom: 24px;
+  }
+}
+
+.resub-options {
+  height: 104px;
+  flex-wrap: wrap;
+  display: flex;
+  flex-direction: column;
+
+  div {
+    height: 26px;
+  }
+}
+
+.minimum {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.months-input-container {
+  display: flex;
+  width: 55%;
+}
+
+.months-input {
+  width: 60px;
+  margin-left: 10px;
+
+  input {
+    height: 27px !important;
+    position: relative;
+    top: -3px;
+  }
+
+  :global(.arrows) {
+    top: -4px !important;
+  }
+}
+
+.months-label {
+  margin-left: 10px;
+}
+
+.filter-section() {
+  width: 100%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  background-color: var(--section-alt);
+  border-radius: 4px;
+}
+
+.general-filters {
+  height: 140px;
+  .filter-section();
+}
+
+.sub-filters {
+  margin-top: 16px;
+  height: 220px;
+  .filter-section();
+}
+
+.half-width {
+  width: 50%;
+}

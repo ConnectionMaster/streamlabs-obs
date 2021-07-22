@@ -9,18 +9,31 @@ import { I18nServiceApi } from './i18n-api';
 import * as obs from '../../../obs-api';
 import * as fs from 'fs';
 import path from 'path';
+import Utils from '../utils';
+import fallback from '../../i18n/fallback';
 
 interface II18nState {
   locale: string;
 }
 
+/**
+ * get localized string from dictionary
+ * throw an error if string is not in the dictionary
+ */
 export function $t(...args: any[]): string {
   const vueI18nInstance = I18nService.vueI18nInstance;
-
-  // some tests try to call this function before dictionaries have been loaded
-  if (!vueI18nInstance) return args[0];
-
   return vueI18nInstance.t.call(I18nService.vueI18nInstance, ...args);
+}
+
+/**
+ * get localized string from dictionary if exists
+ * returns a keypath if localized version of string doesn't exist
+ */
+export function $translateIfExist(str: string): string {
+  // TODO: Call into worker window instead
+  // const vueI18nInstance = I18nService.vueI18nInstance;
+  // if (vueI18nInstance.te(str)) return $t(str);
+  return str;
 }
 
 /**
@@ -93,13 +106,33 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
     });
   }
 
+  /**
+   * Upload translations from the state to the vueI18nInstance
+   */
+  static async uploadTranslationsToVueI18n(async = false) {
+    const vueI18nInstance = I18nService.vueI18nInstance;
+    const i18nService: I18nService = I18nService.instance;
+    const dictionaries = async
+      ? await i18nService.actions.return.getLoadedDictionaries()
+      : i18nService.getLoadedDictionaries();
+
+    Object.keys(dictionaries).forEach(locale => {
+      I18nService.vueI18nInstance.setLocaleMessage(locale, dictionaries[locale]);
+    });
+
+    vueI18nInstance.locale = i18nService.state.locale;
+    vueI18nInstance.fallbackLocale = async
+      ? await i18nService.actions.return.getFallbackLocale()
+      : i18nService.getFallbackLocale();
+  }
+
   private availableLocales: Dictionary<string> = {};
   private loadedDictionaries: Dictionary<Dictionary<string>> = {};
   private isLoaded = false;
 
   @Inject() fileManagerService: FileManagerService;
 
-  async load() {
+  load() {
     if (this.isLoaded) return;
     const i18nPath = this.getI18nPath();
 
@@ -127,12 +160,12 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
 
     // load dictionary if not loaded
     if (!this.loadedDictionaries[locale]) {
-      await this.loadDictionary(locale);
+      this.loadDictionary(locale);
     }
 
     // load fallback dictionary
     if (!this.loadedDictionaries[fallbackLocale]) {
-      await this.loadDictionary(fallbackLocale);
+      this.loadDictionary(fallbackLocale);
     }
 
     // setup locale in libobs
@@ -140,6 +173,7 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
 
     this.SET_LOCALE(locale);
 
+    I18nService.uploadTranslationsToVueI18n();
     this.isLoaded = true;
   }
 
@@ -153,7 +187,7 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
 
   setLocale(locale: string) {
     this.SET_LOCALE(locale);
-    electron.remote.app.relaunch();
+    electron.remote.app.relaunch({ args: [] });
     electron.remote.app.quit();
   }
 
@@ -182,8 +216,15 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
     return path.join(electron.remote.app.getAppPath(), 'app/i18n');
   }
 
-  private async loadDictionary(locale: string): Promise<Dictionary<string>> {
+  private loadDictionary(locale: string): Dictionary<string> {
     if (this.loadedDictionaries[locale]) return this.loadedDictionaries[locale];
+
+    if (locale === 'en-US') {
+      // en-US is included in the webpack bundle, so we don't
+      // load it from disk on demand.
+      this.loadedDictionaries['en-US'] = fallback;
+      return fallback;
+    }
 
     const i18nPath = this.getI18nPath();
     const dictionaryFiles = fs
@@ -191,12 +232,18 @@ export class I18nService extends PersistentStatefulService<II18nState> implement
       .filter(fileName => fileName.split('.')[1] === 'json');
 
     const dictionary: Dictionary<string> = {};
+
     for (const fileName of dictionaryFiles) {
-      Object.assign(
-        dictionary,
-        JSON.parse(this.fileManagerService.read(`${i18nPath}/${locale}/${fileName}`)),
-      );
+      const filePath = `${i18nPath}/${locale}/${fileName}`;
+      let json: Dictionary<string>;
+      try {
+        json = JSON.parse(this.fileManagerService.read(filePath));
+      } catch (e: unknown) {
+        throw new Error(`Invalid JSON in ${filePath}`);
+      }
+      Object.assign(dictionary, json);
     }
+
     this.loadedDictionaries[locale] = dictionary;
     return dictionary;
   }

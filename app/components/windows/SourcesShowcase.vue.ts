@@ -5,18 +5,21 @@ import ModalLayout from 'components/ModalLayout.vue';
 import { WindowsService } from 'services/windows';
 import AddSourceInfo from './AddSourceInfo.vue';
 import {
-  SourcesService,
-  TSourceType,
-  TPropertiesManager,
   SourceDisplayData,
+  SourcesService,
+  TPropertiesManager,
+  TSourceType,
 } from 'services/sources';
 import { ScenesService } from 'services/scenes';
 import { UserService } from 'services/user';
-import { WidgetsService, WidgetType, WidgetDisplayData } from 'services/widgets';
-import { PlatformAppsService, IAppSource } from 'services/platform-apps';
+import { WidgetDisplayData, WidgetsService, WidgetType } from 'services/widgets';
+import { IAppSource, PlatformAppsService } from 'services/platform-apps';
 import omit from 'lodash/omit';
-import { PrefabsService } from '../../services/prefabs';
 import { CustomizationService } from 'services/customization';
+import { byOS, OS } from 'util/operating-systems';
+import Scrollable from 'components/shared/Scrollable';
+import { getPlatformService } from '../../services/platforms';
+import { $i } from 'services/utils';
 
 type TInspectableSource = TSourceType | WidgetType | 'streamlabel' | 'app_source' | string;
 
@@ -32,30 +35,38 @@ interface ISourceDefinition {
   type: TInspectableSource;
   name: string;
   description: string;
-  prefabId?: string; // if is defined than the source wil be created from the prefab
 }
 
 @Component({
   components: {
     ModalLayout,
     AddSourceInfo,
+    Scrollable,
   },
 })
 export default class SourcesShowcase extends Vue {
   @Inject() sourcesService: SourcesService;
-  @Inject() userService: UserService;
+  @Inject() userService!: UserService;
   @Inject() widgetsService: WidgetsService;
   @Inject() scenesService: ScenesService;
   @Inject() windowsService: WindowsService;
   @Inject() platformAppsService: PlatformAppsService;
-  @Inject() prefabsService: PrefabsService;
   @Inject() customizationService: CustomizationService;
 
   widgetTypes = WidgetType;
   essentialWidgetTypes = new Set([this.widgetTypes.AlertBox]);
+  private primaryPlatformService = this.userService.state.auth
+    ? getPlatformService(this.userService.state.auth.primaryPlatform)
+    : null;
 
   iterableWidgetTypes = Object.keys(this.widgetTypes)
     .filter((type: string) => isNaN(Number(type)))
+    .filter(type => {
+      // show only supported widgets
+      const whitelist = this.primaryPlatformService?.widgetsWhitelist;
+      if (!whitelist) return true;
+      return whitelist.includes(WidgetType[type]);
+    })
     .sort((a: string, b: string) => {
       return this.essentialWidgetTypes.has(this.widgetTypes[a]) ? -1 : 1;
     });
@@ -70,15 +81,15 @@ export default class SourcesShowcase extends Vue {
     });
   }
 
-  selectPrefab(prefabId: string) {
-    this.prefabsService.getPrefab(prefabId).addToScene(this.scenesService.activeSceneId);
-    this.windowsService.closeChildWindow();
-  }
-
   getSrc(type: string) {
     const theme = this.demoMode;
     const dataSource = this.widgetData(type) ? this.widgetData : this.sourceData;
-    return require(`../../../media/source-demos/${theme}/${dataSource(type).demoFilename}`);
+    return $i(`source-demos/${theme}/${dataSource(type).demoFilename}`);
+  }
+
+  getLoginSrc() {
+    const theme = this.demoMode;
+    return require(`../../../media/images/sleeping-kevin-${theme}.png`);
   }
 
   selectWidget(type: WidgetType) {
@@ -108,14 +119,12 @@ export default class SourcesShowcase extends Vue {
 
   inspectSource(inspectedSource: string, appId?: string, appSourceId?: string) {
     this.inspectedSource = this.inspectedSourceType = inspectedSource;
-    const prefab = this.prefabsService.getPrefab(inspectedSource);
-    if (prefab) this.inspectedSourceType = prefab.getPrefabSourceModel().type;
     if (appId) this.inspectedAppId = appId;
     if (appSourceId) this.inspectedAppSourceId = appSourceId;
   }
 
   get loggedIn() {
-    return this.userService.isLoggedIn();
+    return this.userService.isLoggedIn;
   }
 
   get platform() {
@@ -128,16 +137,16 @@ export default class SourcesShowcase extends Vue {
   }
 
   selectInspectedSource() {
-    if (this.prefabsService.getPrefab(this.inspectedSource)) {
-      this.selectPrefab(this.inspectedSource);
-    } else if (
+    if (
       this.sourcesService.getAvailableSourcesTypes().includes(this.inspectedSource as TSourceType)
     ) {
       this.selectSource(this.inspectedSource as TSourceType);
     } else if (this.inspectedSource === 'streamlabel') {
-      this.selectSource('text_gdiplus', { propertiesManager: 'streamlabels' });
+      this.selectStreamlabel();
     } else if (this.inspectedSource === 'replay') {
       this.selectSource('ffmpeg_source', { propertiesManager: 'replay' });
+    } else if (this.inspectedSource === 'icon_library') {
+      this.selectSource('image_source', { propertiesManager: 'iconLibrary' });
     } else if (this.inspectedSource === 'app_source') {
       this.selectAppSource(this.inspectedAppId, this.inspectedAppSourceId);
     } else {
@@ -145,16 +154,29 @@ export default class SourcesShowcase extends Vue {
     }
   }
 
+  selectStreamlabel() {
+    this.selectSource(byOS({ [OS.Windows]: 'text_gdiplus', [OS.Mac]: 'text_ft2_source' }), {
+      propertiesManager: 'streamlabels',
+    });
+  }
+
   get demoMode() {
     return this.customizationService.isDarkTheme ? 'night' : 'day';
+  }
+
+  get designerMode() {
+    return this.customizationService.views.designerMode;
   }
 
   get availableSources(): ISourceDefinition[] {
     const sourcesList: ISourceDefinition[] = this.sourcesService
       .getAvailableSourcesTypesList()
       .filter(type => {
-        if (type.value === 'text_ft2_source') return false;
-        return !(type.value === 'scene' && this.scenesService.scenes.length <= 1);
+        // Freetype on windows is hidden
+        if (type.value === 'text_ft2_source' && byOS({ [OS.Windows]: true, [OS.Mac]: false })) {
+          return;
+        }
+        return !(type.value === 'scene' && this.scenesService.views.scenes.length <= 1);
       })
       .map(listItem => {
         return {
@@ -165,19 +187,11 @@ export default class SourcesShowcase extends Vue {
         };
       });
 
-    this.prefabsService.getPrefabs().forEach(prefab => {
-      const prefabSourceModel = prefab.getPrefabSourceModel();
-      if (!prefabSourceModel) return;
-      sourcesList.push({
-        id: prefab.id,
-        type: prefabSourceModel.type,
-        name: prefab.name,
-        description: prefab.description,
-        prefabId: prefab.id,
-      });
-    });
-
     return sourcesList;
+  }
+
+  get hasStreamlabel() {
+    return this.primaryPlatformService?.hasCapability('streamlabels');
   }
 
   get inspectedSourceDefinition() {
@@ -207,6 +221,11 @@ export default class SourcesShowcase extends Vue {
   }
 
   getAppAssetUrl(appId: string, asset: string) {
-    return this.platformAppsService.getAssetUrl(appId, asset);
+    return this.platformAppsService.views.getAssetUrl(appId, asset);
+  }
+
+  handleAuth() {
+    this.windowsService.closeChildWindow();
+    this.userService.showLogin();
   }
 }

@@ -17,21 +17,21 @@ export class GroupMenu extends Menu {
   }
 
   appendMenuItems() {
-    const selectionSize = this.selectionService.getSize();
-    const selectedItem = this.selectionService.getItems()[0];
-    const selectedNodes = this.selectionService.getNodes();
+    const selectionSize = this.selectionService.views.globalSelection.getSize();
+    const selectedItem = this.selectionService.views.globalSelection.getItems()[0];
+    const selectedNodes = this.selectionService.views.globalSelection.getNodes();
     const nodesFolders = selectedNodes.map(node => node.parentId || null);
 
     this.append({
       label: $t('Group into Folder'),
       click: () => {
         this.scenesService.showNameFolder({
-          sceneId: this.scenesService.activeSceneId,
-          itemsToGroup: this.selectionService.getIds(),
+          sceneId: this.scenesService.views.activeSceneId,
+          itemsToGroup: this.selectionService.views.globalSelection.getIds(),
           parentId: nodesFolders[0],
         });
       },
-      enabled: this.selectionService.canGroupIntoFolder(),
+      enabled: this.selectionService.views.globalSelection.canGroupIntoFolder(),
     });
 
     this.append({
@@ -39,18 +39,18 @@ export class GroupMenu extends Menu {
       click: () => {
         this.editorCommandsService.executeCommand(
           'RemoveFolderCommand',
-          this.scenesService.activeSceneId,
-          this.selectionService.getFolders()[0].id,
+          this.scenesService.views.activeSceneId,
+          this.selectionService.views.globalSelection.getFolders()[0].id,
         );
       },
-      enabled: this.selectionService.isSceneFolder(),
+      enabled: this.selectionService.views.globalSelection.isSceneFolder(),
     });
 
     this.append({
       label: $t('Group into Scene'),
       click: () => {
         this.scenesService.showNameScene({
-          itemsToGroup: this.selectionService.getIds(),
+          itemsToGroup: this.selectionService.views.globalSelection.getIds(),
         });
       },
       enabled: selectionSize > 1,
@@ -62,7 +62,7 @@ export class GroupMenu extends Menu {
         this.editorCommandsService.executeCommand(
           'UngroupSceneCommand',
           selectedItem.id,
-          this.scenesService.activeSceneId,
+          this.scenesService.views.activeSceneId,
         );
       },
       enabled: (() => {

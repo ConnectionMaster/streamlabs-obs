@@ -9,7 +9,7 @@ import WidgetSettings from './WidgetSettings.vue';
 import { inputComponents } from 'components/shared/inputs';
 import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
 import { $t } from 'services/i18n';
-import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
+import ValidatedForm from 'components/shared/inputs/ValidatedForm';
 
 @Component({
   components: {
@@ -61,9 +61,11 @@ export default class DonationTicker extends WidgetSettings<
   // tslint:disable-next-line:prefer-template
   amountColorTooltip = $t('A hex color for the text of the') + ' {amount} ' + $t('token');
 
-  navItems = [
-    { value: 'manage-list', label: $t('Manage List') },
-    { value: 'font', label: $t('Font Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-list', label: $t('Manage List') },
+      { value: 'font', label: $t('Font Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 }

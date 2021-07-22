@@ -1,5 +1,5 @@
 import { WIDGET_INITIAL_STATE } from './widget-settings';
-import { IWidgetData, IWidgetSettings, WidgetType } from 'services/widgets';
+import { IWidgetData, IWidgetSettings, WidgetDefinitions, WidgetType } from 'services/widgets';
 import { $t } from 'services/i18n';
 import { metadata } from 'components/widgets/inputs/index';
 import { InheritMutations } from 'services/core/stateful-service';
@@ -49,16 +49,13 @@ export interface IStreamBossCreateOptions {
 }
 
 @InheritMutations()
-export abstract class StreamBossService extends BaseGoalService<
-  IStreamBossData,
-  IStreamBossCreateOptions
-> {
+export class StreamBossService extends BaseGoalService<IStreamBossData, IStreamBossCreateOptions> {
   static initialState = WIDGET_INITIAL_STATE;
 
   getApiSettings() {
     return {
       type: WidgetType.StreamBoss,
-      url: `https://${this.getHost()}/widgets/streamboss?token=${this.getWidgetToken()}`,
+      url: WidgetDefinitions[WidgetType.StreamBoss].url(this.getHost(), this.getWidgetToken()),
       previewUrl: `https://${this.getHost()}/widgets/streamboss?token=${this.getWidgetToken()}`,
       settingsUpdateEvent: 'streambossSettingsUpdate',
       goalCreateEvent: 'newStreamboss',
@@ -101,15 +98,14 @@ export abstract class StreamBossService extends BaseGoalService<
             title: $t('Overkill'),
             value: 'overkill',
             description: $t(
-              "The boss' health will change depending on how much damage is dealt on the killing blow." +
-                "Excess damage multiplied by the multiplier will be the boss' new health. I.e. 150 damage with 100 " +
-                // tslint:disable-next-line:max-line-length
-                'health remaining and a set multiplier of 3 would result in the new boss having 150 health on spawn. \n' +
-                'Set your multiplier below.',
+              "The boss' health will change depending on how much damage is dealt on the killing blow. Excess damage multiplied by the multiplier will be the boss' new health. I.e. 150 damage with 100 health remaining and a set multiplier of 3 would result in the new boss having 150 health on spawn. \n Set your multiplier below.",
             ),
           },
         ],
       }),
+      incr_amount: metadata.number({ title: $t('Increment Amount'), isInteger: true }),
+      overkill_multiplier: metadata.number({ title: $t('Overkill Multiplier'), isInteger: true }),
+      overkill_min: metadata.number({ title: $t('Overkill Min Health'), isInteger: true }),
 
       // SETTINGS
 
@@ -143,22 +139,6 @@ export abstract class StreamBossService extends BaseGoalService<
         title: $t('Transparent Background'),
       }),
 
-      follow_multiplier: metadata.number({
-        title: $t('Damage Per Follower'),
-      }),
-
-      bit_multiplier: metadata.number({
-        title: $t('Damage Per Bit'),
-      }),
-
-      sub_multiplier: metadata.number({
-        title: $t('Damage Per Subscriber'),
-      }),
-
-      donation_multiplier: metadata.number({
-        title: $t('Damage Per Dollar Donation'),
-      }),
-
       background_color: metadata.color({
         title: $t('Background Color'),
       }),
@@ -183,5 +163,25 @@ export abstract class StreamBossService extends BaseGoalService<
         title: $t('Font'),
       }),
     });
+  }
+
+  multipliersByPlatform(): { key: string; title: string; isInteger: boolean }[] {
+    const platform = this.userService.platform.type;
+    return {
+      twitch: [
+        { key: 'bit_multiplier', title: $t('Damage Per Bit'), isInteger: true },
+        { key: 'sub_multiplier', title: $t('Damage Per Subscriber'), isInteger: true },
+        { key: 'follow_multiplier', title: $t('Damage Per Follower'), isInteger: true },
+      ],
+      facebook: [
+        { key: 'follow_multiplier', title: $t('Damage Per Follower'), isInteger: true },
+        { key: 'sub_multiplier', title: $t('Damage Per Subscriber'), isInteger: true },
+      ],
+      youtube: [
+        { key: 'sub_multiplier', title: $t('Damage Per Membership'), isInteger: true },
+        { key: 'superchat_multiplier', title: $t('Damage Per Superchat Dollar'), isInteger: true },
+        { key: 'follow_multiplier', title: $t('Damage Per Subscriber'), isInteger: true },
+      ],
+    }[platform];
   }
 }

@@ -1,10 +1,10 @@
 import Vue from 'vue';
 import { Component, Prop } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
-import { TransitionsService, ETransitionType } from 'services/transitions';
+import { TransitionsService, ETransitionType, TRANSITION_DURATION_MAX } from 'services/transitions';
 import * as inputComponents from 'components/obs/inputs';
 import { TObsFormData } from 'components/obs/inputs/ObsInput';
-import GenericForm from 'components/obs/inputs/GenericForm.vue';
+import GenericForm from 'components/obs/inputs/GenericForm';
 import HFormGroup from 'components/shared/inputs/HFormGroup.vue';
 import { EditorCommandsService } from 'services/editor-commands';
 import { debounce } from 'lodash-decorators';
@@ -19,10 +19,10 @@ import isEqual from 'lodash/isEqual';
   },
 })
 export default class SceneTransitions extends Vue {
-  @Inject() transitionsService: TransitionsService;
+  @Inject() transitionsService!: TransitionsService;
   @Inject() private editorCommandsService: EditorCommandsService;
 
-  @Prop() transitionId: string;
+  @Prop() transitionId!: string;
 
   propertiesChanged: Subscription;
 
@@ -46,7 +46,7 @@ export default class SceneTransitions extends Vue {
   }
 
   get typeOptions() {
-    return this.transitionsService.getTypes();
+    return this.transitionsService.views.getTypes();
   }
 
   get durationModel(): number {
@@ -57,7 +57,7 @@ export default class SceneTransitions extends Vue {
   @debounce(500)
   set durationModel(value: number) {
     this.editorCommandsService.executeCommand('EditTransitionCommand', this.transitionId, {
-      duration: value,
+      duration: Math.min(value, TRANSITION_DURATION_MAX),
     });
   }
 

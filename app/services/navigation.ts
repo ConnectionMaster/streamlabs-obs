@@ -3,20 +3,21 @@ import { Subject } from 'rxjs';
 
 export type TAppPage =
   | 'Studio'
-  | 'Dashboard'
-  | 'Live'
   | 'Onboarding'
   | 'BrowseOverlays'
   | 'PatchNotes'
-  | 'Chatbot'
   | 'PlatformAppMainPage'
   | 'PlatformAppStore'
-  | 'Help'
-  | 'CreatorSites';
+  | 'PlatformMerge'
+  | 'LayoutEditor'
+  | 'PrimeExpiration'
+  | 'AlertboxLibrary'
+  | 'Highlighter'
+  | 'Grow';
 
 interface INavigationState {
   currentPage: TAppPage;
-  params: Dictionary<string>;
+  params: Dictionary<string | boolean>;
 }
 
 export class NavigationService extends StatefulService<INavigationState> {
@@ -27,13 +28,13 @@ export class NavigationService extends StatefulService<INavigationState> {
 
   navigated = new Subject<INavigationState>();
 
-  navigate(page: TAppPage, params: Dictionary<string> = {}) {
+  navigate(page: TAppPage, params: Dictionary<string | boolean> = {}) {
     this.NAVIGATE(page, params);
     this.navigated.next(this.state);
   }
 
   @mutation()
-  private NAVIGATE(page: TAppPage, params: Dictionary<string>) {
+  private NAVIGATE(page: TAppPage, params: Dictionary<string | boolean>) {
     this.state.currentPage = page;
     this.state.params = params;
   }

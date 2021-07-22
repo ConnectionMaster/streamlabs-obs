@@ -1,7 +1,7 @@
 import cloneDeep from 'lodash/cloneDeep';
 import { HostsService } from 'services/hosts';
 import { Inject } from '../../core/injector';
-import { UserService } from 'services/user';
+import { UserService, LoginLifecycle } from 'services/user';
 import { handleResponse, authorizedHeaders } from '../../../util/requests';
 import {
   IWidgetApiSettings,
@@ -47,7 +47,17 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
 
   abstract getApiSettings(): IWidgetApiSettings;
 
-  init() {
+  lifecycle: LoginLifecycle;
+
+  async init() {
+    this.lifecycle = await this.userService.withLifecycle({
+      init: () => Promise.resolve(this.subToWebsocket()),
+      destroy: () => Promise.resolve(this.RESET_WIDGET_DATA()),
+      context: this,
+    });
+  }
+
+  subToWebsocket() {
     this.websocketService.socketEvent.subscribe(event => {
       const apiSettings = this.getApiSettings();
       if (event.type === 'alertProfileChanged') this.onWidgetThemeChange();
@@ -91,7 +101,7 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
         url: apiSettings.dataFetchUrl,
         method: 'GET',
       });
-    } catch (e) {
+    } catch (e: unknown) {
       if (isFirstLoading) this.SET_LOADING_STATE('fail');
       throw e;
     }

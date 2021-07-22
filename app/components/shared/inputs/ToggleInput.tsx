@@ -5,13 +5,14 @@ import BoolInput from './BoolInput';
 
 @Component({})
 export default class ToggleInput extends BoolInput {
-  render(h: Function) {
+  render() {
     return (
       <div
         onClick={this.handleClick}
         class={cx(styles.toggleinputContainer, { [styles.active]: this.value })}
         data-role="input"
         data-type="toggle"
+        data-value={this.value}
         data-name={this.options.name}
       >
         <div class={styles.toggleinputTrack} />

@@ -1,9 +1,11 @@
-import TsxComponent from 'components/tsx-component';
-import { Component, Prop } from 'vue-property-decorator';
-import { OnboardingStep, ProgressBar } from 'streamlabs-beaker';
-import { Inject } from '../../../services/core/injector';
-import { AutoConfigService, IConfigProgress } from '../../../services/auto-config';
+import TsxComponent, { createProps } from 'components/tsx-component';
+import { Component } from 'vue-property-decorator';
+import SmoothProgressBar from 'components/shared/SmoothProgressBar';
+import { Inject } from 'services/core/injector';
+import { AutoConfigService, IConfigProgress } from 'services/auto-config';
 import { $t } from 'services/i18n';
+import { VideoEncodingOptimizationService } from 'services/video-encoding-optimizations';
+import commonStyles from './Common.m.less';
 
 interface IConfigStepPresentation {
   description: string;
@@ -11,22 +13,24 @@ interface IConfigStepPresentation {
   percentage?: number;
 }
 
-@Component({})
-export default class Optimize extends TsxComponent<{
-  continue: () => void;
-  setProcessing: (bool: boolean) => void;
-}> {
+class OptimizeProps {
+  continue: () => void = () => {};
+  setProcessing: (bool: boolean) => void = () => {};
+}
+
+@Component({ props: createProps(OptimizeProps) })
+export default class Optimize extends TsxComponent<OptimizeProps> {
   @Inject() autoConfigService: AutoConfigService;
-  @Prop() continue: () => void;
-  @Prop() setProcessing: (bool: boolean) => void;
+  @Inject() videoEncodingOptimizationService: VideoEncodingOptimizationService;
 
   stepInfo: IConfigStepPresentation = null;
   optimizing = false;
 
   optimize() {
     this.optimizing = true;
-    this.setProcessing(true);
-    this.autoConfigService.start(progress => {
+    this.props.setProcessing(true);
+
+    const sub = this.autoConfigService.configProgress.subscribe(progress => {
       if (
         progress.event === 'starting_step' ||
         progress.event === 'progress' ||
@@ -42,12 +46,18 @@ export default class Optimize extends TsxComponent<{
           };
         }
       } else if (progress.event === 'done') {
-        this.setProcessing(false);
-        this.continue();
+        // We also default on video encoding optimizations
+        this.videoEncodingOptimizationService.actions.useOptimizedProfile(true);
+
+        this.props.setProcessing(false);
+        sub.unsubscribe();
+        this.props.continue();
       } else {
-        this.setProcessing(false);
+        this.props.setProcessing(false);
       }
     });
+
+    this.autoConfigService.start();
   }
 
   get steps() {
@@ -85,30 +95,34 @@ export default class Optimize extends TsxComponent<{
     }[progress.description];
   }
 
-  render(h: Function) {
+  render() {
     return (
-      <OnboardingStep>
-        <template slot="title">
+      <div>
+        <h1 class={commonStyles.titleContainer}>
           {this.optimizing
             ? `${$t('Optimizing...')} ${Math.floor(this.percentage * 100)}%`
             : $t('Optimize')}
-        </template>
-        <template slot="desc">
+        </h1>
+        <div style="width: 60%; margin: auto; text-align: center;">
           {$t(
             "Click below and we'll analyze your internet speed and computer hardware to give you the best settings possible.",
           )}
-        </template>
+        </div>
         {this.optimizing ? (
-          <div>
-            <ProgressBar progressComplete={Math.floor(this.percentage * 100)} />
+          <div style="margin: auto; margin-top: 24px; width: 80%;">
+            <SmoothProgressBar value={this.percentage} timeLimit={1000 * 60} />
             <span>{this.stepInfo && this.stepInfo.summary}</span>
           </div>
         ) : (
-          <button class="button button--action button--lg" onClick={this.optimize}>
-            {$t('Start')}
+          <button
+            class={commonStyles.optionCard}
+            onClick={this.optimize}
+            style="margin: auto; margin-top: 24px;"
+          >
+            <h2>{$t('Start')}</h2>
           </button>
         )}
-      </OnboardingStep>
+      </div>
     );
   }
 }

@@ -1,23 +1,19 @@
 <template>
-  <popper
-    trigger="click"
-    :options="{ placement: (placement || 'bottom-start') }"
-  >
-    <div class="popper dropdown-menu">
+  <popper trigger="click" :options="{ placement: placement || 'bottom-start' }">
+    <scrollable className="popper dropdown-menu" :isResizable="false" :autoSizeCapable="true">
       <slot></slot>
-    </div>
+    </scrollable>
 
     <button slot="reference" class="dropdown-menu__toggle">
-      <span>{{ title }}</span> <i :class="icon || 'icon-dropdown'"/>
+      <span>{{ title }}</span> <i :class="icon || 'icon-dropdown'" />
     </button>
-
   </popper>
 </template>
 
 <script lang="ts" src="./DropdownMenu.vue.ts"></script>
 
 <style lang="less">
-@import "../../styles/index";
+@import '../../styles/index';
 
 .dropdown-menu {
   .radius();
@@ -27,7 +23,6 @@
   top: 5px !important;
   background-color: var(--background);
   max-height: 166px;
-  overflow-y: auto;
   z-index: 200000;
 }
 
@@ -36,7 +31,6 @@
 
   display: flex;
   align-items: center;
-  text-transform: capitalize;
   font-size: 14px;
   color: var(--title);
 
@@ -81,6 +75,13 @@
   &.active {
     color: var(--title);
   }
+
+  &.dropdown-menu__disabled {
+    &:hover,
+    &.active {
+      color: var(--midtone);
+    }
+  }
 }
 
 .popper .popper__arrow {
@@ -94,19 +95,19 @@
   background-color: var(--background) !important;
 }
 
-.popper[x-placement^="top"] {
+.popper[x-placement^='top'] {
   margin-bottom: 5px;
 }
 
-.popper[x-placement^="bottom"] {
+.popper[x-placement^='bottom'] {
   margin-top: 5px;
 }
 
-.popper[x-placement^="right"] {
+.popper[x-placement^='right'] {
   margin-left: 5px;
 }
 
-.popper[x-placement^="left"] {
+.popper[x-placement^='left'] {
   margin-right: 5px;
 }
 </style>

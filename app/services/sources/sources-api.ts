@@ -4,7 +4,7 @@ import { WidgetType } from 'services/widgets';
 import { Observable } from 'rxjs';
 import { IAudioSource } from 'services/audio';
 
-export interface ISource extends IResource {
+export interface ISource {
   sourceId: string;
   name: string;
   type: TSourceType;
@@ -15,7 +15,9 @@ export interface ISource extends IResource {
   width: number;
   height: number;
   doNotDuplicate: boolean;
+  configurable: boolean;
   propertiesManagerType: TPropertiesManager;
+  propertiesManagerSettings?: Dictionary<any>;
   channel?: number;
 }
 
@@ -58,14 +60,14 @@ export interface ISourcesServiceApi {
   getAvailableSourcesTypes(): TSourceType[];
   getAvailableSourcesTypesList(): IObsListOption<TSourceType>[];
   getSources(): ISourceApi[];
-  getSource(sourceId: string): ISourceApi;
-  getSourcesByName(name: string): ISourceApi[];
+  getSource(sourceId: string): ISourceApi | null;
+  getSourcesByName(name: string): (ISourceApi | null)[];
 
   /**
    * creates a source from a file
    * source type depends on the file extension
    */
-  addFile(path: string): ISourceApi;
+  addFile(path: string): ISourceApi | null;
   suggestName(name: string): string;
   showSourceProperties(sourceId: string): void;
   showShowcase(): void;
@@ -104,10 +106,23 @@ export type TSourceType =
   | 'openvr_capture'
   | 'liv_capture'
   | 'ovrstream_dc_source'
-  | 'vlc_source';
+  | 'vlc_source'
+  | 'coreaudio_input_capture'
+  | 'coreaudio_output_capture'
+  | 'av_capture_input'
+  | 'display_capture'
+  | 'audio_line'
+  | 'syphon-input'
+  | 'soundtrack_source';
 
 // Register new properties managers here
-export type TPropertiesManager = 'default' | 'widget' | 'streamlabels' | 'platformApp' | 'replay';
+export type TPropertiesManager =
+  | 'default'
+  | 'widget'
+  | 'streamlabels'
+  | 'platformApp'
+  | 'replay'
+  | 'iconLibrary';
 
 export interface ISourcesState {
   sources: Dictionary<ISource>;

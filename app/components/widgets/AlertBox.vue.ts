@@ -6,7 +6,7 @@ import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
 import { IAlertBoxData, AlertBoxService } from 'services/widgets/settings/alert-box';
 import { $t } from 'services/i18n';
 
-import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
+import ValidatedForm from 'components/shared/inputs/ValidatedForm';
 import { Inject } from 'services/core/injector';
 import { IAlertBoxVariation } from 'services/widgets/settings/alert-box/alert-box-api';
 
@@ -32,10 +32,11 @@ const alertNameMap = () => ({
   subscribers: $t('Subscribers'), // YouTube
   stars: $t('Stars'),
   support: $t('Support'),
+  giftSupport: $t('Gifted Support'),
   likes: $t('Likes'),
   shares: $t('Shares'),
   fbfollows: $t('Follows'),
-  loyaltystore: $t('Cloudbot Redemption'),
+  loyaltystore: $t('Cloudbot Store'),
   stickers: $t('Stickers'),
   effects: $t('Effects/Rallies'),
 });
@@ -71,7 +72,7 @@ const HAS_DONOR_MESSAGE = [
   },
 })
 export default class AlertBox extends WidgetSettings<IAlertBoxData, AlertBoxService> {
-  @Inject() alertBoxService: AlertBoxService;
+  @Inject() alertBoxService!: AlertBoxService;
 
   $refs: { [key: string]: HTMLElement };
 
@@ -137,7 +138,7 @@ export default class AlertBox extends WidgetSettings<IAlertBoxData, AlertBoxServ
         label: this.selectedAlert === 'subs' ? $t('Resub Message') : $t('Donor Message'),
       });
     }
-    if (HAS_ALERT_SETTINGS.includes(this.selectedAlert) || this.selectedId !== 'default') {
+    if (HAS_ALERT_SETTINGS.includes(this.selectedAlert) || !this.selectedId.match('default')) {
       baseItems.push({ value: 'alert', label: $t('Alert Settings') });
     }
     return baseItems;
@@ -173,9 +174,17 @@ export default class AlertBox extends WidgetSettings<IAlertBoxData, AlertBoxServ
     }
   }
 
+  handleUnlimitedModerationDelay(value: boolean) {
+    if (value) {
+      this.wData.settings.moderation_delay = -1;
+    } else {
+      this.wData.settings.moderation_delay = 0;
+    }
+  }
+
   selectAlertType(alertName: string) {
-    this.selectedId = 'default';
     this.selectedAlert = this.selectedAlert === alertName ? 'general' : alertName;
+    this.selectedId = `default-${this.selectedAlert}`;
   }
 
   selectVariation(id: string) {
@@ -196,7 +205,7 @@ export default class AlertBox extends WidgetSettings<IAlertBoxData, AlertBoxServ
   }
 
   removeVariation(id: string) {
-    this.selectedId = 'default';
+    this.selectedId = `default-${this.selectedAlert}`;
     this.wData.settings[this.selectedAlert].variations = this.wData.settings[
       this.selectedAlert
     ].variations.filter((variation: IAlertBoxVariation) => variation.id !== id);
@@ -208,7 +217,7 @@ export default class AlertBox extends WidgetSettings<IAlertBoxData, AlertBoxServ
     this.selectedId = id;
     // Above is done here with a stop propagation in the input to avoid possible race conditions which would lead to
     // this.selectedVariation potentially being incorrect
-    const field = <HTMLInputElement>this.$refs[`${id}-name-input`][0];
+    const field: HTMLInputElement = this.$refs[`${id}-name-input`][0];
     this.$nextTick(() => field.focus());
   }
 

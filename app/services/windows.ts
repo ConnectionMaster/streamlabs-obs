@@ -2,46 +2,62 @@
 // This singleton class provides a renderer-space API
 // for spawning various child windows.
 import cloneDeep from 'lodash/cloneDeep';
+import { mutation, StatefulService } from 'services/core/stateful-service';
+import electron from 'electron';
+import Vue, { Component } from 'vue';
+import Utils from 'services/utils';
+import { Subject } from 'rxjs';
+import { throttle } from 'lodash-decorators';
 
 import Main from 'components/windows/Main.vue';
-import Settings from 'components/windows/Settings.vue';
+import Settings from 'components/windows/settings/Settings.vue';
 import FFZSettings from 'components/windows/FFZSettings.vue';
 import SourcesShowcase from 'components/windows/SourcesShowcase.vue';
 import SceneTransitions from 'components/windows/SceneTransitions.vue';
 import AddSource from 'components/windows/AddSource.vue';
-import RenameSource from 'components/windows/RenameSource.vue';
 import NameScene from 'components/windows/NameScene.vue';
-import NameFolder from 'components/windows/NameFolder.vue';
+import {
+  NameFolder,
+  GoLiveWindow,
+  EditStreamWindow,
+  IconLibraryProperties,
+  PerformanceMetrics,
+  RenameSource,
+  AdvancedStatistics,
+} from 'components/shared/ReactComponent';
+
+import GoLiveWindowDeprecated from 'components/windows/go-live/GoLiveWindow';
+import EditStreamWindowDeprecated from 'components/windows/go-live/EditStreamWindow';
 import SourceProperties from 'components/windows/SourceProperties.vue';
 import SourceFilters from 'components/windows/SourceFilters.vue';
 import AddSourceFilter from 'components/windows/AddSourceFilter';
-import EditStreamInfo from 'components/windows/EditStreamInfo.vue';
-import AdvancedAudio from 'components/windows/AdvancedAudio.vue';
+import AdvancedAudio from 'components/windows/AdvancedAudio';
 import Notifications from 'components/windows/Notifications.vue';
 import Troubleshooter from 'components/windows/Troubleshooter.vue';
 import Blank from 'components/windows/Blank.vue';
 import ManageSceneCollections from 'components/windows/ManageSceneCollections.vue';
 import RecentEvents from 'components/windows/RecentEvents.vue';
+import GameOverlayEventFeed from 'components/windows/GameOverlayEventFeed';
 import Projector from 'components/windows/Projector.vue';
 import MediaGallery from 'components/windows/MediaGallery.vue';
 import PlatformAppPopOut from 'components/windows/PlatformAppPopOut.vue';
 import EditTransform from 'components/windows/EditTransform';
+import EventFilterMenu from 'components/windows/EventFilterMenu';
 import OverlayWindow from 'components/windows/OverlayWindow.vue';
 import OverlayPlaceholder from 'components/windows/OverlayPlaceholder';
 import BrowserSourceInteraction from 'components/windows/BrowserSourceInteraction';
-import { mutation, StatefulService } from 'services/core/stateful-service';
-import electron from 'electron';
-import Vue from 'vue';
-import Util from 'services/utils';
-import { Subject } from 'rxjs';
+import WelcomeToPrime from 'components/windows/WelcomeToPrime';
+import ScheduleStreamWindow from 'components/windows/go-live/ScheduleStreamWindow';
 
-import BitGoal from 'components/widgets/goal/BitGoal.vue';
-import DonationGoal from 'components/widgets/goal/DonationGoal.vue';
-import SubGoal from 'components/widgets/goal/SubGoal.vue';
-import StarsGoal from 'components/widgets/goal/StarsGoal.vue';
-import SupporterGoal from 'components/widgets/goal/SupporterGoal.vue';
+import BitGoal from 'components/widgets/goal/BitGoal';
+import DonationGoal from 'components/widgets/goal/DonationGoal';
+import SubGoal from 'components/widgets/goal/SubGoal';
+import StarsGoal from 'components/widgets/goal/StarsGoal';
+import SupporterGoal from 'components/widgets/goal/SupporterGoal';
+import SubscriberGoal from 'components/widgets/goal/SubscriberGoal';
+import FollowerGoal from 'components/widgets/goal/FollowerGoal';
+import CharityGoal from 'components/widgets/goal/CharityGoal';
 import ChatBox from 'components/widgets/ChatBox.vue';
-import FollowerGoal from 'components/widgets/goal/FollowerGoal.vue';
 import ViewerCount from 'components/widgets/ViewerCount.vue';
 import StreamBoss from 'components/widgets/StreamBoss.vue';
 import DonationTicker from 'components/widgets/DonationTicker.vue';
@@ -49,11 +65,16 @@ import Credits from 'components/widgets/Credits.vue';
 import EventList from 'components/widgets/EventList.vue';
 import TipJar from 'components/widgets/TipJar.vue';
 import SponsorBanner from 'components/widgets/SponsorBanner.vue';
-import MediaShare from 'components/widgets/MediaShare.vue';
+import MediaShare from 'components/widgets/MediaShare';
 import AlertBox from 'components/widgets/AlertBox.vue';
 import SpinWheel from 'components/widgets/SpinWheel.vue';
+import Poll from 'components/widgets/Poll';
 
-import PerformanceMetrics from 'components/PerformanceMetrics.vue';
+import { byOS, OS } from 'util/operating-systems';
+import { UsageStatisticsService } from './usage-statistics';
+import { Inject } from 'services/core';
+import MessageBoxModal from 'components/shared/modals/MessageBoxModal';
+import Modal from 'components/shared/modals/modal';
 
 const { ipcRenderer, remote } = electron;
 const BrowserWindow = remote.BrowserWindow;
@@ -76,7 +97,6 @@ export function getComponents() {
     SourceFilters,
     AddSourceFilter,
     Blank,
-    EditStreamInfo,
     AdvancedAudio,
     Notifications,
     Troubleshooter,
@@ -90,12 +110,16 @@ export function getComponents() {
     OverlayPlaceholder,
     PerformanceMetrics,
     BrowserSourceInteraction,
-
+    EventFilterMenu,
+    GameOverlayEventFeed,
+    AdvancedStatistics,
     BitGoal,
     DonationGoal,
     FollowerGoal,
     StarsGoal,
     SupporterGoal,
+    SubscriberGoal,
+    CharityGoal,
     ChatBox,
     ViewerCount,
     DonationTicker,
@@ -108,11 +132,21 @@ export function getComponents() {
     MediaShare,
     AlertBox,
     SpinWheel,
+    Poll,
+    WelcomeToPrime,
+    GoLiveWindow,
+    EditStreamWindow,
+    GoLiveWindowDeprecated,
+    EditStreamWindowDeprecated,
+    ScheduleStreamWindow,
+    IconLibraryProperties,
   };
 }
 
+export type TWindowComponentName = keyof ReturnType<typeof getComponents> | '';
+
 export interface IWindowOptions extends Electron.BrowserWindowConstructorOptions {
-  componentName: string;
+  componentName: TWindowComponentName;
   queryParams?: Dictionary<any>;
   size?: {
     width: number;
@@ -139,6 +173,10 @@ interface IWindowsState {
   [windowId: string]: IWindowOptions;
 }
 
+export interface IModalOptions {
+  renderFn: Function | null;
+}
+
 const DEFAULT_WINDOW_OPTIONS: IWindowOptions = {
   componentName: '',
   scaleFactor: 1,
@@ -147,6 +185,8 @@ const DEFAULT_WINDOW_OPTIONS: IWindowOptions = {
 };
 
 export class WindowsService extends StatefulService<IWindowsState> {
+  @Inject() usageStatisticsService: UsageStatisticsService;
+
   /**
    * 'main' and 'child' are special window ids that always exist
    * and have special purposes.  All other windows ids are considered
@@ -158,7 +198,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
       scaleFactor: 1,
       isShown: true,
       hideStyleBlockers: true,
-      title: `Streamlabs OBS - Version: ${remote.process.env.SLOBS_VERSION}`,
+      title: `Streamlabs OBS - ${Utils.env.SLOBS_VERSION}`,
     },
     child: {
       componentName: '',
@@ -168,33 +208,79 @@ export class WindowsService extends StatefulService<IWindowsState> {
     },
   };
 
+  static modalOptions: IModalOptions = {
+    renderFn: null,
+  };
+
+  /**
+   * This event is happening when the modal has been shown or hidden
+   */
+  static modalChanged = new Subject<Partial<IModalOptions>>();
+
+  /**
+   * Show modal in the current window
+   * Use a static method instead actions so we can pass an non-serializable renderer method and support reactivity
+   */
+  static showModal(vm: Vue, renderFn: IModalOptions['renderFn']) {
+    // use `vm` to keep reactivity in the renderer function
+    const renderer = () => vm.$createElement(Modal, [renderFn()]);
+    this.modalChanged.next({ renderFn: renderer });
+  }
+
+  static hideModal() {
+    this.modalChanged.next({ renderFn: null });
+  }
+
+  static showMessageBox(vm: Vue, renderFn: Function) {
+    const renderer = () => vm.$createElement(MessageBoxModal, [renderFn()]);
+    this.showModal(vm, renderer);
+  }
+
   // This is a list of components that are registered to be
   // top level components in new child windows.
   components = getComponents();
 
   windowUpdated = new Subject<{ windowId: string; options: IWindowOptions }>();
   windowDestroyed = new Subject<string>();
-  private windows: Dictionary<Electron.BrowserWindow> = {};
+  styleBlockersUpdated = new Subject<{ windowId: string; hideStyleBlockers: boolean }>();
+  windows: Dictionary<Electron.BrowserWindow> = {};
 
   init() {
-    const windows = BrowserWindow.getAllWindows();
+    const windowIds = ipcRenderer.sendSync('getWindowIds');
 
-    this.windows.main = windows[0];
-    this.windows.child = windows[1];
+    this.windows.worker = BrowserWindow.fromId(windowIds.worker);
+    this.windows.main = BrowserWindow.fromId(windowIds.main);
+    this.windows.child = BrowserWindow.fromId(windowIds.child);
+
+    // Background throttling can produce freezing on certain parts of the UI
+    this.windows.worker.webContents.setBackgroundThrottling(false);
+    this.windows.main.webContents.setBackgroundThrottling(false);
 
     this.updateScaleFactor('main');
     this.updateScaleFactor('child');
     this.windows.main.on('move', () => this.updateScaleFactor('main'));
     this.windows.child.on('move', () => this.updateScaleFactor('child'));
+
+    if (electron.remote.screen.getAllDisplays().length > 1) {
+      this.usageStatisticsService.recordFeatureUsage('MultipleDisplays');
+    }
   }
 
+  @throttle(500)
   private updateScaleFactor(windowId: string) {
     const window = this.windows[windowId];
-    if (window) {
-      const bounds = window.getBounds();
+    if (window && !window.isDestroyed()) {
+      const bounds = byOS({
+        [OS.Windows]: () => electron.remote.screen.dipToScreenRect(window, window.getBounds()),
+        [OS.Mac]: () => window.getBounds(),
+      });
       const currentDisplay = electron.remote.screen.getDisplayMatching(bounds);
       this.UPDATE_SCALE_FACTOR(windowId, currentDisplay.scaleFactor);
     }
+  }
+
+  getWindowIdFromElectronId(electronWindowId: number) {
+    return Object.keys(this.windows).find(win => this.windows[win].id === electronWindowId);
   }
 
   showWindow(options: Partial<IWindowOptions>) {
@@ -209,7 +295,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
      * We do not do this on CI since it runs at 1024x768 and it break tests that aren't easy
      * to workaround.
      */
-    if (options.size && !remote.process.env.CI) {
+    if (options.size && !Utils.env.CI) {
       const {
         width: screenWidth,
         height: screenHeight,
@@ -225,8 +311,41 @@ export class WindowsService extends StatefulService<IWindowsState> {
       }
     }
 
-    ipcRenderer.send('window-showChildWindow', options);
+    this.centerChildWindow(options);
+    this.windows.child.show();
+    this.windows.child.restore();
+  }
+
+  centerChildWindow(options: Partial<IWindowOptions>) {
+    const mainWindow = this.windows.main;
+    const childWindow = this.windows.child;
     this.updateChildWindowOptions(options);
+    // For some unknown reason, electron sometimes gets into a
+    // weird state where this will always fail.  Instead, we
+    // should recover by simply setting the size and forgetting
+    // about the bounds.
+    try {
+      const bounds = mainWindow.getBounds();
+      const childX = bounds.x + bounds.width / 2 - options.size.width / 2;
+      const childY = bounds.y + bounds.height / 2 - options.size.height / 2;
+
+      childWindow.setMinimumSize(options.size.width, options.size.height);
+      if (options.center) {
+        childWindow.setBounds({
+          x: Math.floor(childX),
+          y: Math.floor(childY),
+          width: options.size.width,
+          height: options.size.height,
+        });
+      }
+    } catch (err: unknown) {
+      console.error('Recovering from error:', err);
+
+      childWindow.setMinimumSize(options.size.width, options.size.height);
+      childWindow.setSize(options.size.width, options.size.height);
+      childWindow.center();
+      childWindow.focus();
+    }
   }
 
   getMainWindowDisplay() {
@@ -235,7 +354,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
     return electron.remote.screen.getDisplayMatching(bounds);
   }
 
-  closeChildWindow() {
+  async closeChildWindow() {
     const windowOptions = this.state.child;
 
     // show previous window if `preservePrevWindow` flag is true
@@ -246,13 +365,14 @@ export class WindowsService extends StatefulService<IWindowsState> {
       };
 
       ipcRenderer.send('window-showChildWindow', options);
-      this.updateChildWindowOptions(options);
+      this.centerChildWindow(options);
       return;
     }
 
     // This prevents you from seeing the previous contents
     // of the window for a split second after it is shown.
     this.updateChildWindowOptions({ componentName: '', isShown: false });
+    await new Promise(r => setTimeout(r, 50));
 
     // Refocus the main window
     ipcRenderer.send('window-focusMain');
@@ -261,6 +381,13 @@ export class WindowsService extends StatefulService<IWindowsState> {
 
   closeMainWindow() {
     remote.getCurrentWindow().close();
+  }
+
+  /**
+   * Should only ever be called on shutdown
+   */
+  hideMainWindow() {
+    this.windows.main.hide();
   }
 
   /**
@@ -285,16 +412,18 @@ export class WindowsService extends StatefulService<IWindowsState> {
 
     const newWindow = (this.windows[windowId] = new BrowserWindow({
       frame: false,
+      titleBarStyle: 'hidden',
+      fullscreenable: byOS({ [OS.Windows]: true, [OS.Mac]: false }),
       width: 400,
       height: 400,
       title: 'New Window',
       backgroundColor: '#17242D',
-      webPreferences: { nodeIntegration: true, webviewTag: true },
+      webPreferences: { nodeIntegration: true, webviewTag: true, enableRemoteModule: true },
       ...options,
       ...options.size,
     }));
 
-    newWindow.setMenu(null);
+    newWindow.removeMenu();
     newWindow.on('closed', () => {
       this.windowDestroyed.next(windowId);
       delete this.windows[windowId];
@@ -304,7 +433,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
     this.updateScaleFactor(windowId);
     newWindow.on('move', () => this.updateScaleFactor(windowId));
 
-    if (Util.isDevMode()) newWindow.webContents.openDevTools({ mode: 'detach' });
+    if (Utils.isDevMode()) newWindow.webContents.openDevTools({ mode: 'detach' });
 
     const indexUrl = remote.getGlobal('indexUrl');
     newWindow.loadURL(`${indexUrl}?windowId=${windowId}`);
@@ -339,6 +468,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
   closeAllOneOffs(): Promise<any> {
     const closingPromises: Promise<void>[] = [];
     Object.keys(this.windows).forEach(windowId => {
+      if (windowId === 'worker') return;
       if (windowId === 'main') return;
       if (windowId === 'child') return;
       closingPromises.push(this.closeOneOffWindow(windowId));
@@ -354,23 +484,29 @@ export class WindowsService extends StatefulService<IWindowsState> {
     });
   }
 
-  // @ExecuteInCurrentWindow()
+  /**
+   * Should only be called when the app is shutting down.
+   */
+  shutdown() {
+    this.closeAllOneOffs();
+    this.windows.child.close();
+  }
+
   getChildWindowOptions(): IWindowOptions {
     return this.state.child;
   }
 
-  // @ExecuteInCurrentWindow()
   getChildWindowQueryParams(): Dictionary<any> {
     return this.getChildWindowOptions().queryParams || {};
   }
 
-  // @ExecuteInCurrentWindow()
   getWindowOptions(windowId: string) {
     return this.state[windowId].queryParams || {};
   }
 
   updateStyleBlockers(windowId: string, hideStyleBlockers: boolean) {
     this.UPDATE_HIDE_STYLE_BLOCKERS(windowId, hideStyleBlockers);
+    this.styleBlockersUpdated.next({ windowId, hideStyleBlockers });
   }
 
   updateChildWindowOptions(optionsPatch: Partial<IWindowOptions>) {
@@ -393,7 +529,6 @@ export class WindowsService extends StatefulService<IWindowsState> {
       // restrict saving history only for 1 window before
       delete newOptions.prevWindowOptions.prevWindowOptions;
     }
-
     this.SET_CHILD_WINDOW_OPTIONS(newOptions);
     this.windowUpdated.next({ windowId: 'child', options: newOptions });
   }

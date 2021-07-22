@@ -6,7 +6,7 @@ import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
 import { IViewerCountData, ViewerCountService } from 'services/widgets/settings/viewer-count';
 import { $t } from 'services/i18n';
 
-import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
+import ValidatedForm from 'components/shared/inputs/ValidatedForm';
 @Component({
   components: {
     WidgetEditor,
@@ -16,9 +16,11 @@ import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
   },
 })
 export default class ViewerCount extends WidgetSettings<IViewerCountData, ViewerCountService> {
-  navItems = [
-    { value: 'manage-count', label: $t('Manage Viewer Count') },
-    { value: 'font', label: $t('Font Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-count', label: $t('Manage Viewer Count') },
+      { value: 'font', label: $t('Font Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 }

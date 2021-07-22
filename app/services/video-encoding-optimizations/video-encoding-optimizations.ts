@@ -4,6 +4,7 @@ import {
   IStreamingEncoderSettings,
   EEncoderFamily,
 } from 'services/settings';
+import { UserService } from 'services/user';
 import { StreamingService, EStreamingState } from 'services/streaming';
 import { Inject, mutation, PersistentStatefulService } from 'services/core';
 import { IEncoderProfile } from './definitions';
@@ -41,9 +42,7 @@ interface IVideoEncodingOptimizationServiceState {
   lastSelectedProfile: IEncoderProfile;
 }
 
-export class VideoEncodingOptimizationService extends PersistentStatefulService<
-  IVideoEncodingOptimizationServiceState
-> {
+export class VideoEncodingOptimizationService extends PersistentStatefulService<IVideoEncodingOptimizationServiceState> {
   static defaultState: IVideoEncodingOptimizationServiceState = {
     useOptimizedProfile: false,
     lastLoadedGame: '',
@@ -61,6 +60,7 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
   @Inject() private streamingService: StreamingService;
   @Inject() private outputSettingsService: OutputSettingsService;
   @Inject() private urlService: UrlService;
+  @Inject() userService: UserService;
 
   init() {
     super.init();
@@ -127,10 +127,9 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
         )
           .then(handleErrors)
           .then(camelize);
-      } catch (e) {
+      } catch (e: unknown) {
         // probably some network error
         // don't stop here
-        console.error(e);
       }
     }
 
@@ -140,10 +139,10 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
         profiles = await fetch(this.urlService.getStreamlabsApi('gamepresets/DEFAULT'))
           .then(handleErrors)
           .then(camelize);
-      } catch (e) {
+      } catch (e: unknown) {
         // probably some network error
         // don't stop here
-        console.error(e);
+        console.error('Error fetching game presets', e);
       }
     }
 
@@ -153,8 +152,8 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
 
   applyProfile(encoderProfile: IEncoderProfile) {
     this.previousSettings = {
-      output: cloneDeep(this.settingsService.getSettingsFormData('Output')),
-      video: cloneDeep(this.settingsService.getSettingsFormData('Video')),
+      output: cloneDeep(this.settingsService.state.Output.formData),
+      video: cloneDeep(this.settingsService.state.Video.formData),
     };
     this.SAVE_LAST_SELECTED_PROFILE(encoderProfile);
     const currentSettings = this.outputSettingsService.getSettings();
@@ -166,8 +165,11 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
       bitrate: currentSettings.streaming.bitrate,
     };
 
-    if (!currentSettings.streaming.hasCustomResolution) {
-      // change the resolution only if user didn't set a custom one
+    // change the resolution only if user didn't set a custom one or if not using tiktok
+    if (
+      !currentSettings.streaming.hasCustomResolution &&
+      this.userService.platformType !== 'tiktok'
+    ) {
       newStreamingSettings.outputResolution = encoderProfile.resolutionOut;
     }
 
@@ -189,7 +191,7 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
     return !!(this.state.useOptimizedProfile && this.state.lastSelectedProfile);
   }
 
-  async applyProfileFromCache() {
+  applyProfileFromCache() {
     if (!this.canApplyProfileFromCache()) {
       return;
     }

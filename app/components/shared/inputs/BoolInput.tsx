@@ -13,7 +13,7 @@ export default class BoolInput extends BaseInput<boolean, IInputMetadata> {
     this.emitInput(!this.value, e);
   }
 
-  render(h: Function) {
+  render() {
     return (
       <div
         class={cx('input-wrapper', { disabled: this.options.disabled })}
@@ -24,6 +24,13 @@ export default class BoolInput extends BaseInput<boolean, IInputMetadata> {
         <div class="checkbox" onClick={this.handleClick}>
           <input type="checkbox" checked={this.value} disabled={this.options.disabled} />
           <label>{this.options.title || '\u00A0' /* nbsp */}</label>
+          {this.options.tooltip && (
+            <i
+              style="margin-left: 8px"
+              class="icon-question icon-btn"
+              v-tooltip={this.options.tooltip}
+            />
+          )}
         </div>
       </div>
     );

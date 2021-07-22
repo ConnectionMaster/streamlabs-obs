@@ -81,6 +81,7 @@ export const QUALITY_ORDER = [
 export interface IOutputSettings {
   mode: TOutputSettingsMode;
   inputResolution: string;
+  framerate: IFramerateSettings;
   streaming: IStreamingEncoderSettings;
   recording: IRecordingEncoderSettings;
   replayBuffer: IReplayBufferSettings;
@@ -88,6 +89,7 @@ export interface IOutputSettings {
 
 interface IOutputSettingsPatch {
   mode?: TOutputSettingsMode;
+  inputResolution?: string;
   streaming?: Partial<IStreamingEncoderSettings>;
   recording?: Partial<IRecordingEncoderSettings>;
   replayBuffer?: Partial<IReplayBufferSettings>;
@@ -114,6 +116,14 @@ export interface IStreamingEncoderSettings extends IEncoderSettings {
   rescaleOutput: boolean;
   hasCustomResolution: boolean;
   encoderOptions: string;
+}
+
+export interface IFramerateSettings {
+  type: string;
+  common: string;
+  integer: number;
+  fracNum: number;
+  fracDen: number;
 }
 
 type TOutputSettingsMode = 'Simple' | 'Advanced';
@@ -172,8 +182,8 @@ export class OutputSettingsService extends Service {
    * independently of selected mode
    */
   getSettings(): IOutputSettings {
-    const output = this.settingsService.getSettingsFormData('Output');
-    const video = this.settingsService.getSettingsFormData('Video');
+    const output = this.settingsService.state.Output.formData;
+    const video = this.settingsService.state.Video.formData;
     const mode: TOutputSettingsMode = this.settingsService.findSettingValue(
       output,
       'Untitled',
@@ -193,9 +203,18 @@ export class OutputSettingsService extends Service {
       time: this.settingsService.findSettingValue(output, 'Replay Buffer', 'RecRBTime'),
     };
 
+    const framerate = {
+      type: this.settingsService.findSettingValue(video, 'Untitled', 'FPSType'),
+      common: this.settingsService.findSettingValue(video, 'Untitled', 'FPSCommon'),
+      integer: this.settingsService.findSettingValue(video, 'Untitled', 'FPSInt'),
+      fracNum: this.settingsService.findSettingValue(video, 'Untitled', 'FPSNum'),
+      fracDen: this.settingsService.findSettingValue(video, 'Untitled', 'FPSDen'),
+    };
+
     return {
       mode,
       inputResolution,
+      framerate,
       streaming,
       recording,
       replayBuffer,
@@ -330,6 +349,10 @@ export class OutputSettingsService extends Service {
       this.settingsService.setSettingValue('Output', 'Mode', settingsPatch.mode);
     }
     const currentSettings = this.getSettings();
+
+    if (settingsPatch.inputResolution) {
+      this.settingsService.setSettingValue('Video', 'Base', settingsPatch.inputResolution);
+    }
 
     if (settingsPatch.streaming) {
       this.setStreamingEncoderSettings(currentSettings, settingsPatch.streaming);

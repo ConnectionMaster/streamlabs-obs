@@ -19,6 +19,8 @@ export interface IJsonRpcRequest {
     args?: any[];
     fetchMutations?: boolean;
     compactMode?: boolean;
+    noReturn?: boolean;
+    windowId?: string;
   };
 }
 

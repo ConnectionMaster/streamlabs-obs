@@ -1,23 +1,25 @@
-import electronLog from 'electron-log';
 import { Service } from './core/service';
 import { Inject } from 'services/core/injector';
 import { UserService } from 'services/user';
 import { HostsService } from 'services/hosts';
-import { handleResponse, authorizedHeaders } from 'util/requests';
-import io from 'socket.io-client';
+import { authorizedHeaders, jfetch } from 'util/requests';
 import { Subject } from 'rxjs';
 import { AppService } from 'services/app';
+import { IRecentEvent } from 'services/recent-events';
+import { importSocketIOClient } from '../util/slow-imports';
+import { SceneCollectionsService } from 'services/scene-collections';
 
 export type TSocketEvent =
   | IStreamlabelsSocketEvent
-  | IDonationSocketEvent
-  | IFacemaskDonationSocketEvent
-  | IFollowSocketEvent
-  | ISubscriptionSocketEvent
   | IAlertPlayingSocketEvent
   | IAlertProfileChanged
-  | IBitsSocketEvent
-  | IFmExtEnabledSocketEvent;
+  | IEventSocketEvent
+  | IFmExtEnabledSocketEvent
+  | IEventPanelSettingsChangedSocketEvent
+  | IMediaSharingSettingsUpdateSocketEvent
+  | IPauseEventQueueSocketEvent
+  | IUnpauseEventQueueSocketEvent
+  | IPrimeSubEvent;
 
 interface IStreamlabelsSocketEvent {
   type: 'streamlabels';
@@ -26,46 +28,39 @@ interface IStreamlabelsSocketEvent {
   };
 }
 
-interface IDonationSocketEvent {
-  type: 'donation';
-  message: {
-    name: string;
-    amount: string;
-    formattedAmount: string;
-    facemask: string;
-    message: string;
-  }[];
+export interface IEventSocketEvent {
+  type:
+    | 'merch'
+    | 'donation'
+    | 'follow'
+    | 'subscription'
+    | 'bits'
+    | 'host'
+    | 'raid'
+    | 'sticker'
+    | 'effect'
+    | 'like'
+    | 'stars'
+    | 'support'
+    | 'share'
+    | 'superchat'
+    | 'pledge'
+    | 'eldonation'
+    | 'tiltifydonation'
+    | 'donordrivedonation'
+    | 'justgivingdonation'
+    | 'treat';
+  for: string;
+  message: IRecentEvent[];
 }
 
-interface IFacemaskDonationSocketEvent {
-  type: 'facemaskdonation';
+interface IPrimeSubEvent {
+  type: 'streamlabs_prime_subscribe';
   message: {
-    facemask: string;
-    _id: string;
-  }[];
-}
-
-interface IFollowSocketEvent {
-  type: 'follow';
-  message: {
-    name: string;
-    _id: string;
-  }[];
-}
-
-interface ISubscriptionSocketEvent {
-  type: 'subscription';
-  message: {
-    name: string;
-    _id: string;
-  }[];
-}
-
-interface IBitsSocketEvent {
-  type: 'bits';
-  message: {
-    name: string;
-  }[];
+    expires_at: string;
+    for: string;
+    type: 'streamlabs_prime_subscribe';
+  };
 }
 
 interface IFmExtEnabledSocketEvent {
@@ -75,7 +70,6 @@ interface IFmExtEnabledSocketEvent {
 export interface IAlertPlayingSocketEvent {
   type: 'alertPlaying';
   message: {
-    facemask?: string;
     type: string;
     amount?: string;
   };
@@ -85,27 +79,56 @@ interface IAlertProfileChanged {
   type: 'alertProfileChanged';
 }
 
+interface IPauseEventQueueSocketEvent {
+  type: 'pauseQueue';
+}
+
+interface IUnpauseEventQueueSocketEvent {
+  type: 'unpauseQueue';
+}
+
+interface IEventPanelSettingsChangedSocketEvent {
+  type: 'eventsPanelSettingsUpdate';
+  message: {
+    muted?: boolean;
+  };
+}
+
+interface IMediaSharingSettingsUpdateSocketEvent {
+  type: 'mediaSharingSettingsUpdate';
+  message: {
+    advanced_settings: {
+      enabled?: boolean;
+    };
+  };
+}
+
 export class WebsocketService extends Service {
   @Inject() private userService: UserService;
   @Inject() private hostsService: HostsService;
   @Inject() private appService: AppService;
+  @Inject() private sceneCollectionsService: SceneCollectionsService;
 
   socket: SocketIOClient.Socket;
 
   socketEvent = new Subject<TSocketEvent>();
+  io: SocketIOClientStatic;
 
   init() {
-    this.openSocketConnection();
-
-    this.userService.userLogin.subscribe(() => {
+    this.sceneCollectionsService.collectionInitialized.subscribe(() => {
       this.openSocketConnection();
     });
   }
 
-  openSocketConnection() {
-    if (!this.userService.isLoggedIn()) {
+  async openSocketConnection() {
+    if (!this.userService.isLoggedIn) {
       console.warn('User must be logged in to make a socket connection');
       return;
+    }
+
+    // dynamically import socket.io because it takes to much time to import it on startup
+    if (!this.io) {
+      this.io = (await importSocketIOClient()).default;
     }
 
     if (this.socket) {
@@ -116,12 +139,11 @@ export class WebsocketService extends Service {
     const headers = authorizedHeaders(this.userService.apiToken);
     const request = new Request(url, { headers });
 
-    fetch(request)
-      .then(handleResponse)
+    jfetch<{ socket_token: string }>(request)
       .then(json => json.socket_token)
       .then(token => {
         const url = `${this.hostsService.io}?token=${token}`;
-        this.socket = io(url, { transports: ['websocket'] });
+        this.socket = this.io(url, { transports: ['websocket'] });
 
         // These are useful for debugging
         this.socket.on('connect', () => this.log('Connection Opened'));
@@ -141,7 +163,7 @@ export class WebsocketService extends Service {
     console.debug(`WS: ${message}`, ...args);
 
     if (this.appService.state.argv.includes('--network-logging')) {
-      electronLog.log(`WS: ${message}`);
+      console.log(`WS: ${message}`);
     }
   }
 }

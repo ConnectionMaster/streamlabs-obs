@@ -5,39 +5,51 @@ import { HotkeysService } from 'services/hotkeys';
 import { UserService } from 'services/user';
 import { ShortcutsService } from 'services/shortcuts';
 import { Inject } from 'services/core/injector';
-import electron from 'electron';
+import electron, { ipcRenderer } from 'electron';
 import { TransitionsService } from 'services/transitions';
 import { SourcesService } from 'services/sources';
 import { ScenesService } from 'services/scenes';
 import { VideoService } from 'services/video';
-import { StreamInfoService } from 'services/stream-info';
-import { track } from 'services/usage-statistics';
+import { track, UsageStatisticsService } from 'services/usage-statistics';
 import { IpcServerService } from 'services/api/ipc-server';
 import { TcpServerService } from 'services/api/tcp-server';
 import { StreamlabelsService } from 'services/streamlabels';
-import { PerformanceMonitorService } from 'services/performance-monitor';
+import { PerformanceService } from 'services/performance';
 import { SceneCollectionsService } from 'services/scene-collections';
 import { FileManagerService } from 'services/file-manager';
 import { PatchNotesService } from 'services/patch-notes';
 import { ProtocolLinksService } from 'services/protocol-links';
 import { WindowsService } from 'services/windows';
 import * as obs from '../../../obs-api';
-import { FacemasksService } from 'services/facemasks';
 import { OutageNotificationsService } from 'services/outage-notifications';
 import { CrashReporterService } from 'services/crash-reporter';
 import { PlatformAppsService } from 'services/platform-apps';
 import { AnnouncementsService } from 'services/announcements';
-import { ObsUserPluginsService } from 'services/obs-user-plugins';
 import { IncrementalRolloutService } from 'services/incremental-rollout';
 import { GameOverlayService } from 'services/game-overlay';
 import { RunInLoadingMode } from './app-decorators';
-import { CustomizationService } from 'services/customization';
+import { RecentEventsService } from 'services/recent-events';
 import Utils from 'services/utils';
+import { Subject } from 'rxjs';
+import { DismissablesService } from 'services/dismissables';
+import { RestreamService } from 'services/restream';
+import { downloadFile } from '../../util/requests';
+import { TouchBarService } from 'services/touch-bar';
+import { ApplicationMenuService } from 'services/application-menu';
+import { KeyListenerService } from 'services/key-listener';
+import { MetricsService } from '../metrics';
+import { SettingsService } from '../settings';
+import { OS, getOS } from 'util/operating-systems';
 
 interface IAppState {
   loading: boolean;
   argv: string[];
   errorAlert: boolean;
+  onboarded: boolean;
+}
+
+export interface IRunInLoadingModeOptions {
+  hideStyleBlockers?: boolean;
 }
 
 /**
@@ -50,22 +62,12 @@ export class AppService extends StatefulService<IAppState> {
   @Inject() hotkeysService: HotkeysService;
   @Inject() userService: UserService;
   @Inject() shortcutsService: ShortcutsService;
-  @Inject() streamInfoService: StreamInfoService;
   @Inject() patchNotesService: PatchNotesService;
   @Inject() windowsService: WindowsService;
-  @Inject() facemasksService: FacemasksService;
   @Inject() outageNotificationsService: OutageNotificationsService;
   @Inject() platformAppsService: PlatformAppsService;
   @Inject() gameOverlayService: GameOverlayService;
-
-  static initialState: IAppState = {
-    loading: true,
-    argv: electron.remote.process.argv,
-    errorAlert: false,
-  };
-
-  readonly appDataDirectory = electron.remote.app.getPath('userData');
-
+  @Inject() touchBarService: TouchBarService;
   @Inject() transitionsService: TransitionsService;
   @Inject() sourcesService: SourcesService;
   @Inject() scenesService: ScenesService;
@@ -73,12 +75,32 @@ export class AppService extends StatefulService<IAppState> {
   @Inject() streamlabelsService: StreamlabelsService;
   @Inject() private ipcServerService: IpcServerService;
   @Inject() private tcpServerService: TcpServerService;
-  @Inject() private performanceMonitorService: PerformanceMonitorService;
+  @Inject() private performanceService: PerformanceService;
   @Inject() private fileManagerService: FileManagerService;
   @Inject() private protocolLinksService: ProtocolLinksService;
   @Inject() private crashReporterService: CrashReporterService;
   @Inject() private announcementsService: AnnouncementsService;
   @Inject() private incrementalRolloutService: IncrementalRolloutService;
+  @Inject() private recentEventsService: RecentEventsService;
+  @Inject() private dismissablesService: DismissablesService;
+  @Inject() private restreamService: RestreamService;
+  @Inject() private applicationMenuService: ApplicationMenuService;
+  @Inject() private keyListenerService: KeyListenerService;
+  @Inject() private metricsService: MetricsService;
+  @Inject() private settingsService: SettingsService;
+  @Inject() private usageStatisticsService: UsageStatisticsService;
+
+  static initialState: IAppState = {
+    loading: true,
+    argv: electron.remote.process.argv,
+    errorAlert: false,
+    onboarded: false,
+  };
+
+  readonly appDataDirectory = electron.remote.app.getPath('userData');
+
+  loadingChanged = new Subject<boolean>();
+
   private loadingPromises: Dictionary<Promise<any>> = {};
 
   readonly pid = require('process').pid;
@@ -92,72 +114,82 @@ export class AppService extends StatefulService<IAppState> {
       });
     }
 
-    // We want to start this as early as possible so that any
-    // exceptions raised while loading the configuration are
-    // associated with the user in sentry.
-    await this.userService.initialize();
+    // perform several concurrent http requests
+    await Promise.all([
+      // We want to start this as early as possible so that any
+      // exceptions raised while loading the configuration are
+      // associated with the user in sentry.
+      this.userService.autoLogin(),
+
+      // this config should be downloaded before any game-capture source has been added to the scene
+      this.downloadAutoGameCaptureConfig(),
+    ]).catch(e => {
+      // probably the internet is disconnected
+      console.error('Auto login failed', e);
+    });
 
     // Second, we want to start the crash reporter service.  We do this
     // after the user service because we want crashes to be associated
     // with a particular user if possible.
     this.crashReporterService.beginStartup();
 
-    // Initialize any apps before loading the scene collection.  This allows
-    // the apps to already be in place when their sources are created.
-    await this.platformAppsService.initialize();
+    if (!this.userService.isLoggedIn) {
+      // If this user is logged in, this would have already happened as part of login
+      // TODO: We should come up with a better way to handle this.
+      await this.sceneCollectionsService.initialize();
+    }
 
-    await this.sceneCollectionsService.initialize();
-
-    const onboarded = this.onboardingService.startOnboardingIfRequired();
+    this.SET_ONBOARDED(this.onboardingService.startOnboardingIfRequired());
+    this.dismissablesService.initialize();
 
     electron.ipcRenderer.on('shutdown', () => {
+      this.windowsService.hideMainWindow();
       electron.ipcRenderer.send('acknowledgeShutdown');
       this.shutdownHandler();
     });
 
-    // Eager load services
-    const _ = [
-      this.facemasksService,
-
-      this.incrementalRolloutService,
-      this.shortcutsService,
-      this.streamlabelsService,
-
-      // Pre-fetch stream info
-      this.streamInfoService,
-    ];
-
-    this.performanceMonitorService.start();
+    this.performanceService.startMonitoringPerformance();
 
     this.ipcServerService.listen();
     this.tcpServerService.listen();
 
-    this.patchNotesService.showPatchNotesIfRequired(onboarded);
+    this.patchNotesService.showPatchNotesIfRequired(this.state.onboarded);
     this.announcementsService.updateBanner();
-
-    const _outageService = this.outageNotificationsService;
 
     this.crashReporterService.endStartup();
 
     this.protocolLinksService.start(this.state.argv);
 
-    await this.gameOverlayService.initialize();
+    // Initialize some mac-only services
+    if (getOS() === OS.Mac) {
+      this.touchBarService;
+      this.applicationMenuService;
+    }
+
+    ipcRenderer.send('AppInitFinished');
+    this.metricsService.recordMetric('sceneCollectionLoadingTime');
   }
+
+  shutdownStarted = new Subject();
 
   @track('app_close')
   private shutdownHandler() {
     this.START_LOADING();
-    obs.NodeObs.StopCrashHandler();
-    this.crashReporterService.beginShutdown();
+    this.loadingChanged.next(true);
+    this.tcpServerService.stopListening();
 
     window.setTimeout(async () => {
-      this.windowsService.closeChildWindow();
-      await this.windowsService.closeAllOneOffs();
+      obs.NodeObs.InitShutdownSequence();
+      this.crashReporterService.beginShutdown();
+      this.shutdownStarted.next();
+      this.keyListenerService.shutdown();
+      this.platformAppsService.unloadAllApps();
+      await this.usageStatisticsService.flushEvents();
+      this.windowsService.shutdown();
       this.ipcServerService.stopListening();
-      this.tcpServerService.stopListening();
       await this.userService.flushUserSession();
       await this.sceneCollectionsService.deinitialize();
-      this.performanceMonitorService.stop();
+      this.performanceService.stop();
       this.transitionsService.shutdown();
       await this.gameOverlayService.destroy();
       await this.fileManagerService.flushAll();
@@ -175,10 +207,13 @@ export class AppService extends StatefulService<IAppState> {
    * Should be called for any scene-collections loading operations
    * @see RunInLoadingMode decorator
    */
-  async runInLoadingMode(fn: () => Promise<any> | void) {
+  async runInLoadingMode(fn: () => Promise<any> | void, options: IRunInLoadingModeOptions = {}) {
+    const opts: IRunInLoadingModeOptions = Object.assign({ hideStyleBlockers: true }, options);
+
     if (!this.state.loading) {
-      this.windowsService.updateStyleBlockers('main', true);
+      if (opts.hideStyleBlockers) this.windowsService.updateStyleBlockers('main', true);
       this.START_LOADING();
+      this.loadingChanged.next(true);
 
       // The scene collections window is the only one we don't close when
       // switching scene collections, because it results in poor UX.
@@ -196,12 +231,12 @@ export class AppService extends StatefulService<IAppState> {
       await this.sceneCollectionsService.disableAutoSave();
     }
 
-    let error: Error = null;
+    let error: any = null;
     let result: any = null;
 
     try {
       result = fn();
-    } catch (e) {
+    } catch (e: unknown) {
       error = null;
     }
 
@@ -211,7 +246,7 @@ export class AppService extends StatefulService<IAppState> {
       this.loadingPromises[promiseId] = result;
       try {
         returningValue = await result;
-      } catch (e) {
+      } catch (e: unknown) {
         error = e;
       }
       delete this.loadingPromises[promiseId];
@@ -227,10 +262,21 @@ export class AppService extends StatefulService<IAppState> {
     this.tcpServerService.startRequestsHandling();
     this.sceneCollectionsService.enableAutoSave();
     this.FINISH_LOADING();
+    this.loadingChanged.next(false);
     // Set timeout to allow transition animation to play
-    setTimeout(() => this.windowsService.updateStyleBlockers('main', false), 500);
+    if (opts.hideStyleBlockers) {
+      setTimeout(() => this.windowsService.updateStyleBlockers('main', false), 500);
+    }
     if (error) throw error;
     return returningValue;
+  }
+
+  private async downloadAutoGameCaptureConfig() {
+    // download game-list for auto game capture
+    await downloadFile(
+      'https://slobs-cdn.streamlabs.com/configs/game_capture_list.json',
+      `${this.appDataDirectory}/game_capture_list.json`,
+    );
   }
 
   @mutation()
@@ -251,5 +297,10 @@ export class AppService extends StatefulService<IAppState> {
   @mutation()
   private SET_ARGV(argv: string[]) {
     this.state.argv = argv;
+  }
+
+  @mutation()
+  private SET_ONBOARDED(onboarded: boolean) {
+    this.state.onboarded = onboarded;
   }
 }

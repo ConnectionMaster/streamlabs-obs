@@ -3,12 +3,12 @@ import { Component } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import { TObsFormData } from 'components/obs/inputs/ObsInput';
 import { WindowsService } from 'services/windows';
-import { ISourcesServiceApi } from 'services/sources';
+import { SourcesService } from 'services/sources';
 import ModalLayout from 'components/ModalLayout.vue';
-import Display from 'components/shared/Display.vue';
-import GenericForm from 'components/obs/inputs/GenericForm.vue';
+import { Display } from 'components/shared/ReactComponent';
+import GenericForm from 'components/obs/inputs/GenericForm';
 import WidgetProperties from 'components/custom-source-properties/WidgetProperties.vue';
-import StreamlabelProperties from 'components/custom-source-properties/StreamlabelProperties.vue';
+import StreamlabelProperties from 'components/custom-source-properties/StreamlabelProperties';
 import PlatformAppProperties from 'components/custom-source-properties/PlatformAppProperties.vue';
 import { $t } from 'services/i18n';
 import { Subscription } from 'rxjs';
@@ -16,6 +16,7 @@ import electron from 'electron';
 import { ErrorField } from 'vee-validate';
 import { CustomizationService } from 'services/customization';
 import { EditorCommandsService } from 'services/editor-commands';
+import { UsageStatisticsService } from 'services/usage-statistics';
 
 @Component({
   components: {
@@ -28,13 +29,14 @@ import { EditorCommandsService } from 'services/editor-commands';
   },
 })
 export default class SourceProperties extends Vue {
-  @Inject() sourcesService: ISourcesServiceApi;
-  @Inject() windowsService: WindowsService;
+  @Inject() sourcesService!: SourcesService;
+  @Inject() windowsService!: WindowsService;
   @Inject() customizationService: CustomizationService;
   @Inject() private editorCommandsService: EditorCommandsService;
+  @Inject() private usageStatisticsService: UsageStatisticsService;
 
   sourceId = this.windowsService.getChildWindowQueryParams().sourceId;
-  source = this.sourcesService.getSource(this.sourceId);
+  source = this.sourcesService.views.getSource(this.sourceId);
   properties: TObsFormData = [];
   hasErrors = false;
 
@@ -45,6 +47,7 @@ export default class SourceProperties extends Vue {
     this.properties = this.source ? this.source.getPropertiesFormData() : [];
     this.sourceRemovedSub = this.sourcesService.sourceRemoved.subscribe(source => {
       if (source.sourceId === this.sourceId) {
+        this.source = null;
         electron.remote.getCurrentWindow().close();
       }
     });
@@ -69,6 +72,10 @@ export default class SourceProperties extends Vue {
   }
 
   onInputHandler(properties: TObsFormData, changedIndex: number) {
+    if (properties[changedIndex].name === 'video_config') {
+      this.usageStatisticsService.actions.recordFeatureUsage('DShowConfigureVideo');
+    }
+
     this.editorCommandsService.executeCommand('EditSourcePropertiesCommand', this.sourceId, [
       properties[changedIndex],
     ]);
@@ -91,7 +98,7 @@ export default class SourceProperties extends Vue {
   }
 
   get windowTitle() {
-    const source = this.sourcesService.getSource(this.sourceId);
+    const source = this.sourcesService.views.getSource(this.sourceId);
     return source ? $t('Properties for %{sourceName}', { sourceName: source.name }) : '';
   }
 

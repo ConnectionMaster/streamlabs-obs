@@ -3,13 +3,12 @@ import { Component, Prop, Watch } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import { $t } from 'services/i18n';
 import { TObsFormData } from 'components/obs/inputs/ObsInput';
-import GenericForm from 'components/obs/inputs/GenericForm.vue';
+import GenericForm from 'components/obs/inputs/GenericForm';
 import { ProjectorService } from 'services/projector';
 import ModalLayout from 'components/ModalLayout.vue';
 import Tabs from 'components/Tabs.vue';
-import Display from 'components/shared/Display.vue';
+import { Display, TestWidgets } from 'components/shared/ReactComponent';
 import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
-import TestWidgets from 'components/TestWidgets.vue';
 import { ToggleInput, NumberInput } from 'components/shared/inputs/inputs';
 import { IWidgetData, IWidgetsServiceApi } from 'services/widgets';
 import cloneDeep from 'lodash/cloneDeep';
@@ -18,6 +17,24 @@ import CustomFieldsEditor from 'components/widgets/CustomFieldsEditor.vue';
 import CodeEditor from 'components/widgets/CodeEditor.vue';
 import { WindowsService } from 'services/windows';
 import { IAlertBoxVariation } from 'services/widgets/settings/alert-box/alert-box-api';
+import { ERenderingMode } from '../../../obs-api';
+import TsxComponent, { createProps } from 'components/tsx-component';
+import Scrollable from 'components/shared/Scrollable';
+
+class WidgetEditorProps {
+  isAlertBox?: boolean = false;
+  selectedId?: string = null;
+  selectedAlert?: string = null;
+  /**
+   * Declaration of additional sections in the right panel
+   * @see example of usage in TipJar.vue.ts
+   */
+  slots?: IWidgetNavItem[] = null;
+  /**
+   * Navigation items for the right panel
+   */
+  navItems: IWidgetNavItem[] = null;
+}
 
 @Component({
   components: {
@@ -31,27 +48,14 @@ import { IAlertBoxVariation } from 'services/widgets/settings/alert-box/alert-bo
     Display,
     CustomFieldsEditor,
     CodeEditor,
+    Scrollable,
   },
+  props: createProps(WidgetEditorProps),
 })
-export default class WidgetEditor extends Vue {
-  @Inject() private widgetsService: IWidgetsServiceApi;
-  @Inject() private windowsService: WindowsService;
+export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
+  @Inject() private widgetsService!: IWidgetsServiceApi;
+  @Inject() private windowsService!: WindowsService;
   @Inject() private projectorService: ProjectorService;
-
-  @Prop() isAlertBox?: boolean;
-  @Prop() selectedId?: string;
-  @Prop() selectedAlert?: string;
-
-  /**
-   * Declaration of additional sections in the right panel
-   * @see example of usage in TipJar.vue.ts
-   */
-  @Prop() slots?: IWidgetNavItem[];
-
-  /**
-   * Navigation items for the right panel
-   */
-  @Prop() navItems: IWidgetNavItem[];
 
   $refs: { content: HTMLElement; sidebar: HTMLElement; code: HTMLElement };
 
@@ -66,7 +70,7 @@ export default class WidgetEditor extends Vue {
   ];
   currentTopTab = 'editor';
   currentCodeTab = 'HTML';
-  currentSetting = this.navItems[0].value;
+  currentSetting: string = null;
   readonly settingsState = this.widget.getSettingsService().state;
   animating = false;
   canShowEditor = false;
@@ -89,9 +93,15 @@ export default class WidgetEditor extends Vue {
   }
 
   get selectedVariation() {
-    if (!this.selectedAlert || !this.selectedId || this.selectedAlert === 'general') return;
-    return this.wData.settings[this.selectedAlert].variations.find(
-      (variation: IAlertBoxVariation) => variation.id === this.selectedId,
+    if (
+      !this.props.selectedAlert ||
+      !this.props.selectedId ||
+      this.props.selectedAlert === 'general'
+    ) {
+      return;
+    }
+    return this.wData.settings[this.props.selectedAlert].variations.find(
+      (variation: IAlertBoxVariation) => variation.id === this.props.selectedId,
     );
   }
 
@@ -108,6 +118,7 @@ export default class WidgetEditor extends Vue {
 
   mounted() {
     const source = this.widget.getSource();
+    this.currentSetting = this.props.navItems[0].value;
     this.properties = source ? source.getPropertiesFormData() : [];
 
     // create a temporary previewSource while current window is shown
@@ -125,11 +136,11 @@ export default class WidgetEditor extends Vue {
 
   get windowTitle() {
     const source = this.widget.getSource();
-    return $t('Settings for ') + source.name;
+    return $t('Settings for %{sourceName}', { sourceName: source.name });
   }
 
   get sourceProperties() {
-    return this.properties.slice(5);
+    return this.properties.slice(4);
   }
 
   get topProperties() {
@@ -137,7 +148,10 @@ export default class WidgetEditor extends Vue {
   }
 
   createProjector() {
-    this.projectorService.createProjector(this.widget.previewSourceId);
+    this.projectorService.createProjector(
+      ERenderingMode.OBS_MAIN_RENDERING,
+      this.widget.previewSourceId,
+    );
   }
 
   retryDataFetch() {
@@ -153,7 +167,7 @@ export default class WidgetEditor extends Vue {
 
   get topTabs() {
     const firstTab = [{ value: 'editor', name: $t('Widget Editor') }];
-    if (this.selectedAlert === 'general') {
+    if (this.props.selectedAlert === 'general') {
       return firstTab;
     }
     return this.apiSettings.customCodeAllowed
@@ -182,7 +196,7 @@ export default class WidgetEditor extends Vue {
 
   @Watch('selectedAlert')
   autoselectCurrentSetting() {
-    this.currentSetting = this.navItems[0].value;
+    this.currentSetting = this.props.navItems[0].value;
   }
 
   toggleCustomCode(enabled: boolean) {

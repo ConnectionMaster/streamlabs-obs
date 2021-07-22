@@ -1,10 +1,11 @@
 import Vue from 'vue';
-import { Component } from 'vue-property-decorator';
+import { Component, Watch } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import { getComponents, WindowsService } from 'services/windows';
 import { CustomizationService } from 'services/customization';
 import Util from 'services/utils';
-import TitleBar from '../TitleBar.vue';
+import { TitleBar } from 'components/shared/ReactComponent';
+import antdThemes from 'styles/antd/index';
 
 @Component({
   components: {
@@ -18,6 +19,10 @@ export default class OneOffWindow extends Vue {
 
   created() {
     window.addEventListener('resize', this.windowSizeHandler);
+  }
+
+  mounted() {
+    antdThemes[this.theme].use();
   }
 
   destroyed() {
@@ -36,16 +41,22 @@ export default class OneOffWindow extends Vue {
     return this.customizationService.currentTheme;
   }
 
+  @Watch('theme')
+  updateAntd(newTheme: string, oldTheme: string) {
+    antdThemes[oldTheme].unuse();
+    antdThemes[newTheme].use();
+  }
+
   windowResizeTimeout: number;
 
   windowSizeHandler() {
     if (!this.windowsService.state[this.windowId].hideStyleBlockers) {
-      this.windowsService.updateStyleBlockers(this.windowId, true);
+      this.windowsService.actions.updateStyleBlockers(this.windowId, true);
     }
     clearTimeout(this.windowResizeTimeout);
 
     this.windowResizeTimeout = window.setTimeout(
-      () => this.windowsService.updateStyleBlockers(this.windowId, false),
+      () => this.windowsService.actions.updateStyleBlockers(this.windowId, false),
       200,
     );
   }

@@ -1,42 +1,54 @@
-import { ServiceHelper } from 'services/core';
 import { SceneItemFolder as InternalSceneItemFolder } from 'services/scenes';
 import { InjectFromExternalApi, Fallback } from 'services/api/external-api';
 import { SourcesService } from 'services/api/external-api/sources/sources';
 import { SceneItem } from './scene-item';
 import { ISceneNodeModel, SceneNode } from './scene-node';
 import { Selection } from './selection';
+import Utils from '../../../utils';
+import { ServiceHelper } from '../../../core';
 
+/**
+ * Serialized representation of {@link SceneItemFolder}.
+ */
 export interface ISceneItemFolderModel extends ISceneNodeModel {
   name: string;
 }
 
 /**
- * API for folders
+ * API for scene item folder operations. Allows actions for adding and removing
+ * scene nodes to the current folder and also operations for getting various
+ * other nodes based on this folder. For further scene item folder operations
+ * see {@link SceneNode}, {@link Scene} and {@link SourcesService}.
  */
 @ServiceHelper()
-export class SceneItemFolder extends SceneNode {
+export class SceneItemFolder extends SceneNode implements ISceneItemFolderModel {
   @Fallback() private sceneFolder: InternalSceneItemFolder;
   @InjectFromExternalApi() private sourcesService: SourcesService;
 
+  name: string;
+
   constructor(public sceneId: string, public nodeId: string) {
     super(sceneId, nodeId);
-    this.sceneFolder = this.internalScenesService.getScene(sceneId).getFolder(this.nodeId);
+    this.sceneFolder = this.internalScenesService.views.getScene(sceneId).getFolder(this.nodeId);
+    Utils.applyProxy(this, () => this.getModel());
   }
 
   /**
-   * serialize folder
+   * @returns A serialized representation of this {@link SceneItemFolder}
    */
   getModel(): ISceneItemFolderModel {
     return {
+      ...super.getModel(),
       name: this.sceneFolder.name,
       childrenIds: this.sceneNode.childrenIds,
-      ...super.getModel(),
     };
   }
 
   /**
-   * Returns all direct children
-   * To get all nested children
+   * Returns all direct children. To get all nested children use
+   * {@link getNestedNodes}.
+   *
+   * @returns All direct {@link SceneNode}s
    * @see getNestedNodes
    */
   getNodes(): SceneNode[] {
@@ -45,14 +57,14 @@ export class SceneItemFolder extends SceneNode {
   }
 
   /**
-   * Returns all direct children items
+   * @returns All direct children {@link SceneItem}s
    */
   getItems(): SceneItem[] {
     const scene = this.getScene();
     return this.sceneFolder.getItems().map(item => scene.getItem(item.id));
   }
   /**
-   * Returns all direct children folders
+   * @returns All direct children {@link SceneItemFolder}s
    */
   getFolders(): SceneItemFolder[] {
     const scene = this.getScene();
@@ -60,8 +72,10 @@ export class SceneItemFolder extends SceneNode {
   }
 
   /**
-   * Returns all nested nodes.
-   * To get only direct children nodes
+   * Returns all nested nodes. To get only direct children nodes use
+   * {@link getNodes}.
+   *
+   * @returns All nested {@link SceneNode}s
    * @see getNodes
    */
   getNestedNodes(): SceneNode[] {
@@ -70,31 +84,39 @@ export class SceneItemFolder extends SceneNode {
   }
 
   /**
-   * Renames the folder
+   * Renames this scene folder.
+   *
+   * @param newName The new name of the folder
    */
   setName(newName: string): void {
     return this.sceneFolder.setName(newName);
   }
 
   /**
-   * Add an item or folder to the current folder
-   * A shortcut for `SceneNode.setParent()`
-   * @see SceneNode.setParent()
+   * Add an item or folder to the this folder. Shortcut for
+   * {@link SceneNode.setParent}
+   *
+   * @param sceneNodeId The scene node to add to this folder
+   * @see SceneNode.setParent
    */
   add(sceneNodeId: string): void {
     return this.sceneFolder.add(sceneNodeId);
   }
 
   /**
-   * Removes folder, but keep the all nested nodes untouched
+   * Removes this folder, but keeps all nested nodes untouched by moving them
+   * to parent.
    */
   ungroup(): void {
     return this.sceneFolder.ungroup();
   }
 
   /**
-   * Returns a Selection object
-   * Helpful for bulk operations
+   * Returns a Selection object. Helpful for bulk operations on the scene nodes
+   * of this folder.
+   *
+   * @returns A new {@link Selection} object with all children of this folder
+   * selected
    */
   getSelection(): Selection {
     // convert InternalSelection to ExternalSelection

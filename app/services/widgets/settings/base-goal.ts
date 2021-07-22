@@ -8,8 +8,8 @@ interface IBaseGoalData extends IWidgetData {
 
 interface IGoalWidgetApiSettings extends IWidgetApiSettings {
   goalUrl: string;
-  goalCreateEvent: string;
-  goalResetEvent: string;
+  goalCreateEvent?: string;
+  goalResetEvent?: string;
 }
 
 @InheritMutations()
@@ -17,8 +17,8 @@ export abstract class BaseGoalService<
   TGoalData extends IBaseGoalData,
   TGoalCreateOptions
 > extends WidgetSettingsService<TGoalData> {
-  init() {
-    super.init();
+  subToWebsocket() {
+    super.subToWebsocket();
 
     this.websocketService.socketEvent.subscribe(event => {
       const apiSettings = this.getApiSettings();

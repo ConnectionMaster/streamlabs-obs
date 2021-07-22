@@ -28,6 +28,8 @@ interface INodeLibuiohook {
   registerCallback(binding: IKeyBinding): boolean;
   unregisterCallback(binding: IKeyBinding): void;
   unregisterAllCallbacks(): void;
+  startHook(): void;
+  stopHook(): void;
 }
 
 export class KeyListenerService extends Service {
@@ -35,6 +37,8 @@ export class KeyListenerService extends Service {
 
   // key -> namepsace -> function
   bindings: Dictionary<Dictionary<IKeyBinding>> = {};
+
+  hookStarted = false;
 
   init() {
     this.libuiohook = electron.remote.require('node-libuiohook');
@@ -49,6 +53,11 @@ export class KeyListenerService extends Service {
   }
 
   register(binding: IKeyBinding, namespace = 'global') {
+    if (!this.hookStarted) {
+      this.libuiohook.startHook();
+      this.hookStarted = true;
+    }
+
     // An empty string is not valid
     if (!binding.key) return;
     const keystr = this.getKeyString(binding);
@@ -78,14 +87,17 @@ export class KeyListenerService extends Service {
   unregister(binding: IKeyBinding, namespace = 'global') {
     const keystr = this.getKeyString(binding);
     delete this.bindings[keystr][namespace];
+    if (Object.keys(this.bindings[keystr]).length === 0) {
+      delete this.bindings[keystr];
+      this.libuiohook.unregisterCallback(binding);
+    }
+  }
 
-    // TODO: Node-libuiohook unbinding of individual keys does not work.
-    // When that is fixed, this can be uncommented for efficiency.
-
-    // if (Object.keys(this.bindings[keystr]).length === 0) {
-    //   delete this.bindings[keystr];
-    //   this.libuiohook.unregisterCallback(binding);
-    // }
+  shutdown() {
+    if (this.hookStarted) {
+      this.libuiohook.unregisterAllCallbacks();
+      this.libuiohook.stopHook();
+    }
   }
 
   // Returns a string used for fast lookup of this keybinding

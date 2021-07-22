@@ -1,4 +1,3 @@
-import WritableStream = NodeJS.WritableStream;
 import os from 'os';
 import crypto from 'crypto';
 import { PersistentStatefulService, Inject, mutation } from 'services/core';
@@ -15,6 +14,10 @@ import { IIPAddressDescription, ITcpServerServiceApi, ITcpServersSettings } from
 import { UsageStatisticsService } from 'services/usage-statistics';
 import { ExternalApiService } from '../external-api';
 import { SceneCollectionsService } from 'services/scene-collections';
+// eslint-disable-next-line no-undef
+import WritableStream = NodeJS.WritableStream;
+import { $t } from 'services/i18n';
+import { OS, getOS } from 'util/operating-systems';
 
 const net = require('net');
 
@@ -47,7 +50,8 @@ const TCP_PORT = 28194;
 /**
  * A transport layer for TCP and Websockets communications with internal API
  */
-export class TcpServerService extends PersistentStatefulService<ITcpServersSettings>
+export class TcpServerService
+  extends PersistentStatefulService<ITcpServersSettings>
   implements ITcpServerServiceApi {
   static defaultState: ITcpServersSettings = {
     token: '',
@@ -69,6 +73,10 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
   private nextClientId = 1;
   private servers: IServer[] = [];
   private isRequestsHandlingStopped = false;
+  private isEventsSendingStopped = true;
+
+  // if true then execute API request even if "isRequestsHandlingStopped" flag is set
+  private forceRequests = false;
 
   // enable to debug
   private enableLogs = false;
@@ -80,26 +88,36 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
 
   listen() {
     this.listenConnections(this.createTcpServer());
-    if (this.state.namedPipe.enabled) this.listenConnections(this.createNamedPipeServer());
+
+    // Named pipe is windows only
+    if (this.state.namedPipe.enabled && getOS() === OS.Windows) {
+      this.listenConnections(this.createNamedPipeServer());
+    }
+
     if (this.state.websockets.enabled) this.listenConnections(this.createWebsoketsServer());
   }
 
   /**
    * stop handle any requests
    * each API request will be responded with "API is busy" error
-   * this method doesn't stop event emitting
    */
-  stopRequestsHandling() {
+  stopRequestsHandling(stopEventsToo = true) {
     this.isRequestsHandlingStopped = true;
+    this.isEventsSendingStopped = stopEventsToo;
   }
 
   startRequestsHandling() {
     this.isRequestsHandlingStopped = false;
+    this.isEventsSendingStopped = false;
   }
 
   stopListening() {
     this.servers.forEach(server => server.close());
     Object.keys(this.clients).forEach(clientId => this.disconnectClient(Number(clientId)));
+  }
+
+  get websocketRemoteConnectionEnabled() {
+    return this.state.websockets.enabled && this.state.websockets.allowRemote;
   }
 
   enableWebsoketsRemoteConnections() {
@@ -152,7 +170,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
           <IObsInput<string>>{
             value: settings.namedPipe.pipeName,
             name: 'pipeName',
-            description: 'Pipe Name',
+            description: $t('Pipe Name'),
             type: 'OBS_PROPERTY_TEXT',
             visible: true,
             enabled: settings.namedPipe.enabled,
@@ -166,7 +184,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
           <IObsInput<boolean>>{
             value: settings.websockets.enabled,
             name: 'enabled',
-            description: 'Enabled',
+            description: $t('Enabled'),
             type: 'OBS_PROPERTY_BOOL',
             visible: true,
             enabled: true,
@@ -175,7 +193,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
           <IObsInput<boolean>>{
             value: settings.websockets.allowRemote,
             name: 'allowRemote',
-            description: 'Allow Remote Connections',
+            description: $t('Allow Remote Connections'),
             type: 'OBS_PROPERTY_BOOL',
             visible: true,
             enabled: settings.websockets.enabled,
@@ -184,7 +202,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
           <IObsInput<number>>{
             value: settings.websockets.port,
             name: 'port',
-            description: 'Port',
+            description: $t('Port'),
             type: 'OBS_PROPERTY_INT',
             minVal: 0,
             maxVal: 65535,
@@ -275,7 +293,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
   }
 
   private onConnectionHandler(socket: WritableStream, server: IServer) {
-    this.log('new connection', socket);
+    this.log('new connection');
 
     const id = this.nextClientId++;
     const client: IClient = {
@@ -286,12 +304,15 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
       isAuthorized: false,
     };
     this.clients[id] = client;
+    this.log(`Id assigned ${id}`);
 
-    if (server.type === 'namedPipe' || this.isLocalClient(client)) {
+    // manual authorization for local clients is not required except for websokets
+    // disabling authorization for local websoket clients introduces a breach where any website can establish connection to the localhost
+    if (server.type === 'namedPipe' || (server.type === 'tcp' && this.isLocalClient(client))) {
       this.authorizeClient(client);
     }
 
-    socket.on('data', (data: any) => {
+    socket.on('data', (data: Buffer) => {
       this.onRequestHandler(client, data.toString());
     });
 
@@ -312,6 +333,8 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
         throw e;
       }
     });
+
+    this.log(`Client ${id} ready`);
   }
 
   private authorizeClient(client: IClient) {
@@ -326,15 +349,16 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
   }
 
   private onRequestHandler(client: IClient, data: string) {
-    this.log('tcp request', data);
+    this.log(`tcp request from ${client.id}`, data);
 
-    if (this.isRequestsHandlingStopped) {
+    if (this.isRequestsHandlingStopped && !this.forceRequests) {
       this.sendResponse(
         client,
         this.jsonrpcService.createError(null, {
           code: E_JSON_RPC_ERROR.INTERNAL_JSON_RPC_ERROR,
           message: 'API server is busy. Try again later',
         }),
+        true,
       );
 
       return;
@@ -345,7 +369,6 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
       if (!requestString) return;
       try {
         const request: IJsonRpcRequest = JSON.parse(requestString);
-        this.usageStatisticsService.recordAnalyticsEvent('TCP_API_REQUEST', request);
 
         const errorMessage = this.validateRequest(request);
 
@@ -372,7 +395,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
         }
 
         this.sendResponse(client, response);
-      } catch (e) {
+      } catch (e: unknown) {
         this.sendResponse(
           client,
           this.jsonrpcService.createError(null, {
@@ -395,14 +418,14 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
 
       // these events will be sent to the client even if isRequestsHandlingStopped = true
       // this allows to send this event even if the app is in the loading state
-      const whitelistedEvents: (keyof SceneCollectionsService)[] = [
+      const allowlistedEvents: (keyof SceneCollectionsService)[] = [
         'collectionWillSwitch',
         'collectionAdded',
         'collectionRemoved',
         'collectionSwitched',
         'collectionUpdated',
       ];
-      const force = (whitelistedEvents as string[]).includes(eventName);
+      const force = (allowlistedEvents as string[]).includes(eventName);
 
       const needToSendEvent =
         client.listenAllSubscriptions || client.subscriptions.includes(event.result.resourceId);
@@ -480,22 +503,36 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
       });
       return true;
     }
+
+    // set forceRequests flag
+    // when forceRequest is true API responds even while loading a SceneCollection
+    if (request.method === 'forceRequests' && request.params.resource === 'TcpServerService') {
+      this.forceRequests = request.params.args[0];
+      this.sendResponse(client, {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: true,
+      });
+      return true;
+    }
   }
 
   private onDisconnectHandler(client: IClient) {
-    this.log('client disconnected');
+    this.log(`client disconnected ${client.id}`);
     delete this.clients[client.id];
   }
 
   private sendResponse(client: IClient, response: IJsonRpcResponse<any>, force = false) {
-    if (this.isRequestsHandlingStopped && !force) return;
+    if (this.isEventsSendingStopped) {
+      if (!force && !this.forceRequests) return;
+    }
 
     this.log('send response', response);
 
     // unhandled exceptions completely destroy Rx.Observable subscription
     try {
       client.socket.write(`${JSON.stringify(response)}\n`);
-    } catch (e) {
+    } catch (e: unknown) {
       // probably the client has been silently disconnected
       console.info('unable to send response', response, e);
     }

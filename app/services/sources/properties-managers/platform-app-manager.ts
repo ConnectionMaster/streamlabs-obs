@@ -15,7 +15,9 @@ export class PlatformAppManager extends PropertiesManager {
   @Inject() platformAppsService: PlatformAppsService;
   @Inject() transitionsService: TransitionsService;
 
-  blacklist = ['url', 'is_local_file'];
+  get denylist() {
+    return ['url', 'is_local_file'];
+  }
 
   customUIComponent = 'PlatformAppProperties';
 

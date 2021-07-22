@@ -1,8 +1,9 @@
 /// <reference path="../vendor/toasted.d.ts" />
 /// <reference path="../vendor/urijs.d.ts" />
-///<reference path="./jsx.d.ts"/>
 
 // all global interfaces here
+
+declare const SLOBS_BUNDLE_ID: string;
 
 interface Dictionary<TItemType> {
   [key: string]: TItemType;
@@ -36,14 +37,20 @@ interface ICrop {
   right: number;
 }
 
-interface IResource {
-  resourceId: string;
-}
-
 interface IRGBColor {
   r: number;
   g: number;
   b: number;
+}
+
+type DeepPartial<T> = Partial<{ [P in keyof T]: DeepPartial<T[P]> }>;
+
+/**
+ * This is a much more typesafe type for json to return,
+ * as it requires declaring its type before use.
+ */
+interface Response {
+  json(): Promise<unknown>;
 }
 
 // list of modules without type definitions
@@ -70,9 +77,20 @@ declare module 'vue-resize';
 declare module 'serve-handler';
 declare module 'v-selectpage';
 declare module '*.m.less';
+declare module '*.lazy.less';
 declare module 'streamlabs-beaker';
 declare module '*.vert';
 declare module '*.frag';
+declare module 'mark.js';
+declare module 'vuejs-datepicker';
+declare module 'vuejs-datepicker/dist/locale';
+declare module 'color-picker';
+declare module 'overlayscrollbars-vue';
+declare module 'gl-transitions';
+
+// React modules
+declare module 'rc-animate';
+declare module 'react-dom';
 
 // uncomment to allow TS to import components without type definitions
 // webpack still checks the module existence

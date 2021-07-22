@@ -1,58 +1,67 @@
 import Vue from 'vue';
-import { Component } from 'vue-property-decorator';
+import { Component, Watch } from 'vue-property-decorator';
 import SideNav from '../SideNav';
-import NewsBanner from '../NewsBanner';
+import { NewsBanner, TitleBar, Grow } from 'components/shared/ReactComponent';
 import { ScenesService } from 'services/scenes';
 import { PlatformAppsService } from 'services/platform-apps';
 import { EditorCommandsService } from '../../app-services';
 import VueResize from 'vue-resize';
+import { $t } from 'services/i18n';
+import fs from 'fs';
 Vue.use(VueResize);
 
 // Pages
-import Studio from '../pages/Studio.vue';
-import Dashboard from '../pages/Dashboard.vue';
-import Chatbot from '../pages/Chatbot.vue';
+import Studio from '../pages/Studio';
 import PlatformAppStore from '../pages/PlatformAppStore.vue';
 import BrowseOverlays from 'components/pages/BrowseOverlays.vue';
-import Live from '../pages/Live.vue';
+import AlertboxLibrary from 'components/pages/AlertboxLibrary';
 import Onboarding from '../pages/Onboarding';
-import TitleBar from '../TitleBar.vue';
+import LayoutEditor from '../pages/LayoutEditor';
 import { Inject } from '../../services/core/injector';
 import { CustomizationService } from 'services/customization';
 import { NavigationService } from 'services/navigation';
 import { AppService } from 'services/app';
 import { UserService } from 'services/user';
-import { WindowsService } from 'services/windows';
+import { IModalOptions, WindowsService } from 'services/windows';
 import LiveDock from '../LiveDock.vue';
 import StudioFooter from '../StudioFooter.vue';
-import CustomLoader from '../CustomLoader';
-import PatchNotes from '../pages/PatchNotes.vue';
+import { PatchNotes, Loader, Highlighter } from '../shared/ReactComponent';
 import PlatformAppMainPage from '../pages/PlatformAppMainPage.vue';
-import Help from '../pages/Help.vue';
 import electron from 'electron';
 import ResizeBar from 'components/shared/ResizeBar.vue';
-import CreatorSites from 'components/pages/CreatorSites';
+import PlatformMerge from 'components/pages/PlatformMerge';
+import { getPlatformService } from 'services/platforms';
+import ModalWrapper from '../shared/modals/ModalWrapper';
+import antdThemes from 'styles/antd/index';
+
+const loadedTheme = () => {
+  const customizationState = localStorage.getItem('PersistentStatefulService-CustomizationService');
+  if (customizationState) {
+    return JSON.parse(customizationState)?.theme;
+  }
+};
 
 @Component({
   components: {
     TitleBar,
     SideNav,
     Studio,
-    Dashboard,
     BrowseOverlays,
-    Live,
     Onboarding,
     LiveDock,
     StudioFooter,
-    CustomLoader,
+    CustomLoader: Loader,
     PatchNotes,
     NewsBanner,
-    Chatbot,
     PlatformAppMainPage,
     PlatformAppStore,
-    Help,
     ResizeBar,
-    CreatorSites,
+    PlatformMerge,
+    LayoutEditor,
+    AlertboxLibrary,
+    ModalWrapper,
+    Highlighter,
+    Grow,
   },
 })
 export default class Main extends Vue {
@@ -65,16 +74,49 @@ export default class Main extends Vue {
   @Inject() platformAppsService: PlatformAppsService;
   @Inject() editorCommandsService: EditorCommandsService;
 
-  mounted() {
-    const dockWidth = this.customizationService.state.livedockSize;
-    if (dockWidth < 1) {
-      // migrate from old percentage value to the pixel value
-      this.resetWidth();
-    }
+  private modalOptions: IModalOptions = {
+    renderFn: null,
+  };
 
-    electron.remote.getCurrentWindow().show();
-    this.handleResize();
+  created() {
+    window.addEventListener('resize', this.windowSizeHandler);
   }
+
+  mounted() {
+    antdThemes[this.theme].use();
+    WindowsService.modalChanged.subscribe(modalOptions => {
+      this.modalOptions = { ...this.modalOptions, ...modalOptions };
+    });
+    this.updateLiveDockContraints();
+  }
+
+  get uiReady() {
+    return this.$store.state.bulkLoadFinished && this.$store.state.i18nReady;
+  }
+
+  @Watch('theme')
+  updateAntd(newTheme: string, oldTheme: string) {
+    antdThemes[oldTheme].unuse();
+    antdThemes[newTheme].use();
+  }
+
+  @Watch('uiReady')
+  initializeResize() {
+    this.$nextTick(() => {
+      const dockWidth = this.customizationService.state.livedockSize;
+      if (dockWidth < 1) {
+        // migrate from old percentage value to the pixel value
+        this.resetWidth();
+      }
+      this.handleResize();
+    });
+  }
+
+  destroyed() {
+    window.removeEventListener('resize', this.windowSizeHandler);
+  }
+
+  minEditorWidth = 500;
 
   get title() {
     return this.windowsService.state.main.title;
@@ -89,7 +131,11 @@ export default class Main extends Vue {
   }
 
   get theme() {
-    return this.customizationService.currentTheme;
+    if (this.$store.state.bulkLoadFinished) {
+      return this.customizationService.currentTheme;
+    }
+
+    return loadedTheme() || 'night-theme';
   }
 
   get applicationLoading() {
@@ -103,11 +149,21 @@ export default class Main extends Vue {
   }
 
   get isLoggedIn() {
-    return this.userService.isLoggedIn();
+    return this.userService.isLoggedIn;
   }
 
   get renderDock() {
-    return this.isLoggedIn && !this.isOnboarding && this.hasLiveDock;
+    return (
+      this.isLoggedIn &&
+      !this.isOnboarding &&
+      this.hasLiveDock &&
+      getPlatformService(this.userService.platform.type).liveDockEnabled &&
+      !this.showLoadingSpinner
+    );
+  }
+
+  get liveDockSize() {
+    return this.customizationService.state.livedockSize;
   }
 
   get isDockCollapsed() {
@@ -130,16 +186,53 @@ export default class Main extends Vue {
     return this.appService.state.errorAlert;
   }
 
-  onDropHandler(event: DragEvent) {
-    const fileList = event.dataTransfer.files;
-    const files: string[] = [];
+  async isDirectory(path: string) {
+    return new Promise<boolean>((resolve, reject) => {
+      fs.lstat(path, (err, stats) => {
+        if (err) {
+          reject(err);
+        }
+        resolve(stats.isDirectory());
+      });
+    });
+  }
 
+  async onDropHandler(event: DragEvent) {
+    if (this.page !== 'Studio') return;
+
+    const fileList = event.dataTransfer.files;
+
+    if (fileList.length < 1) return;
+
+    const files: string[] = [];
     let fi = fileList.length;
     while (fi--) files.push(fileList.item(fi).path);
 
+    const isDirectory = await this.isDirectory(files[0]).catch(err => {
+      console.error('Error checking if drop is directory', err);
+      return false;
+    });
+
+    if (files.length > 1 || isDirectory) {
+      electron.remote.dialog
+        .showMessageBox(electron.remote.getCurrentWindow(), {
+          message: $t('Are you sure you want to import multiple files?'),
+          type: 'warning',
+          buttons: [$t('Cancel'), $t('OK')],
+        })
+        .then(({ response }) => {
+          if (!response) return;
+          this.executeFileDrop(files);
+        });
+    } else {
+      this.executeFileDrop(files);
+    }
+  }
+
+  executeFileDrop(files: string[]) {
     this.editorCommandsService.executeCommand(
       'AddFilesCommand',
-      this.scenesService.activeSceneId,
+      this.scenesService.views.activeSceneId,
       files,
     );
   }
@@ -160,19 +253,20 @@ export default class Main extends Vue {
     return classes.join(' ');
   }
 
-  created() {
-    window.addEventListener('resize', this.windowSizeHandler);
-  }
-
-  destroyed() {
-    window.removeEventListener('resize', this.windowSizeHandler);
-  }
-
   windowWidth: number;
 
   hasLiveDock = true;
 
   windowResizeTimeout: number;
+
+  minDockWidth = 290;
+  maxDockWidth = this.minDockWidth;
+
+  updateLiveDockContraints() {
+    const appRect = this.$root.$el.getBoundingClientRect();
+    this.maxDockWidth = Math.min(appRect.width - this.minEditorWidth, appRect.width / 2);
+    this.minDockWidth = Math.min(290, this.maxDockWidth);
+  }
 
   windowSizeHandler() {
     if (!this.windowsService.state.main.hideStyleBlockers) {
@@ -183,43 +277,43 @@ export default class Main extends Vue {
     clearTimeout(this.windowResizeTimeout);
 
     this.hasLiveDock = this.windowWidth >= 1070;
-    this.windowResizeTimeout = window.setTimeout(
-      () => this.windowsService.updateStyleBlockers('main', false),
-      200,
-    );
+    if (this.page === 'Studio') {
+      this.hasLiveDock = this.windowWidth >= this.minEditorWidth + 100;
+    }
+    this.windowResizeTimeout = window.setTimeout(() => {
+      this.windowsService.actions.updateStyleBlockers('main', false);
+      this.updateLiveDockContraints();
+      this.updateWidth();
+    }, 200);
   }
 
   handleResize() {
     this.compactView = this.$refs.mainMiddle.clientWidth < 1200;
   }
 
+  handleEditorWidth(width: number) {
+    this.minEditorWidth = width;
+  }
+
   onResizeStartHandler() {
-    this.windowsService.updateStyleBlockers('main', true);
+    this.windowsService.actions.updateStyleBlockers('main', true);
   }
 
   onResizeStopHandler(offset: number) {
-    // tslint:disable-next-line:no-parameter-reassignment TODO
-    offset = this.leftDock ? offset : -offset;
     this.setWidth(this.customizationService.state.livedockSize + offset);
-    this.windowsService.updateStyleBlockers('main', false);
+    this.windowsService.actions.updateStyleBlockers('main', false);
   }
 
   setWidth(width: number) {
-    this.customizationService.setSettings({
+    this.customizationService.actions.setSettings({
       livedockSize: this.validateWidth(width),
     });
   }
 
   validateWidth(width: number): number {
-    const appRect = this.$root.$el.getBoundingClientRect();
-    const minEditorWidth = 860;
-    const minWidth = 290;
-    const maxWidth = Math.min(appRect.width - minEditorWidth, appRect.width / 2);
-    // tslint:disable-next-line:no-parameter-reassignment TODO
-    width = Math.max(minWidth, width);
-    // tslint:disable-next-line:no-parameter-reassignment
-    width = Math.min(maxWidth, width);
-    return width;
+    let constrainedWidth = Math.max(this.minDockWidth, width);
+    constrainedWidth = Math.min(this.maxDockWidth, width);
+    return constrainedWidth;
   }
 
   updateWidth() {

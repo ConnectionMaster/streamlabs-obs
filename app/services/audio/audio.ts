@@ -24,6 +24,9 @@ import {
 } from './audio-api';
 import { EDeviceType, HardwareService, IDevice } from 'services/hardware';
 import { $t } from 'services/i18n';
+import { ipcRenderer } from 'electron';
+import without from 'lodash/without';
+import { ViewHandler } from 'services/core';
 
 export enum E_AUDIO_CHANNELS {
   OUTPUT_1 = 1,
@@ -38,10 +41,41 @@ interface IAudioSourceData {
   volmeter?: obs.IVolmeter;
   callbackInfo?: obs.ICallbackData;
   stream?: Observable<IVolmeter>;
+  timeoutId?: number;
+  isControlledViaObs?: boolean;
+}
+
+class AudioViews extends ViewHandler<IAudioSourcesState> {
+  get sourcesForCurrentScene(): AudioSource[] {
+    return this.getSourcesForScene(this.getServiceViews(ScenesService).activeSceneId);
+  }
+
+  getSourcesForScene(sceneId: string): AudioSource[] {
+    const scene = this.getServiceViews(ScenesService).getScene(sceneId);
+    const sceneSources = scene
+      .getNestedSources({ excludeScenes: true })
+      .filter(sceneItem => sceneItem.audio);
+
+    const globalSources = this.getServiceViews(SourcesService)
+      .getSources()
+      .filter(source => source.channel !== void 0);
+    return globalSources
+      .concat(sceneSources)
+      .map((sceneSource: ISource) => this.getSource(sceneSource.sourceId))
+      .filter(item => item);
+  }
+
+  getSource(sourceId: string): AudioSource {
+    return this.state.audioSources[sourceId] ? new AudioSource(sourceId) : void 0;
+  }
+
+  getSources(): AudioSource[] {
+    return Object.keys(this.state.audioSources).map(sourceId => this.getSource(sourceId));
+  }
 }
 
 @InitAfter('SourcesService')
-export class AudioService extends StatefulService<IAudioSourcesState> implements IAudioServiceApi {
+export class AudioService extends StatefulService<IAudioSourcesState> {
   static initialState: IAudioSourcesState = {
     audioSources: {},
   };
@@ -55,18 +89,33 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
   @Inject() private windowsService: WindowsService;
   @Inject() private hardwareService: HardwareService;
 
+  get views() {
+    return new AudioViews(this.state);
+  }
+
   protected init() {
+    this.initVolmeterRelay();
+
     this.sourcesService.sourceAdded.subscribe(sourceModel => {
-      const source = this.sourcesService.getSource(sourceModel.sourceId);
+      const source = this.sourcesService.views.getSource(sourceModel.sourceId);
       if (!source.audio) return;
       this.createAudioSource(source);
     });
 
     this.sourcesService.sourceUpdated.subscribe(source => {
-      const audioSource = this.getSource(source.sourceId);
+      const audioSource = this.views.getSource(source.sourceId);
+      const obsSource = this.sourcesService.views.getSource(source.sourceId);
+      const formData = obsSource
+        .getPropertiesFormData()
+        .find(data => data.name === 'reroute_audio');
+      if (formData) {
+        this.UPDATE_AUDIO_SOURCE(source.sourceId, {
+          isControlledViaObs: !!formData.value,
+        });
+      }
 
       if (!audioSource && source.audio) {
-        this.createAudioSource(this.sourcesService.getSource(source.sourceId));
+        this.createAudioSource(this.sourcesService.views.getSource(source.sourceId));
       }
 
       if (audioSource && !source.audio) {
@@ -84,47 +133,36 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
   }
 
   static msToTimeSpec(ms: number): obs.ITimeSpec {
-    return {
-      sec: Math.floor(ms / 1000),
-      nsec: Math.floor(ms % 1000) * 1000000,
-    };
+    return { sec: Math.trunc(ms / 1000), nsec: Math.trunc(ms % 1000) * 1000000 };
   }
 
-  getSource(sourceId: string): AudioSource {
-    return this.state.audioSources[sourceId] ? new AudioSource(sourceId) : void 0;
-  }
+  volmeterSubscriptions: Dictionary<number[]> = {};
 
-  getSources(): AudioSource[] {
-    return Object.keys(this.state.audioSources).map(sourceId => this.getSource(sourceId));
-  }
+  /**
+   * Special IPC channel for volmeter updates
+   */
+  initVolmeterRelay() {
+    ipcRenderer.on('volmeterSubscribe', (e, sourceId: string) => {
+      this.volmeterSubscriptions[sourceId] = this.volmeterSubscriptions[sourceId] || [];
+      this.volmeterSubscriptions[sourceId].push(e.senderId);
+    });
 
-  getSourcesForCurrentScene(): AudioSource[] {
-    return this.getSourcesForScene(this.scenesService.activeSceneId);
-  }
-
-  getSourcesForScene(sceneId: string): AudioSource[] {
-    const scene = this.scenesService.getScene(sceneId);
-    const sceneSources = scene
-      .getNestedSources({ excludeScenes: true })
-      .filter(sceneItem => sceneItem.audio);
-
-    const globalSources = this.sourcesService
-      .getSources()
-      .filter(source => source.channel !== void 0);
-    return globalSources
-      .concat(sceneSources)
-      .map((sceneSource: ISource) => this.getSource(sceneSource.sourceId))
-      .filter(item => item);
+    ipcRenderer.on('volmeterUnsubscribe', (e, sourceId: string) => {
+      this.volmeterSubscriptions[sourceId] = without(
+        this.volmeterSubscriptions[sourceId],
+        e.senderId,
+      );
+    });
   }
 
   unhideAllSourcesForCurrentScene() {
-    this.getSourcesForCurrentScene().forEach(source => {
+    this.views.sourcesForCurrentScene.forEach(source => {
       source.setHidden(false);
     });
   }
 
   fetchFaderDetails(sourceId: string): IFader {
-    const source = this.sourcesService.getSource(sourceId);
+    const source = this.sourcesService.views.getSource(sourceId);
     const obsFader = this.sourceData[source.sourceId].fader;
     const deflection = Math.round(obsFader.deflection * 100) / 100.0;
 
@@ -136,20 +174,22 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
   }
 
   generateAudioSourceData(sourceId: string): IAudioSource {
-    const source = this.sourcesService.getSource(sourceId);
+    const source = this.sourcesService.views.getSource(sourceId);
     const obsSource = source.getObsInput();
 
     const fader = this.fetchFaderDetails(sourceId);
+    const isControlledViaObs =
+      obsSource.settings?.reroute_audio == null ? true : obsSource.settings?.reroute_audio;
 
     return {
       fader,
+      isControlledViaObs,
       sourceId: source.sourceId,
       audioMixers: obsSource.audioMixers,
       monitoringType: obsSource.monitoringType,
       forceMono: !!(obsSource.flags & obs.ESourceFlags.ForceMono),
       syncOffset: AudioService.timeSpecToMs(obsSource.syncOffset),
       muted: obsSource.muted,
-      resourceId: `AudioSource${JSON.stringify([sourceId])}`,
       mixerHidden: false,
     };
   }
@@ -165,14 +205,14 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
       componentName: 'AdvancedAudio',
       title: $t('Advanced Audio Settings'),
       size: {
-        width: 1370,
+        width: 915,
         height: 600,
       },
     });
   }
 
   setSettings(sourceId: string, patch: Partial<IAudioSource>) {
-    const obsInput = this.sourcesService.getSourceById(sourceId).getObsInput();
+    const obsInput = this.sourcesService.views.getSource(sourceId).getObsInput();
 
     // Fader is ignored by this method.  Use setFader instead
     const newPatch = omit(patch, 'fader');
@@ -184,7 +224,7 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
       if (name === 'syncOffset') {
         obsInput.syncOffset = AudioService.msToTimeSpec(value);
       } else if (name === 'forceMono') {
-        if (this.getSource(sourceId).forceMono !== value) {
+        if (this.views.getSource(sourceId).forceMono !== value) {
           value
             ? (obsInput.flags = obsInput.flags | obs.ESourceFlags.ForceMono)
             : (obsInput.flags -= obs.ESourceFlags.ForceMono);
@@ -227,16 +267,13 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
   }
 
   private initVolmeterStream(sourceId: string) {
-    const volmeterStream = new Subject<IVolmeter>();
-
     let gotEvent = false;
     let lastVolmeterValue: IVolmeter;
-    let volmeterCheckTimeoutId: number;
     this.sourceData[sourceId].callbackInfo = this.sourceData[sourceId].volmeter.addCallback(
       (magnitude: number[], peak: number[], inputPeak: number[]) => {
         const volmeter: IVolmeter = { magnitude, peak, inputPeak };
 
-        volmeterStream.next(volmeter);
+        this.sendVolmeterData(sourceId, volmeter);
         lastVolmeterValue = volmeter;
         gotEvent = true;
       },
@@ -245,27 +282,42 @@ export class AudioService extends StatefulService<IAudioSourcesState> implements
     /* This is useful for media sources since the volmeter will abruptly stop
      * sending events in the case of hiding the source. It might be better
      * to eventually just hide the mixer item as well though */
-    function volmeterCheck() {
-      if (!gotEvent) {
-        volmeterStream.next({
+    const volmeterCheck = () => {
+      if (!this.sourceData[sourceId]) return;
+
+      if (!gotEvent && lastVolmeterValue) {
+        const channelsCount = lastVolmeterValue.peak.length;
+        const channelsValue = Array(channelsCount).fill(-60);
+        this.sendVolmeterData(sourceId, {
           ...lastVolmeterValue,
-          magnitude: [-Infinity],
-          peak: [-Infinity],
-          inputPeak: [-Infinity],
+          magnitude: channelsValue,
+          peak: channelsValue,
+          inputPeak: channelsValue,
         });
       }
 
       gotEvent = false;
-      volmeterCheckTimeoutId = window.setTimeout(volmeterCheck, 100);
-    }
+      this.sourceData[sourceId].timeoutId = window.setTimeout(volmeterCheck, 100);
+    };
 
     volmeterCheck();
+  }
 
-    this.sourceData[sourceId].stream = volmeterStream;
+  private sendVolmeterData(sourceId: string, data: IVolmeter) {
+    const subscribers = this.volmeterSubscriptions[sourceId] || [];
+
+    subscribers.forEach(id => {
+      ipcRenderer.sendTo(id, `volmeter-${sourceId}`, data);
+    });
   }
 
   private removeAudioSource(sourceId: string) {
+    this.sourceData[sourceId].fader.detach();
+    this.sourceData[sourceId].fader.destroy();
     this.sourceData[sourceId].volmeter.removeCallback(this.sourceData[sourceId].callbackInfo);
+    this.sourceData[sourceId].volmeter.detach();
+    this.sourceData[sourceId].volmeter.destroy();
+    if (this.sourceData[sourceId].timeoutId) clearTimeout(this.sourceData[sourceId].timeoutId);
     delete this.sourceData[sourceId];
     this.REMOVE_AUDIO_SOURCE(sourceId);
   }
@@ -298,6 +350,7 @@ export class AudioSource implements IAudioSourceApi {
   syncOffset: number;
   resourceId: string;
   mixerHidden: boolean;
+  isControlledViaObs: boolean;
 
   @Inject()
   private audioService: AudioService;
@@ -316,6 +369,10 @@ export class AudioSource implements IAudioSourceApi {
     Utils.applyProxy(this, sourceState);
   }
 
+  isDestroyed(): boolean {
+    return !this.audioService.state.audioSources[this.sourceId];
+  }
+
   getModel(): IAudioSource & ISource {
     return { ...this.source.state, ...this.audioSourceState };
   }
@@ -332,6 +389,16 @@ export class AudioSource implements IAudioSourceApi {
         minVal: 0,
         maxVal: 100,
         type: 'OBS_PROPERTY_INT',
+      },
+
+      <IObsInput<boolean>>{
+        value: this.mixerHidden,
+        name: 'mixerHidden',
+        description: $t('Hide in Mixer'),
+        showDescription: false,
+        type: 'OBS_PROPERTY_BOOL',
+        visible: true,
+        enabled: true,
       },
 
       <IObsInput<boolean>>{
@@ -388,7 +455,7 @@ export class AudioSource implements IAudioSourceApi {
   }
 
   get source() {
-    return this.sourcesService.getSource(this.sourceId);
+    return this.sourcesService.views.getSource(this.sourceId);
   }
 
   setSettings(patch: Partial<IAudioSource>) {

@@ -1,23 +1,25 @@
 import Vue from 'vue';
 import { Component } from 'vue-property-decorator';
 import ModalLayout from 'components/ModalLayout.vue';
-import Display from 'components/shared/Display.vue';
+import { Display } from 'components/shared/ReactComponent';
 import { Inject } from 'services/core/injector';
 import { WindowsService } from 'services/windows';
-import { ISourcesServiceApi } from 'services/sources';
+import { SourcesService } from 'services/sources';
 import electron from 'electron';
 import Util from 'services/utils';
 import { Subscription } from 'rxjs';
+import Scrollable from 'components/shared/Scrollable';
 
 @Component({
   components: {
     ModalLayout,
     Display,
+    Scrollable,
   },
 })
 export default class Projector extends Vue {
   @Inject() windowsService: WindowsService;
-  @Inject() sourcesService: ISourcesServiceApi;
+  @Inject() sourcesService: SourcesService;
 
   oldBounds: electron.Rectangle;
 
@@ -49,6 +51,10 @@ export default class Projector extends Vue {
 
   get sourceId() {
     return this.windowsService.getWindowOptions(this.windowId).sourceId;
+  }
+
+  get renderingMode() {
+    return this.windowsService.getWindowOptions(this.windowId).renderingMode;
   }
 
   get allDisplays() {

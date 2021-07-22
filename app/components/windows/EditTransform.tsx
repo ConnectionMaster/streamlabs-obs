@@ -1,7 +1,7 @@
 import { Component } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import ModalLayout from 'components/ModalLayout.vue';
-import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
+import ValidatedForm from 'components/shared/inputs/ValidatedForm';
 import HFormGroup from 'components/shared/inputs/HFormGroup.vue';
 import TsxComponent from 'components/tsx-component';
 import { SelectionService } from 'services/selection';
@@ -22,11 +22,11 @@ const dirMap = (dir: string) =>
 
 @Component({})
 export default class EditTransform extends TsxComponent<{}> {
-  @Inject() selectionService: SelectionService;
+  @Inject() selectionService!: SelectionService;
   @Inject() windowsService: WindowsService;
   @Inject() private editorCommandsService: EditorCommandsService;
 
-  selection = this.selectionService.getActiveSelection();
+  selection = this.selectionService.views.globalSelection;
 
   // We only care about the attributes of the rectangle not the functionality
   rect = { ...this.selection.getBoundingRect() };
@@ -69,7 +69,7 @@ export default class EditTransform extends TsxComponent<{}> {
       const scale = Number(value) / this.rect[dir];
       const scaleX = dir === 'width' ? scale : 1;
       const scaleY = dir === 'height' ? scale : 1;
-      const scaleDelta = v2(scaleX, scaleY);
+      const scaleDelta = { x: scaleX, y: scaleY };
 
       this.editorCommandsService.executeCommand(
         'ResizeItemsCommand',
@@ -96,7 +96,7 @@ export default class EditTransform extends TsxComponent<{}> {
     this.windowsService.closeChildWindow();
   }
 
-  cropForm(h: Function) {
+  get cropForm() {
     return this.selection.isSceneItem() ? (
       <HFormGroup metadata={{ title: $t('Crop') }}>
         {['left', 'right', 'top', 'bottom'].map((dir: keyof ICrop) => (
@@ -113,7 +113,7 @@ export default class EditTransform extends TsxComponent<{}> {
     ) : null;
   }
 
-  coordinateForm(h: Function, type: string) {
+  coordinateForm(type: string) {
     const title = type === 'pos' ? $t('Position') : $t('Size');
     const dataArray = type === 'pos' ? ['x', 'y'] : ['width', 'height'];
     const inputHandler = type === 'pos' ? this.setPos : this.setScale;
@@ -135,29 +135,29 @@ export default class EditTransform extends TsxComponent<{}> {
     );
   }
 
-  render(h: Function) {
+  render() {
     return (
       <ModalLayout customControls showControls={false}>
         <ValidatedForm slot="content" name="transform" ref="validForm">
-          {this.coordinateForm(h, 'pos')}
-          {this.coordinateForm(h, 'scale')}
+          {this.coordinateForm('pos')}
+          {this.coordinateForm('scale')}
           <HFormGroup metadata={{ title: $t('Rotation') }}>
-            <button class="button button--default" style="width: 172px;" onClick={this.rotate(90)}>
+            <div class="button button--default" style="width: 172px;" onClick={this.rotate(90)}>
               {$t('Rotate 90 Degrees CW')}
-            </button>
+            </div>
             <div style="margin: 8px;" />
-            <button class="button button--default" style="width: 172px;" onClick={this.rotate(-90)}>
+            <div class="button button--default" style="width: 172px;" onClick={this.rotate(-90)}>
               {$t('Rotate 90 Degrees CCW')}
-            </button>
+            </div>
           </HFormGroup>
-          {this.cropForm(h)}
+          {this.cropForm}
         </ValidatedForm>
 
         <div slot="controls">
-          <button class="button button--default" onClick={this.reset}>
+          <button class="button button--default" onClick={() => this.reset()}>
             {$t('Reset')}
           </button>
-          <button class="button button--action" onClick={this.cancel}>
+          <button class="button button--action" onClick={() => this.cancel()}>
             {$t('Done')}
           </button>
         </div>

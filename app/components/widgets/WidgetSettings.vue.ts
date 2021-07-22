@@ -1,4 +1,3 @@
-import Vue from 'vue';
 import cloneDeep from 'lodash/cloneDeep';
 import { Inject } from '../../services/core/injector';
 import { WindowsService } from 'services/windows';
@@ -7,19 +6,25 @@ import { Subscription } from 'rxjs';
 import { $t } from 'services/i18n/index';
 import { Component } from 'vue-property-decorator';
 import { Debounce } from 'lodash-decorators';
+import { SourcesService } from 'services/sources';
+import TsxComponent, { createProps } from 'components/tsx-component';
 
 export interface IWidgetNavItem {
   value: string;
   label: string;
 }
 
-@Component({})
+class WidgetSettingsProps {
+  goalType?: string = '';
+}
+@Component({ props: createProps(WidgetSettingsProps) })
 export default class WidgetSettings<
   TData extends IWidgetData,
   TService extends WidgetSettingsService<TData>
-> extends Vue {
-  @Inject() private windowsService: WindowsService;
-  @Inject() private widgetsService: IWidgetsServiceApi;
+> extends TsxComponent<WidgetSettingsProps> {
+  @Inject() private windowsService!: WindowsService;
+  @Inject() private widgetsService!: IWidgetsServiceApi;
+  @Inject() private sourcesService: SourcesService;
 
   service: TService;
   sourceId = this.windowsService.getChildWindowOptions().queryParams.sourceId;
@@ -33,11 +38,14 @@ export default class WidgetSettings<
       ' Open Sans, Roboto, Oswald, Lato, and Droid Sans.',
   );
 
-  navItems: IWidgetNavItem[];
+  get navItems(): IWidgetNavItem[] {
+    return [];
+  }
 
   private lastSuccessfullySavedWData: TData = null;
   private dataUpdatedSubscr: Subscription;
   private pendingRequests = 0;
+  private sourceRemovedSub: Subscription;
 
   get metadata() {
     return this.service.getMetadata();
@@ -50,14 +58,20 @@ export default class WidgetSettings<
       this.lastSuccessfullySavedWData = cloneDeep(this.wData);
       this.requestState = 'success';
       this.afterFetch();
-    } catch (e) {
+    } catch (e: unknown) {
       this.requestState = 'fail';
     }
   }
 
   mounted() {
     this.dataUpdatedSubscr = this.service.dataUpdated.subscribe(newData => {
-      this.onDataUpdatedHandler(newData);
+      this.dataUpdatedHandler(newData);
+    });
+    // close the window if source has been deleted
+    this.sourceRemovedSub = this.sourcesService.sourceRemoved.subscribe(source => {
+      if (source.sourceId === this.sourceId) {
+        this.windowsService.actions.closeChildWindow();
+      }
     });
   }
 
@@ -69,7 +83,7 @@ export default class WidgetSettings<
     this.dataUpdatedSubscr.unsubscribe();
   }
 
-  private onDataUpdatedHandler(data: TData) {
+  private dataUpdatedHandler(data: TData) {
     this.lastSuccessfullySavedWData = data;
     if (!this.pendingRequests) {
       this.wData = cloneDeep(this.lastSuccessfullySavedWData);
@@ -83,16 +97,17 @@ export default class WidgetSettings<
     try {
       await this.service.saveSettings(this.wData.settings);
       this.requestState = 'success';
-    } catch (e) {
-      const errorMessage = e && e.message ? e.message : $t('Save failed, something went wrong.');
-      this.onDataUpdatedHandler(this.lastSuccessfullySavedWData);
+    } catch (e: unknown) {
+      const errorMessage =
+        e && e['message'] ? e['message'] : $t('Save failed, something went wrong.');
+      this.dataUpdatedHandler(this.lastSuccessfullySavedWData);
       this.requestState = 'fail';
-      this.onFailHandler(errorMessage);
+      this.failHandler(errorMessage);
     }
     this.pendingRequests--;
   }
 
-  onFailHandler(msg: string) {
+  failHandler(msg: string) {
     this.$toasted.show(msg, {
       position: 'bottom-center',
       className: 'toast-alert',

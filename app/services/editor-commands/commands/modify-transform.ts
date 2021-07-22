@@ -3,13 +3,17 @@ import { ITransform } from 'services/scenes';
 import { Selection } from 'services/selection';
 import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
+import { TObsFormData } from 'components/obs/inputs/ObsInput';
+import { EditSourcePropertiesCommand } from './edit-source-properties';
 
 export abstract class ModifyTransformCommand extends CombinableCommand {
   startTransforms: Dictionary<ITransform> = {};
   endTransforms: Dictionary<ITransform>;
+  private modifyTransformSubCommands: EditSourcePropertiesCommand[] = [];
 
   constructor(protected selection: Selection) {
     super();
+    this.selection.freeze();
     this.selection.getItems().forEach(item => {
       this.startTransforms[item.id] = cloneDeep(item.state.transform);
     });
@@ -44,6 +48,7 @@ export abstract class ModifyTransformCommand extends CombinableCommand {
     this.selection.getItems().forEach(item => {
       item.setTransform(this.startTransforms[item.id]);
     });
+    this.modifyTransformSubCommands.forEach(cmd => cmd.rollback());
   }
 
   shouldCombine(other: ModifyTransformCommand) {

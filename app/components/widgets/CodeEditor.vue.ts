@@ -8,6 +8,7 @@ import { Inject } from '../../services/core/injector';
 import { $t } from 'services/i18n/index';
 import { IInputMetadata } from 'components/shared/inputs';
 import { debounce } from 'lodash-decorators';
+import Scrollable from 'components/shared/Scrollable';
 
 interface ICodeEditorMetadata extends IInputMetadata {
   selectedId?: string;
@@ -18,16 +19,17 @@ interface ICodeEditorMetadata extends IInputMetadata {
   components: {
     CodeInput,
     BoolInput,
+    Scrollable,
   },
 })
 export default class CodeEditor extends Vue {
   @Inject() private widgetsService: WidgetsService;
 
   @Prop()
-  metadata: ICodeEditorMetadata;
+  metadata!: ICodeEditorMetadata;
 
   @Prop()
-  value: IWidgetData;
+  value!: IWidgetData;
 
   editorInputValue =
     this.value.settings[`custom_${this.metadata.type}`] ||
@@ -91,7 +93,7 @@ export default class CodeEditor extends Vue {
     newData = this.setCustomCode(newData);
     try {
       await this.settingsService.saveSettings(newData.settings);
-    } catch (e) {
+    } catch (e: unknown) {
       this.onFailHandler($t('Save failed, something went wrong.'));
       this.isLoading = false;
       return;
@@ -103,7 +105,7 @@ export default class CodeEditor extends Vue {
 
   restoreDefaults() {
     const type = this.metadata.type;
-    if (!!this.value.custom_defaults) {
+    if (this.value.custom_defaults) {
       this.editorInputValue = this.value.custom_defaults[type];
     } else {
       this.onFailHandler($t('This widget does not have defaults.'));

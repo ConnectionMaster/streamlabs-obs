@@ -5,6 +5,8 @@ import { JsonrpcService, IJsonRpcRequest } from 'services/api/jsonrpc';
 import electron from 'electron';
 import { UserService } from 'services/user';
 import { TPlatform } from 'services/platforms';
+import { InitAfter } from './core';
+import { jfetch } from 'util/requests';
 
 interface IOutageNotification {
   /**
@@ -37,6 +39,7 @@ const S3_BUCKET = 'streamlabs-obs';
 const S3_KEY = 'outage-notification.json';
 const POLLING_INTERVAL = 5 * 60 * 1000;
 
+@InitAfter('UserService')
 export class OutageNotificationsService extends Service {
   @Inject() notificationsService: NotificationsService;
   @Inject() jsonrpcService: JsonrpcService;
@@ -46,7 +49,7 @@ export class OutageNotificationsService extends Service {
   currentNotificationId: number = null;
 
   init() {
-    this.checkForNotification();
+    this.userService.userLogin.subscribe(() => this.checkForNotification());
     setInterval(() => this.checkForNotification(), POLLING_INTERVAL);
   }
 
@@ -79,11 +82,11 @@ export class OutageNotificationsService extends Service {
   }
 
   private async checkForNotification() {
-    if (!this.userService.isLoggedIn()) return;
+    if (!this.userService.isLoggedIn) return;
 
     const msg = await this.fetchMessageJson();
 
-    if (!this.userService.isLoggedIn()) return;
+    if (!this.userService.isLoggedIn) return;
 
     // There are no urgent messages to display to the user
     if (
@@ -122,14 +125,8 @@ export class OutageNotificationsService extends Service {
     headers.append('Cache-Control', 'no-cache');
 
     try {
-      const response = await fetch(req, { headers });
-
-      if (response.ok) {
-        return await response.json();
-      }
-
-      return;
-    } catch (e) {
+      return await jfetch(req, { headers });
+    } catch (e: unknown) {
       return;
     }
   }

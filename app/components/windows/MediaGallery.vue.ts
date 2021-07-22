@@ -6,6 +6,11 @@ import { WindowsService } from '../../services/windows';
 import { MediaGalleryService, IMediaGalleryFile, IMediaGalleryInfo } from 'services/media-gallery';
 import { $t } from 'services/i18n';
 import ModalLayout from '../ModalLayout.vue';
+import Scrollable from 'components/shared/Scrollable';
+import { UserService } from 'services/user';
+import { MagicLinkService } from 'services/magic-link';
+import { WebsocketService, TSocketEvent } from 'services/websocket';
+import { Subscription } from 'rxjs';
 
 const getTypeMap = () => ({
   title: {
@@ -29,23 +34,41 @@ interface IToast {
 }
 
 @Component({
-  components: { ModalLayout },
+  components: { ModalLayout, Scrollable },
 })
 export default class MediaGallery extends Vue {
   @Inject() windowsService: WindowsService;
   @Inject() mediaGalleryService: MediaGalleryService;
+  @Inject() userService: UserService;
+  @Inject() magicLinkService: MagicLinkService;
+  @Inject() websocketService: WebsocketService;
 
   dragOver = false;
   selectedFile: IMediaGalleryFile = null;
-  type: string = null;
-  category: string = null;
+  type: 'image' | 'audio' = null;
+  category: 'stock' | 'uploads' = null;
   galleryInfo: IMediaGalleryInfo = null;
   busy: IToast = null;
 
   private typeMap = getTypeMap();
+  private socketConnection: Subscription = null;
+  private audio: HTMLAudioElement = null;
 
   async mounted() {
     this.galleryInfo = await this.mediaGalleryService.fetchGalleryInfo();
+    if (this.filter) this.type = this.filter;
+
+    this.socketConnection = this.websocketService.socketEvent.subscribe(ev =>
+      this.onSocketEvent(ev),
+    );
+  }
+
+  destroyed() {
+    if (this.socketConnection) this.socketConnection.unsubscribe();
+    if (this.audio) {
+      this.audio.pause();
+      this.audio = null;
+    }
   }
 
   get promiseId() {
@@ -60,7 +83,8 @@ export default class MediaGallery extends Vue {
     if (!this.galleryInfo) return [];
 
     return this.galleryInfo.files.filter(file => {
-      if (this.category !== 'stock' && file.isStock) return false;
+      if (this.category !== 'stock' && file.isStock !== false) return false;
+      if (this.category === 'stock' && file.isStock === false) return false;
       return !(this.type && file.type !== this.type);
     });
   }
@@ -97,6 +121,11 @@ export default class MediaGallery extends Vue {
     return this.formatBytes(this.maxUsage, 2);
   }
 
+  async onSocketEvent(e: TSocketEvent) {
+    if (e.type !== 'streamlabs_prime_subscribe') return;
+    this.galleryInfo = await this.mediaGalleryService.fetchGalleryInfo();
+  }
+
   formatBytes(bytes: number, argPlaces: number = 1) {
     if (!bytes) {
       return '0KB';
@@ -120,20 +149,24 @@ export default class MediaGallery extends Vue {
     this.dragOver = false;
   }
 
-  openFilePicker() {
-    electron.remote.dialog.showOpenDialog(
+  async openFilePicker() {
+    const choices = await electron.remote.dialog.showOpenDialog(
       electron.remote.getCurrentWindow(),
       { properties: ['openFile', 'multiSelections'] },
-      this.upload,
     );
+
+    if (choices && choices.filePaths) {
+      this.upload(choices.filePaths);
+    }
   }
 
   handleFileDrop(e: DragEvent) {
     const mappedFiles = Array.from(e.dataTransfer.files).map(file => file.path);
     this.upload(mappedFiles);
+    this.dragOver = false;
   }
 
-  handleTypeFilter(type: string, category: string) {
+  handleTypeFilter(type: 'audio' | 'image', category: 'stock' | 'uploads') {
     if (type !== this.type || category !== this.category) {
       this.type = type;
       this.category = category;
@@ -154,48 +187,62 @@ export default class MediaGallery extends Vue {
     }
     this.selectedFile = file;
 
-    if (file.type === 'audio') {
-      const audio = new Audio(file.href);
-      audio.play();
+    if (file.type === 'audio' && !shouldSelect) {
+      if (this.audio) this.audio.pause();
+      this.audio = new Audio(file.href);
+      this.audio.play();
     }
 
     if (shouldSelect) this.handleSelect();
   }
 
+  upgradeToPrime() {
+    this.magicLinkService.linkToPrime('slobs-media-gallery');
+    this.$toasted.show($t('You must have Streamlabs Prime to use this media'), {
+      duration: 5000,
+      position: 'top-right',
+      className: 'toast-prime',
+    });
+  }
+
   handleSelect() {
+    if (!this.selectedFile) return this.windowsService.actions.closeChildWindow();
+    if (this.selectedFile.prime && !this.userService.views.isPrime) {
+      this.upgradeToPrime();
+      return;
+    }
     this.mediaGalleryService.resolveFileSelect(this.promiseId, this.selectedFile);
-    this.windowsService.closeChildWindow();
+    this.windowsService.actions.closeChildWindow();
   }
 
   async handleDelete() {
     if (this.selectedFile) {
-      electron.remote.dialog.showMessageBox(
-        electron.remote.getCurrentWindow(),
-        {
+      electron.remote.dialog
+        .showMessageBox(electron.remote.getCurrentWindow(), {
           type: 'warning',
           message: $t('Are you sure you want to delete this file? This action is irreversable.'),
           buttons: [$t('Cancel'), $t('OK')],
-        },
-        async ok => {
-          if (!ok || !this.selectedFile) return;
+        })
+        .then(async ({ response }) => {
+          if (!response || !this.selectedFile) return;
           this.galleryInfo = await this.mediaGalleryService.deleteFile(this.selectedFile);
           this.selectedFile = null;
-        },
-      );
+        });
     }
   }
 
   async handleDownload() {
-    electron.remote.dialog.showSaveDialog(
+    const { filePath } = await electron.remote.dialog.showSaveDialog(
       electron.remote.getCurrentWindow(),
-      { defaultPath: this.selectedFile.fileName },
-      async filename => {
-        if (!this.selectedFile) return;
-        this.setBusy($t('Downloading...'));
-        await this.mediaGalleryService.downloadFile(filename, this.selectedFile);
-        this.setNotBusy();
+      {
+        defaultPath: this.selectedFile.filename,
       },
     );
+
+    if (!this.selectedFile) return;
+    this.setBusy($t('Downloading...'));
+    await this.mediaGalleryService.downloadFile(filePath, this.selectedFile);
+    this.setNotBusy();
   }
 
   async upload(filepaths: string[]) {
@@ -213,6 +260,7 @@ export default class MediaGallery extends Vue {
   }
 
   private setNotBusy() {
+    if (!this.busy) return;
     this.busy.goAway();
     this.busy = null;
   }
@@ -225,7 +273,7 @@ export default class MediaGallery extends Vue {
         position: 'top-right',
         className: 'toast-success',
       });
-    } catch (e) {
+    } catch (e: unknown) {
       this.$toasted.show($t('Failed to copy URL'), {
         duration: 1000,
         position: 'top-right',

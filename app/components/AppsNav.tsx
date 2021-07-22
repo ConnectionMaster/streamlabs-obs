@@ -69,7 +69,7 @@ export default class AppsNav extends Vue {
   }
 
   iconSrc(appId: string, path: string) {
-    return this.platformAppsService.getAssetUrl(appId, path);
+    return this.platformAppsService.views.getAssetUrl(appId, path);
   }
 
   scrollUp() {
@@ -99,7 +99,7 @@ export default class AppsNav extends Vue {
     this.$refs.scroll.scrollBy({ top: vertical, behavior: 'smooth' });
   }
 
-  refreshIcon(h: Function, app: ILoadedApp) {
+  refreshIcon(app: ILoadedApp) {
     return (
       app.unpacked && (
         <div class={styles.refreshIcon} onClick={() => this.refreshApp(app.id)}>
@@ -109,7 +109,7 @@ export default class AppsNav extends Vue {
     );
   }
 
-  render(h: Function) {
+  render() {
     return (
       <div class={styles.wrapper}>
         <div class={styles.scroll} ref="scroll" onScroll={this.handleScroll.bind(this)}>
@@ -126,12 +126,15 @@ export default class AppsNav extends Vue {
                 draggable
                 // funky casing since vue is dumb
                 onDragend={() => this.popOut(app)}
-                class={cx(styles.appTab)}
+                class={styles.appTab}
               >
-                <i class="icon-integrations" />
-                {app.manifest.icon && <img src={this.iconSrc(app.id, app.manifest.icon)} />}
+                {app.manifest.icon ? (
+                  <img src={this.iconSrc(app.id, app.manifest.icon)} />
+                ) : (
+                  <i class="icon-integrations" />
+                )}
               </div>
-              {this.refreshIcon(h, app)}
+              {this.refreshIcon(app)}
             </div>
           ))}
         </div>

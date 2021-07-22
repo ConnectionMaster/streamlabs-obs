@@ -3,7 +3,7 @@ import { StreamingService, EReplayBufferState } from 'services/streaming';
 import { SettingsService } from 'services/settings';
 import { Inject } from 'services/core/injector';
 import { Subject } from 'rxjs';
-import { FileReturnWrapper } from 'services/guest-api';
+import { FileReturnWrapper } from 'util/guest-api-handler';
 import uuid from 'uuid/v4';
 
 interface IReplayBufferState {
@@ -65,7 +65,7 @@ export class ReplayModule extends Module {
 
   @apiMethod()
   getEnabled() {
-    return this.settingsService.state.Output.RecRB;
+    return this.settingsService.views.values.Output.RecRB;
   }
 
   @apiMethod()
@@ -79,7 +79,7 @@ export class ReplayModule extends Module {
 
   @apiMethod()
   getDuration() {
-    return this.settingsService.state.Output.RecRBTime;
+    return this.settingsService.views.values.Output.RecRBTime;
   }
 
   @apiMethod()

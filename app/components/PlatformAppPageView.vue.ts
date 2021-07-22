@@ -5,10 +5,12 @@ import { Inject } from 'services/core/injector';
 import electron from 'electron';
 import Utils from 'services/utils';
 import { Subscription } from 'rxjs';
+import { WindowsService } from 'services/windows';
 
 @Component({})
 export default class PlatformAppPageView extends Vue {
   @Inject() platformAppsService: PlatformAppsService;
+  @Inject() windowsService: WindowsService;
   @Prop() appId: string;
   @Prop() pageSlot: EAppPageSlot;
 
@@ -17,7 +19,7 @@ export default class PlatformAppPageView extends Vue {
   };
 
   resizeInterval: number;
-  containerId: number;
+  containerId: string;
   loadSub: Subscription;
   currentPosition: IVec2;
   currentSize: IVec2;
@@ -35,6 +37,10 @@ export default class PlatformAppPageView extends Vue {
         this.mountContainer();
       }
     });
+  }
+
+  get hideStyleBlockers() {
+    return this.windowsService.state[Utils.getWindowId()].hideStyleBlockers;
   }
 
   mountContainer() {
@@ -63,7 +69,10 @@ export default class PlatformAppPageView extends Vue {
   }
 
   checkResize() {
-    const rect = this.$refs.appContainer.getBoundingClientRect();
+    const rect: { left: number; top: number; width: number; height: number } = this
+      .hideStyleBlockers
+      ? { left: 0, top: 0, width: 0, height: 0 }
+      : this.$refs.appContainer.getBoundingClientRect();
 
     if (this.currentPosition == null || this.currentSize == null || this.rectChanged(rect)) {
       this.currentPosition = { x: rect.left, y: rect.top };
@@ -77,7 +86,7 @@ export default class PlatformAppPageView extends Vue {
     }
   }
 
-  private rectChanged(rect: ClientRect) {
+  private rectChanged(rect: { left: number; top: number; width: number; height: number }) {
     return (
       rect.left !== this.currentPosition.x ||
       rect.top !== this.currentPosition.y ||

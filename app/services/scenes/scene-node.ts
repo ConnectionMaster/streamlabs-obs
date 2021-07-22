@@ -12,6 +12,7 @@ import {
   TSceneNode,
 } from './index';
 import { SelectionService } from 'services/selection';
+import { assertIsDefined } from 'util/properties-type-guards';
 
 export function isFolder(node: SceneItemNode): node is SceneItemFolder {
   return node.sceneNodeType === 'folder';
@@ -21,7 +22,6 @@ export function isItem(node: SceneItemNode): node is SceneItem {
   return node.sceneNodeType === 'item';
 }
 
-@ServiceHelper()
 export abstract class SceneItemNode implements ISceneItemNode {
   id: string;
   parentId: string;
@@ -34,14 +34,20 @@ export abstract class SceneItemNode implements ISceneItemNode {
   @Inject() protected scenesService: ScenesService;
   @Inject() protected selectionService: SelectionService;
 
+  isDestroyed(): boolean {
+    return !!this.state.isRemoved;
+  }
+
   getScene(): Scene {
-    return this.scenesService.getScene(this.sceneId);
+    const scene = this.scenesService.views.getScene(this.sceneId);
+    assertIsDefined(scene);
+    return scene;
   }
 
   get childrenIds(): string[] {
     return this.getScene()
       .getModel()
-      .nodes.filter(node => node.parentId === this.id)
+      .nodes.filter(node => node.parentId === this.id && node.id !== this.id)
       .map(node => node.id);
   }
 
@@ -58,7 +64,7 @@ export abstract class SceneItemNode implements ISceneItemNode {
     if (this.parentId) this.SET_PARENT('');
   }
 
-  getParent(): SceneItemFolder {
+  getParent(): SceneItemFolder | null {
     return this.getScene().getFolder(this.parentId);
   }
 
@@ -67,9 +73,7 @@ export abstract class SceneItemNode implements ISceneItemNode {
   }
 
   getNodeIndex(): number {
-    return this.getScene()
-      .getNodesIds()
-      .indexOf(this.id);
+    return this.getScene().getNodesIds().indexOf(this.id);
   }
 
   placeAfter(nodeId: string) {
@@ -90,40 +94,44 @@ export abstract class SceneItemNode implements ISceneItemNode {
     return this.getScene().getNodes()[nodeInd + 1];
   }
 
-  getPrevSiblingNode(): TSceneNode {
-    const siblingsIds = this.parentId
-      ? this.getParent().getNestedNodesIds()
-      : this.getScene().getRootNodesIds();
+  getPrevSiblingNode(): TSceneNode | null {
+    const parent = this.getParent();
+    const siblingsIds = parent ? parent.getNestedNodesIds() : this.getScene().getRootNodesIds();
 
     const childInd = siblingsIds.indexOf(this.id);
     if (childInd !== 0) return this.getScene().getNode(siblingsIds[childInd - 1]);
+    return null;
   }
 
-  getNextSiblingNode(): TSceneNode {
-    const siblingsIds = this.parentId
-      ? this.getParent().getNestedNodesIds()
-      : this.getScene().getRootNodesIds();
+  getNextSiblingNode(): TSceneNode | null {
+    const parent = this.getParent();
+    const siblingsIds = parent ? parent.getNestedNodesIds() : this.getScene().getRootNodesIds();
 
     const childInd = siblingsIds.indexOf(this.id);
     if (childInd !== 0) return this.getScene().getNode(siblingsIds[childInd + 1]);
+    return null;
   }
 
-  getPrevItem(): SceneItem {
+  getPrevItem(): SceneItem | null {
     let nodeInd = this.getNodeIndex();
     const nodes = this.getScene().getNodes();
     while (nodeInd--) {
-      if (nodes[nodeInd].isItem()) return nodes[nodeInd] as SceneItem;
+      const node = nodes[nodeInd];
+      if (!node) return null;
+      if (node.isItem()) return node;
     }
     return null;
   }
 
-  getNextItem(): SceneItem {
+  getNextItem(): SceneItem | null {
     let nodeInd = this.getNodeIndex();
     const nodes = this.getScene().getNodes();
     while (nodeInd++) {
-      if (!nodes[nodeInd]) return null;
-      if (nodes[nodeInd].isItem()) return nodes[nodeInd] as SceneItem;
+      const node = nodes[nodeInd];
+      if (!node) return null;
+      if (node.isItem()) return node;
     }
+    return null;
   }
 
   /**
@@ -135,19 +143,19 @@ export abstract class SceneItemNode implements ISceneItemNode {
   }
 
   isSelected() {
-    return this.selectionService.isSelected(this.id);
+    return this.selectionService.views.globalSelection.isSelected(this.id);
   }
 
   select() {
-    this.selectionService.select(this.id);
+    this.selectionService.views.globalSelection.select(this.id);
   }
 
   addToSelection() {
-    this.selectionService.add(this.id);
+    this.selectionService.views.globalSelection.add(this.id);
   }
 
   deselect() {
-    this.selectionService.deselect(this.id);
+    this.selectionService.views.globalSelection.deselect(this.id);
   }
 
   isFolder(): this is SceneItemFolder {
@@ -167,6 +175,14 @@ export abstract class SceneItemNode implements ISceneItemNode {
 
   @mutation()
   protected SET_PARENT(parentId?: string) {
+    if (parentId && this.state.id === parentId) {
+      throw new Error('The parent id should not be equal the child id');
+    }
     this.state.parentId = parentId;
+  }
+
+  @mutation()
+  protected MARK_AS_DESTROYED() {
+    this.state.isRemoved = false;
   }
 }

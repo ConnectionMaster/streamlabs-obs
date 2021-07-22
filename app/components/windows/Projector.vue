@@ -1,29 +1,32 @@
 <template>
-<div class="projector-container">
-  <div
-    class="projector-fullscreen"
-    @keydown="exitFullscreen"
-    v-if="fullscreen">
-    <display :source-id="sourceId" />
-  </div>
-  <modal-layout
-    v-else
-    :content-styles="{ padding: 0 }"
-    :showControls="false">
-    <div slot="content" class="projector-windowed">
-      <div class="projector-buttons">
-        <button
-          class="button button--trans"
-          v-for="(display, index) in allDisplays"
-          :key="display.id"
-          @click="enterFullscreen(display)">
-          Fullscreen Display {{ index + 1 }}: {{ display.size.width }}x{{ display.size.height }}
-        </button>
-      </div>
-      <display v-if="!hideStyleBlockers" :source-id="sourceId" />
+  <div class="projector-container">
+    <div class="projector-fullscreen" @keydown="exitFullscreen" v-if="fullscreen">
+      <display
+        :componentProps="{ sourceId: sourceId, renderingMode: renderingMode }"
+        style="flex-grow: 1"
+      />
     </div>
-  </modal-layout>
-</div>
+    <modal-layout v-else :content-styles="{ padding: 0 }" :showControls="false">
+      <div slot="content" class="projector-windowed">
+        <scrollable className="button-container" :autoSizeCapable="true">
+          <div class="projector-buttons">
+            <button
+              class="button button--trans"
+              v-for="(display, index) in allDisplays"
+              :key="display.id"
+              @click="enterFullscreen(display)"
+            >
+              Fullscreen Display {{ index + 1 }}: {{ display.size.width }}x{{ display.size.height }}
+            </button>
+          </div>
+        </scrollable>
+        <display
+          v-if="!hideStyleBlockers"
+          :componentProps="{ sourceId: sourceId, renderingMode: renderingMode }"
+        />
+      </div>
+    </modal-layout>
+  </div>
 </template>
 
 <script lang="ts" src="./Projector.vue.ts"></script>

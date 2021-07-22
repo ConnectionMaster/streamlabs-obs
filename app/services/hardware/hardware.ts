@@ -1,6 +1,9 @@
 import { mutation, StatefulService } from '../core/stateful-service';
 import * as obs from '../../../obs-api';
 import uuid from 'uuid/v4';
+import { byOS, OS } from 'util/operating-systems';
+import { Inject } from 'services/core';
+import { UsageStatisticsService } from 'services/usage-statistics';
 
 export enum EDeviceType {
   audioInput = 'audioInput',
@@ -14,98 +17,91 @@ export interface IDevice {
   description: string;
 }
 
+interface IOBSDevice {
+  id: string;
+  description: string;
+}
+
 export interface IHardwareServiceState {
   devices: IDevice[];
   dshowDevices: IDevice[]; // dhow_input operates with the different devices list
 }
 
 export class HardwareService extends StatefulService<IHardwareServiceState> {
+  @Inject() usageStatisticsService: UsageStatisticsService;
+
   static initialState: IHardwareServiceState = {
     devices: [],
     dshowDevices: [],
   };
 
   init() {
-    this.SET_DEVICES(this.fetchDevices());
+    this.refreshDevices();
   }
 
   getDevices() {
     return this.state.devices;
   }
 
-  getDshowDevice(id: string) {
-    return this.state.dshowDevices.find(device => device.id === id);
+  getDshowDevices() {
+    return this.state.dshowDevices;
   }
 
-  getDeviceByName(name: string) {
-    return this.state.devices.find(device => device.description === name);
+  /**
+   * Forces re-enumeration of hardware devices and refreshes the store
+   * @param audioOnly Only refresh audio devices. This is a fast operation,
+   * whereas fetching video as well can be a very slow operation.
+   */
+  refreshDevices(audioOnly = false) {
+    this.SET_DEVICES(this.fetchDevices(audioOnly));
   }
 
-  getDshowDeviceByName(name: string) {
-    return this.state.dshowDevices.find(device => device.description === name);
-  }
-
-  private fetchDevices(): IHardwareServiceState {
+  /**
+   * Fetches hardware devices from OBS
+   * @param audioOnly Only refresh audio devices. This is a fast operation,
+   * whereas fetching video as well can be a very slow operation.
+   * @returns all devices
+   */
+  private fetchDevices(audioOnly: boolean): IHardwareServiceState {
     const devices: IDevice[] = [];
-    const dshowDevices: IDevice[] = [];
+    let dshowDevices: IDevice[] = [];
 
-    // Avoid initializing any devices by passing a device id that doesn't exist
-    const obsAudioInput = obs.InputFactory.create('wasapi_input_capture', uuid(), {
-      device_id: 'does_not_exist',
+    (obs.NodeObs.OBS_settings_getInputAudioDevices() as IOBSDevice[]).forEach(device => {
+      if (device.description === 'NVIDIA Broadcast') {
+        this.usageStatisticsService.recordFeatureUsage('NvidiaVirtualMic');
+      }
+
+      devices.push({
+        id: device.id,
+        description: device.description,
+        type: EDeviceType.audioInput,
+      });
     });
-    const obsAudioOutput = obs.InputFactory.create('wasapi_output_capture', uuid(), {
-      device_id: 'does_not_exist',
+
+    (obs.NodeObs.OBS_settings_getOutputAudioDevices() as IOBSDevice[]).forEach(device => {
+      devices.push({
+        id: device.id,
+        description: device.description,
+        type: EDeviceType.audioOutput,
+      });
     });
-    const obsVideoInput = obs.InputFactory.create('dshow_input', uuid(), {
-      audio_device_id: 'does_not_exist',
-      video_device_id: 'does_not_exist',
-    });
 
-    (obsAudioInput.properties.get('device_id') as obs.IListProperty).details.items.forEach(
-      (item: { name: string; value: string }) => {
-        devices.push({
-          id: item.value,
-          description: item.name,
-          type: EDeviceType.audioInput,
-        });
-      },
-    );
+    if (audioOnly) {
+      dshowDevices = this.state.dshowDevices;
+    } else {
+      (obs.NodeObs.OBS_settings_getVideoDevices() as IOBSDevice[]).forEach(device => {
+        if (device.description === 'NVIDIA Broadcast') {
+          this.usageStatisticsService.recordFeatureUsage('NvidiaVirtualCam');
+        }
 
-    (obsAudioOutput.properties.get('device_id') as obs.IListProperty).details.items.forEach(
-      (item: { name: string; value: string }) => {
-        devices.push({
-          id: item.value,
-          description: item.name,
-          type: EDeviceType.audioOutput,
-        });
-      },
-    );
-
-    (obsVideoInput.properties.get('video_device_id') as obs.IListProperty).details.items.forEach(
-      (item: { name: string; value: string }) => {
         dshowDevices.push({
-          id: item.value,
-          description: item.name,
+          id: device.id,
+          description: device.description,
           type: EDeviceType.videoInput,
-        });
-      },
-    );
-
-    const audioDeviceIdProp = obsVideoInput.properties.get('audio_device_id') as obs.IListProperty;
-    // audioDeviceIdProp can be null if no devices exist
-    if (audioDeviceIdProp) {
-      audioDeviceIdProp.details.items.forEach((item: { name: string; value: string }) => {
-        dshowDevices.push({
-          id: item.value,
-          description: item.name,
-          type: EDeviceType.audioInput,
         });
       });
     }
 
-    obsAudioInput.release();
-    obsAudioOutput.release();
-    obsVideoInput.release();
     return { devices, dshowDevices };
   }
 

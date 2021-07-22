@@ -5,7 +5,7 @@ import WidgetSettings from 'components/widgets/WidgetSettings.vue';
 import { inputComponents } from 'components/widgets/inputs';
 import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
 import { $t } from 'services/i18n/index';
-import ValidatedForm from 'components/shared/inputs/ValidatedForm.vue';
+import ValidatedForm from 'components/shared/inputs/ValidatedForm';
 import {
   IStreamBossCreateOptions,
   IStreamBossData,
@@ -36,17 +36,26 @@ export default class StreamBoss extends WidgetSettings<IStreamBossData, StreamBo
     return this.loaded && this.wData.goal;
   }
 
+  get multipliersForPlatform() {
+    const baseEvents = [
+      { key: 'donation_multiplier', title: $t('Damage Per Dollar Donation'), isInteger: true },
+    ];
+    return this.service.multipliersByPlatform().concat(baseEvents);
+  }
+
   async saveGoal() {
     if (await this.$refs.form.validateAndGetErrorsCount()) return;
     await this.service.saveGoal(this.bossCreateOptions);
   }
 
-  navItems = [
-    { value: 'goal', label: $t('Goal') },
-    { value: 'manage-battle', label: $t('Manage Battle') },
-    { value: 'visual', label: $t('Visual Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'goal', label: $t('Goal') },
+      { value: 'manage-battle', label: $t('Manage Battle') },
+      { value: 'visual', label: $t('Visual Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 
   async resetGoal() {
     await this.service.resetGoal();

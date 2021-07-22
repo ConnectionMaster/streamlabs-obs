@@ -12,6 +12,7 @@ import ConnectionSettings from 'components/ConnectionSettings';
 import VModal from 'vue-js-modal';
 import { EditorCommandsService } from 'services/editor-commands';
 import electron from 'electron';
+import Scrollable from 'components/shared/Scrollable';
 
 Vue.use(VModal);
 
@@ -21,6 +22,7 @@ Vue.use(VModal);
     TransitionSettings,
     Tabs,
     ConnectionSettings,
+    Scrollable,
   },
 })
 export default class SceneTransitions extends Vue {
@@ -50,8 +52,10 @@ export default class SceneTransitions extends Vue {
   );
 
   get transitionsEnabled() {
-    return this.scenesService.scenes.length > 1;
+    return this.scenesService.views.scenes.length > 1;
   }
+
+  lockStates: Dictionary<boolean>;
 
   /**
    * Scene transitions created from apps should not be editable
@@ -61,7 +65,11 @@ export default class SceneTransitions extends Vue {
    * @param id ID of the scene transition
    */
   isEditable(id: string) {
-    return this.transitionsService.getPropertiesManagerSettings(id).locked !== true;
+    if (!this.lockStates) {
+      this.lockStates = this.transitionsService.getLockedStates();
+    }
+
+    return !this.lockStates[id];
   }
 
   getEditableMessage(id: string) {
@@ -128,8 +136,8 @@ export default class SceneTransitions extends Vue {
   addConnection() {
     const connection = this.editorCommandsService.executeCommand(
       'CreateConnectionCommand',
-      this.scenesService.scenes[0].id,
-      this.scenesService.scenes[1].id,
+      this.scenesService.views.scenes[0].id,
+      this.scenesService.views.scenes[1].id,
       this.transitions[0].id,
     );
 
@@ -155,18 +163,18 @@ export default class SceneTransitions extends Vue {
   getSceneName(id: string | 'ALL') {
     if (id === 'ALL') return $t('All');
 
-    const scene = this.scenesService.getScene(id);
+    const scene = this.scenesService.views.getScene(id);
 
     if (scene) return scene.name;
     return `<${$t('Deleted')}>`;
   }
 
   isConnectionRedundant(id: string) {
-    return this.transitionsService.isConnectionRedundant(id);
+    return this.transitionsService.views.isConnectionRedundant(id);
   }
 
   nameForType(type: ETransitionType) {
-    return this.transitionsService.getTypes().find(t => t.value === type).title;
+    return this.transitionsService.views.getTypes().find(t => t.value === type).title;
   }
 
   done() {

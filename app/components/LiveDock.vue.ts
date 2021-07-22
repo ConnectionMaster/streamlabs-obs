@@ -1,14 +1,11 @@
 import Vue from 'vue';
 import { Component, Prop, Watch } from 'vue-property-decorator';
-import Chat from './Chat.vue';
+import { Chat } from 'components/shared/ReactComponent';
 import { StreamingService, EStreamingState } from '../services/streaming';
-import { Inject } from '../services/core/injector';
-import { StreamInfoService } from '../services/stream-info';
+import { Inject } from 'services/core/injector';
 import { UserService } from '../services/user';
 import { CustomizationService } from 'services/customization';
 import electron from 'electron';
-import { getPlatformService } from 'services/platforms';
-import { YoutubeService } from 'services/platforms/youtube';
 import { $t } from 'services/i18n';
 import PlatformAppPageView from 'components/PlatformAppPageView.vue';
 import { PlatformAppsService, EAppPageSlot, ILoadedApp } from 'services/platform-apps';
@@ -17,6 +14,8 @@ import { AppService } from 'services/app';
 import Tabs, { ITab } from 'components/Tabs.vue';
 import { ChatService } from 'services/chat';
 import { WindowsService } from 'services/windows';
+import { FacebookService, RestreamService, YoutubeService } from 'app-services';
+import { getPlatformService } from 'services/platforms';
 
 @Component({
   components: {
@@ -28,13 +27,15 @@ import { WindowsService } from 'services/windows';
 })
 export default class LiveDock extends Vue {
   @Inject() streamingService: StreamingService;
-  @Inject() streamInfoService: StreamInfoService;
+  @Inject() youtubeService: YoutubeService;
+  @Inject() facebookService: FacebookService;
   @Inject() userService: UserService;
   @Inject() customizationService: CustomizationService;
   @Inject() platformAppsService: PlatformAppsService;
   @Inject() appService: AppService;
   @Inject() chatService: ChatService;
   @Inject() windowsService: WindowsService;
+  @Inject() restreamService: RestreamService;
 
   @Prop({ default: false })
   onLeft: boolean;
@@ -50,6 +51,12 @@ export default class LiveDock extends Vue {
   underlyingSelectedChat = 'default';
 
   get selectedChat() {
+    if (this.underlyingSelectedChat === 'default') return 'default';
+    if (this.underlyingSelectedChat === 'restream') {
+      if (this.restreamService.shouldGoLiveWithRestream) return 'restream';
+      return 'default';
+    }
+
     return this.chatApps.find(app => app.id === this.underlyingSelectedChat)
       ? this.underlyingSelectedChat
       : 'default';
@@ -59,9 +66,10 @@ export default class LiveDock extends Vue {
     this.underlyingSelectedChat = val;
   }
 
-  viewStreamTooltip = $t('Go to Youtube to view your live stream');
+  viewStreamTooltip = $t('View your live stream in a web browser');
   editStreamInfoTooltip = $t('Edit your stream title and description');
-  controlRoomTooltip = $t('Go to Youtube Live Dashboard to control your stream');
+  controlRoomTooltip = $t('Go to YouTube Live Dashboard');
+  liveProducerTooltip = $t('Go to the Facebook Live Producer Dashboard');
 
   mounted() {
     this.elapsedInterval = window.setInterval(() => {
@@ -102,11 +110,11 @@ export default class LiveDock extends Vue {
 
   setCollapsed(livedockCollapsed: boolean) {
     this.canAnimate = true;
-    this.windowsService.updateStyleBlockers('main', true);
-    this.customizationService.setSettings({ livedockCollapsed });
+    this.windowsService.actions.updateStyleBlockers('main', true);
+    this.customizationService.actions.setSettings({ livedockCollapsed });
     setTimeout(() => {
       this.canAnimate = false;
-      this.windowsService.updateStyleBlockers('main', false);
+      this.windowsService.actions.updateStyleBlockers('main', false);
     }, 300);
   }
 
@@ -127,7 +135,7 @@ export default class LiveDock extends Vue {
       return 'viewers hidden';
     }
 
-    return this.streamInfoService.state.viewerCount.toString();
+    return this.streamingService.views.viewerCount.toString();
   }
 
   get offlineImageSrc() {
@@ -136,31 +144,27 @@ export default class LiveDock extends Vue {
   }
 
   showEditStreamInfo() {
-    this.streamingService.showEditStreamInfo();
+    this.streamingService.actions.showEditStream();
   }
 
   openYoutubeStreamUrl() {
-    const platform = this.userService.platform.type;
-    const service = getPlatformService(platform);
-    const nightMode = this.customizationService.isDarkTheme ? 'night' : 'day';
-    const youtubeDomain =
-      nightMode === 'day' ? 'https://youtube.com' : 'https://gaming.youtube.com';
-    if (service instanceof YoutubeService) {
-      const url = `${youtubeDomain}/channel/${service.youtubeId}/live`;
-      electron.remote.shell.openExternal(url);
-    }
+    electron.remote.shell.openExternal(this.youtubeService.streamPageUrl);
   }
 
   openYoutubeControlRoom() {
-    electron.remote.shell.openExternal('https://www.youtube.com/live_dashboard');
+    electron.remote.shell.openExternal(this.youtubeService.dashboardUrl);
+  }
+
+  openFBStreamUrl() {
+    electron.remote.shell.openExternal(this.facebookService.streamPageUrl);
+  }
+
+  openFBStreamDashboardUrl() {
+    electron.remote.shell.openExternal(this.facebookService.streamDashboardUrl);
   }
 
   get isTwitch() {
     return this.userService.platform.type === 'twitch';
-  }
-
-  get isMixer() {
-    return this.userService.platform.type === 'mixer';
   }
 
   get isYoutube() {
@@ -186,23 +190,33 @@ export default class LiveDock extends Vue {
   }
 
   refreshChat() {
-    if (!this.showDefaultPlatformChat) {
-      this.platformAppsService.refreshApp(this.selectedChat);
+    if (this.selectedChat === 'default') {
+      this.chatService.refreshChat();
       return;
     }
-    this.chatService.refreshChat();
+
+    if (this.selectedChat === 'restream') {
+      this.restreamService.refreshChat();
+      return;
+    }
+
+    this.platformAppsService.refreshApp(this.selectedChat);
   }
 
   get hideStyleBlockers() {
     return this.windowsService.state.main.hideStyleBlockers;
   }
 
-  get hasChatApps() {
-    return this.chatApps.length > 0;
+  get hasChatTabs() {
+    return this.chatTabs.length > 1;
   }
 
   get showDefaultPlatformChat() {
     return this.selectedChat === 'default';
+  }
+
+  get restreamChatUrl() {
+    return this.restreamService.chatUrl;
   }
 
   get chatApps(): ILoadedApp[] {
@@ -214,9 +228,9 @@ export default class LiveDock extends Vue {
   }
 
   get chatTabs(): ITab[] {
-    return [
+    const tabs: ITab[] = [
       {
-        name: this.userService.platform.type.toString(),
+        name: getPlatformService(this.userService.state.auth.primaryPlatform).displayName,
         value: 'default',
       },
     ].concat(
@@ -229,12 +243,22 @@ export default class LiveDock extends Vue {
           };
         }),
     );
+
+    if (this.restreamService.shouldGoLiveWithRestream) {
+      tabs.push({
+        name: $t('Multistream'),
+        value: 'restream',
+      });
+    }
+
+    return tabs;
   }
 
   get isPopOutAllowed() {
     if (this.showDefaultPlatformChat) return false;
+    if (this.selectedChat === 'restream') return false;
 
-    const chatPage = this.platformAppsService
+    const chatPage = this.platformAppsService.views
       .getApp(this.selectedChat)
       .manifest.pages.find(page => page.slot === EAppPageSlot.Chat);
     if (!chatPage) return false;
@@ -246,5 +270,12 @@ export default class LiveDock extends Vue {
   popOut() {
     this.platformAppsService.popOutAppPage(this.selectedChat, this.slot);
     this.selectedChat = 'default';
+  }
+
+  get canEditChannelInfo(): boolean {
+    return (
+      this.streamingService.state.info.checklist.startVideoTransmission === 'done' ||
+      this.userService.state.auth?.primaryPlatform === 'twitch'
+    );
   }
 }

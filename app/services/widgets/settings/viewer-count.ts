@@ -1,4 +1,10 @@
-import { IWidgetData, IWidgetSettings, WidgetSettingsService, WidgetType } from 'services/widgets';
+import {
+  IWidgetData,
+  IWidgetSettings,
+  WidgetDefinitions,
+  WidgetSettingsService,
+  WidgetType,
+} from 'services/widgets';
 import { WIDGET_INITIAL_STATE } from './widget-settings';
 import { InheritMutations } from 'services/core/stateful-service';
 
@@ -10,7 +16,7 @@ interface IViewerCountSettings extends IWidgetSettings {
   font_weight: number;
   twitch: boolean;
   youtube: boolean;
-  mixer: boolean;
+  facebook: boolean;
 }
 
 export interface IViewerCountData extends IWidgetData {
@@ -24,7 +30,7 @@ export class ViewerCountService extends WidgetSettingsService<IViewerCountData> 
   getApiSettings() {
     return {
       type: WidgetType.ViewerCount,
-      url: `https://${this.getHost()}/widgets/viewer-count?token=${this.getWidgetToken()}`,
+      url: WidgetDefinitions[WidgetType.ViewerCount].url(this.getHost(), this.getWidgetToken()),
       previewUrl: `https://${this.getHost()}/widgets/viewer-count?token=${this.getWidgetToken()}&simulate=1`,
       dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/viewercount`,
       settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/viewercount`,
@@ -42,7 +48,7 @@ export class ViewerCountService extends WidgetSettingsService<IViewerCountData> 
         ...data.settings,
         twitch: data.settings.types.twitch.enabled,
         youtube: data.settings.types.youtube.enabled,
-        mixer: data.settings.types.mixer.enabled,
+        facebook: data.settings.types.facebook.enabled,
       },
     };
   }
@@ -53,8 +59,8 @@ export class ViewerCountService extends WidgetSettingsService<IViewerCountData> 
       ...settings,
       types: {
         youtube: { enabled: settings.youtube },
-        mixer: { enabled: settings.mixer },
         twitch: { enabled: settings.twitch },
+        facebook: { enabled: settings.facebook },
       },
     };
   }

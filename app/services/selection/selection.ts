@@ -22,23 +22,42 @@ import { ISelectionState, TNodesList } from './index';
  */
 @ServiceHelper()
 export class Selection {
-  @Inject() private scenesService: ScenesService;
+  @Inject() scenesService: ScenesService;
 
   _resourceId: string;
 
-  private state: ISelectionState = {
+  /**
+   * Once a selection has been frozen, the selected items
+   * cannot be changed. This is mostly used for keeping
+   * undo/redo history when working with the GlobalSelection.
+   */
+  isFrozen = false;
+
+  private _state: ISelectionState = {
     selectedIds: [],
     lastSelectedId: '',
   };
 
-  constructor(public sceneId: string, itemsList: TNodesList = []) {
-    this.select(itemsList);
+  protected get state() {
+    return this._state;
+  }
+
+  public get sceneId() {
+    return this._sceneId;
+  }
+
+  constructor(protected _sceneId: string, itemsList: TNodesList = []) {
+    if (_sceneId && itemsList) this.select(itemsList);
+  }
+
+  isDestroyed(): boolean {
+    return false;
   }
 
   // SELECTION METHODS
 
   getScene(): Scene {
-    return this.scenesService.getScene(this.sceneId);
+    return this.scenesService.views.getScene(this.sceneId);
   }
 
   add(itemsList: TNodesList): Selection {
@@ -47,7 +66,15 @@ export class Selection {
     return this;
   }
 
+  freeze() {
+    this.isFrozen = true;
+  }
+
   select(itemsList: TNodesList): Selection {
+    if (this.isFrozen) {
+      throw new Error('Attempted to modify frozen selection');
+    }
+
     let ids = this.resolveItemsList(itemsList);
     ids = uniq(ids);
     const scene = this.getScene();
@@ -127,11 +154,8 @@ export class Selection {
    * true if selections has only one folder
    */
   isSceneFolder(): boolean {
-    const folders = this.getFolders();
-    if (folders.length !== 1) return false;
-    const folder = folders[0];
-    const isNotFolderChild = this.getItems().find(item => item.parentId !== folder.id);
-    return !isNotFolderChild;
+    const rootNodes = this.getRootNodes();
+    return rootNodes.length === 1 && rootNodes[0].sceneNodeType === 'folder';
   }
 
   getVisualItems(): SceneItem[] {
@@ -219,7 +243,7 @@ export class Selection {
 
   copyTo(sceneId: string, folderId?: string, duplicateSources = false): TSceneNode[] {
     const insertedNodes: TSceneNode[] = [];
-    const scene = this.scenesService.getScene(sceneId);
+    const scene = this.scenesService.views.getScene(sceneId);
     const foldersMap: Dictionary<string> = {};
     let prevInsertedNode: TSceneNode;
     let insertedNode: TSceneNode;
@@ -287,7 +311,7 @@ export class Selection {
    * in the selection is visible.
    */
   isVisible(): boolean {
-    return !!this.getItems().find(item => item.visible);
+    return this.getItems().some(item => item.visible);
   }
 
   /**
@@ -295,7 +319,23 @@ export class Selection {
    * selection are locked.
    */
   isLocked(): boolean {
-    return !this.getItems().find(item => !item.locked);
+    return this.getItems().every(item => item.locked);
+  }
+
+  /**
+   * Helper method to check if any items in the selection
+   * are locked.
+   */
+  isAnyLocked(): boolean {
+    return this.getItems().some(item => item.locked);
+  }
+
+  isStreamVisible(): boolean {
+    return this.getItems().every(item => item.streamVisible);
+  }
+
+  isRecordingVisible(): boolean {
+    return this.getItems().every(item => item.recordingVisible);
   }
 
   /**
@@ -369,6 +409,14 @@ export class Selection {
   }
 
   // SCENE_ITEM METHODS
+
+  setStreamVisible(streamVisible: boolean) {
+    this.getItems().forEach(item => item.setStreamVisible(streamVisible));
+  }
+
+  setRecordingVisible(recordingVisible: boolean) {
+    this.getItems().forEach(item => item.setRecordingVisible(recordingVisible));
+  }
 
   setSettings(settings: Partial<ISceneItemSettings>) {
     this.getItems().forEach(item => item.setSettings(settings));
@@ -444,7 +492,7 @@ export class Selection {
   }
 
   remove() {
-    this.getNodes().forEach(node => node.remove());
+    this.getNodes().forEach(node => !node.isDestroyed() && node.remove());
   }
 
   nudgeLeft() {
@@ -507,7 +555,7 @@ export class Selection {
     return [itemsList.id];
   }
 
-  private setState(state: Partial<ISelectionState>) {
+  protected setState(state: Partial<ISelectionState>) {
     Object.assign(this.state, state);
   }
 }

@@ -35,7 +35,7 @@ export abstract class ArrayNode<TSchema, TContext, TItem> extends Node<
     for (const item of this.data.items) {
       try {
         afterLoadItemsCallbacks.push(await this.loadItem(item, context));
-      } catch (e) {
+      } catch (e: unknown) {
         console.error('Array node step failed', e);
       }
     }
@@ -44,16 +44,24 @@ export abstract class ArrayNode<TSchema, TContext, TItem> extends Node<
       if (cb) {
         try {
           await cb();
-        } catch (e) {
+        } catch (e: unknown) {
           console.error('Array node callback failed', e);
         }
       }
     }
+
+    await this.afterLoad(context);
   }
 
   /**
-   * Can be called before loading to do some data munging
+   * Will be called before loading to do some data munging
    * @param context the context
    */
   async beforeLoad(context: TContext): Promise<void> {}
+
+  /**
+   * Will be called after all items are loaded
+   * @param context the context
+   */
+  async afterLoad(context: TContext): Promise<void> {}
 }

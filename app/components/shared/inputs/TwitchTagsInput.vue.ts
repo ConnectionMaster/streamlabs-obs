@@ -5,17 +5,21 @@ import { Inject } from 'services/core/injector';
 import { $t, I18nService } from 'services/i18n';
 import { prepareOptions, TTwitchTag, TTwitchTagWithLabel } from 'services/platforms/twitch/tags';
 import { CustomizationService } from 'services/customization';
+import TsxComponent from '../../tsx-component';
 
 Vue.use(VSelectPage);
 
 @Component({})
-export default class TwitchTagsInput extends Vue {
+export default class TwitchTagsInput extends TsxComponent<{
+  tags: TTwitchTag[];
+  hasPermission: boolean;
+}> {
   @Inject() i18nService: I18nService;
   @Inject() customizationService: CustomizationService;
 
   @Prop() name: string;
 
-  @Prop() value: TTwitchTagWithLabel[];
+  @Prop() value!: TTwitchTagWithLabel[];
 
   @Prop() tags: TTwitchTag[];
 
@@ -57,10 +61,7 @@ export default class TwitchTagsInput extends Vue {
   }
 
   get options() {
-    return prepareOptions(
-      this.i18nService.state.locale || this.i18nService.getFallbackLocale(),
-      this.tags,
-    );
+    return prepareOptions(this.i18nService.state.locale, this.tags);
   }
 
   onInput(tags: TTwitchTagWithLabel[]) {

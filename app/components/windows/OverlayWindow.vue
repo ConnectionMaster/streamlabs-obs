@@ -1,15 +1,9 @@
 <template>
   <modal-layout :showControls="false" :customControls="true" :hasTitleBar="false">
     <div slot="content" class="overlay-content">
-      <div class="overlay-scenes">
-        <div>
-          <h4>{{ $t('Switch Scenes') }}</h4>
-          <div class="scene-selector-wrapper"><scene-selector /></div>
-        </div>
-      </div>
       <div class="live-preview" v-if="isPreviewEnabled">
         <h4>{{ $t('Preview') }}</h4>
-        <display class="live-display" :drawUI="false" />
+        <display class="live-display" :componentProps="{ drawUI: false }" />
       </div>
     </div>
     <div slot="controls" class="controls">
@@ -47,12 +41,10 @@
 
     background: var(--section);
     flex-grow: 1;
-    overflow-y: auto;
   }
 
   .live-preview {
-    .margin-horizontal--10();
-
+    margin: 0 10px;
     width: 100%;
   }
 

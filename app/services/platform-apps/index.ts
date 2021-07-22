@@ -1,5 +1,5 @@
 import electron from 'electron';
-import { mutation, StatefulService } from 'services/core/stateful-service';
+import { mutation, StatefulService, ViewHandler } from 'services/core/stateful-service';
 import { lazyModule } from 'util/lazy-module';
 import path from 'path';
 import fs from 'fs';
@@ -7,17 +7,16 @@ import { Subject } from 'rxjs';
 import { WindowsService } from 'services/windows';
 import { Inject } from 'services/core/injector';
 import { EApiPermissions } from './api/modules/module';
-import { GuestApiService } from 'services/guest-api';
 import { VideoService } from 'services/video';
 import { DevServer } from './dev-server';
 import { HostsService } from 'services/hosts';
-import { authorizedHeaders, handleResponse } from 'util/requests';
+import { authorizedHeaders, handleResponse, jfetch } from 'util/requests';
 import { UserService } from 'services/user';
 import trim from 'lodash/trim';
 import without from 'lodash/without';
-import { PlatformContainerManager } from './container-manager';
-import ExecuteInCurrentWindow from 'util/execute-in-current-window';
+import { PlatformContainerManager, getPageUrl, getAssetUrl } from './container-manager';
 import { NavigationService } from 'services/navigation';
+import { InitAfter } from '../core';
 
 const DEV_PORT = 8081;
 
@@ -101,14 +100,12 @@ interface IAppManifest {
 interface IProductionAppResponse {
   app_token: string;
   cdn_url: string;
-  description: string;
   icon: string;
   id_hash: string;
   is_beta: boolean;
   manifest: IAppManifest;
   name: string;
   screenshots: string[];
-  subscription: ISubscriptionResponse;
   version: string;
 }
 
@@ -132,23 +129,35 @@ interface IPlatformAppServiceState {
   storeVisible: boolean;
 }
 
-interface ISubscriptionResponse {
-  id: number;
-  user_id: number;
-  app_id: number;
-  subscription_id: string;
-  status: string;
-  plan_id: number;
-  expires_at: string;
+class PlatformAppsViews extends ViewHandler<IPlatformAppServiceState> {
+  getApp(appId: string): ILoadedApp {
+    // edge case for when there are 2 apps with same id
+    // when one is unpacked and one is prod
+    // generally we want to do actions with enabled one first
+    const enabledApp = this.state.loadedApps.find(app => app.id === appId && app.enabled);
+    if (enabledApp) return enabledApp;
+    return this.state.loadedApps.find(app => app.id === appId);
+  }
+
+  getAssetUrl(appId: string, asset: string) {
+    const app = this.getApp(appId);
+    if (!app) return null;
+
+    return getAssetUrl(app, asset);
+  }
 }
 
+@InitAfter('UserService')
 export class PlatformAppsService extends StatefulService<IPlatformAppServiceState> {
   @Inject() windowsService: WindowsService;
-  @Inject() guestApiService: GuestApiService;
   @Inject() videoService: VideoService;
   @Inject() hostsService: HostsService;
   @Inject() userService: UserService;
   @Inject() navigationService: NavigationService;
+
+  get views() {
+    return new PlatformAppsViews(this.state);
+  }
 
   static initialState: IPlatformAppServiceState = {
     devMode: false,
@@ -172,30 +181,25 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
 
   private devServer: DevServer;
 
-  /**
-   * Using initialize because it needs to be async
-   */
-  async initialize() {
+  init() {
     this.userService.userLogin.subscribe(async () => {
       this.unloadAllApps();
       this.loadProductionApps();
       this.SET_APP_STORE_VISIBILITY(await this.fetchAppStoreVisibility());
       this.SET_DEV_MODE(await this.getIsDevMode());
+
+      if (this.state.devMode && localStorage.getItem(this.unpackedLocalStorageKey)) {
+        const data = JSON.parse(localStorage.getItem(this.unpackedLocalStorageKey));
+        if (data.appPath && data.appToken) {
+          this.loadUnpackedApp(data.appPath, data.appToken);
+        }
+      }
     });
 
-    if (!this.userService.isLoggedIn()) return;
-
-    this.SET_DEV_MODE(await this.getIsDevMode());
-
-    this.loadProductionApps();
-    this.SET_APP_STORE_VISIBILITY(await this.fetchAppStoreVisibility());
-
-    if (this.state.devMode && localStorage.getItem(this.unpackedLocalStorageKey)) {
-      const data = JSON.parse(localStorage.getItem(this.unpackedLocalStorageKey));
-      if (data.appPath && data.appToken) {
-        this.loadUnpackedApp(data.appPath, data.appToken);
-      }
-    }
+    this.userService.userLogout.subscribe(() => {
+      this.unloadAllApps();
+      localStorage.removeItem(this.disabledLocalStorageKey);
+    });
   }
 
   /**
@@ -207,9 +211,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
       headers,
     });
 
-    return fetch(request)
-      .then(handleResponse)
-      .catch(() => []);
+    return jfetch<IProductionAppResponse[]>(request).catch(() => []);
   }
 
   getDisabledAppsFromStorage(): string[] {
@@ -252,8 +254,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
       { headers },
     );
 
-    return fetch(request)
-      .then(handleResponse)
+    return jfetch<{ is_app_store_visible: boolean }>(request)
       .then(json => json.is_app_store_visible)
       .catch(() => false);
   }
@@ -280,8 +281,8 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
 
     try {
       await this.validateManifest(manifest, appPath);
-    } catch (e) {
-      return e.message;
+    } catch (e: unknown) {
+      return e['message'];
     }
 
     // Make sure there isn't already a dev server
@@ -335,7 +336,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
     }
 
     if (app.enabled) this.containerManager.registerApp(app);
-    this.appLoad.next(this.getApp(id));
+    this.appLoad.next(this.views.getApp(id));
   }
 
   async validateManifest(manifest: IAppManifest, appPath: string) {
@@ -459,7 +460,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
    * @param appId The id of the app to refresh
    */
   async refreshApp(appId: string) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
 
     // For unpacked apps, we need to fully reload them,
     // since they may contain manifest.json changes.
@@ -484,10 +485,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
       { headers },
     );
 
-    return fetch(request)
-      .then(handleResponse)
-      .then(json => json.id_hash)
-      .catch(() => null);
+    return jfetch<{ id_hash: string }>(request).then(json => json.id_hash);
   }
 
   private getIsDevMode(): Promise<boolean> {
@@ -496,8 +494,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
       headers,
     });
 
-    return fetch(request)
-      .then(handleResponse)
+    return jfetch<{ dev_mode: boolean }>(request)
       .then(json => json.dev_mode)
       .catch(() => false);
   }
@@ -516,12 +513,16 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
   }
 
   getPageUrlForSource(appId: string, appSourceId: string, settings = '') {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
 
     if (!app) return null;
 
     const source = app.manifest.sources.find(source => source.id === appSourceId);
-    let url = this.containerManager.getPageUrl(app, source.file);
+
+    // The app no longer supports this source type
+    if (!source) return null;
+
+    let url = getPageUrl(app, source.file);
 
     if (settings) {
       url = `${url}&settings=${encodeURIComponent(settings)}`;
@@ -532,35 +533,28 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
     return url;
   }
 
-  getAssetUrl(appId: string, asset: string) {
-    const app = this.getApp(appId);
-    if (!app) return null;
-
-    return this.containerManager.getAssetUrl(app, asset);
-  }
-
   mountContainer(
     appId: string,
     slot: EAppPageSlot,
     electronWindowId: number,
     slobsWindowId: string,
   ) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
     if (!app) return null;
 
     return this.containerManager.mountContainer(app, slot, electronWindowId, slobsWindowId);
   }
 
-  setContainerBounds(containerId: number, pos: IVec2, size: IVec2) {
+  setContainerBounds(containerId: string, pos: IVec2, size: IVec2) {
     return this.containerManager.setContainerBounds(containerId, pos, size);
   }
 
-  unmountContainer(containerId: number, electronWindowId: number) {
+  unmountContainer(containerId: string, electronWindowId: number) {
     this.containerManager.unmountContainer(containerId, electronWindowId);
   }
 
   getAppSourceSize(appId: string, sourceId: string) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
     const source = app.manifest.sources.find(source => source.id === sourceId);
 
     if (source.initialSize) {
@@ -569,8 +563,8 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
           width: source.initialSize.width,
           height: source.initialSize.height,
         };
-        // tslint:disable-next-line:no-else-after-return TODO
-      } else if (source.initialSize.type === ESourceSizeType.Relative) {
+      }
+      if (source.initialSize.type === ESourceSizeType.Relative) {
         return {
           width: source.initialSize.width * this.videoService.baseWidth,
           height: source.initialSize.height * this.videoService.baseHeight,
@@ -583,7 +577,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
   }
 
   getPagePopOutSize(appId: string, slot: EAppPageSlot) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
     const page = app.manifest.pages.find(page => page.slot === slot);
     const popOutSize = page.popOutSize || {};
     return {
@@ -598,22 +592,12 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
     return this.state.loadedApps.filter(app => !app.unpacked);
   }
 
-  @ExecuteInCurrentWindow()
-  getApp(appId: string): ILoadedApp {
-    // edge case for when there are 2 apps with same id
-    // when one is unpacked and one is prod
-    // generally we want to do actions with enabled one first
-    const enabledApp = this.state.loadedApps.find(app => app.id === appId && app.enabled);
-    if (enabledApp) return enabledApp;
-    return this.state.loadedApps.find(app => app.id === appId);
-  }
-
   popOutAppPage(appId: string, pageSlot: EAppPageSlot) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
     if (!app || !app.enabled) return;
 
     const windowId = `${appId}-${pageSlot}`;
-    const mousePos = electron.screen.getCursorScreenPoint();
+    const mousePos = electron.remote.screen.getCursorScreenPoint();
 
     // We use a generated window Id to prevent someobody popping out the
     // same winow multiple times.
@@ -640,7 +624,7 @@ export class PlatformAppsService extends StatefulService<IPlatformAppServiceStat
   }
 
   setEnabled(appId: string, enabling: boolean) {
-    const app = this.getApp(appId);
+    const app = this.views.getApp(appId);
     if (app.enabled === enabling) return;
 
     if (enabling) {

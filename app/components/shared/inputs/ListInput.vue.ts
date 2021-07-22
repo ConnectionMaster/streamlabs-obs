@@ -2,23 +2,41 @@ import { Component, Prop } from 'vue-property-decorator';
 import { Multiselect } from 'vue-multiselect';
 import { IListMetadata, IListOption } from './index';
 import { BaseInput } from './BaseInput';
+import { Spinner } from 'streamlabs-beaker';
 
 @Component({
-  components: { Multiselect },
+  components: { Multiselect, Spinner },
 })
-export default class ListInput extends BaseInput<string, IListMetadata<string>> {
+export default class ListInput extends BaseInput<
+  string,
+  IListMetadata<string>,
+  {
+    handleSearchChange?: (val: string) => unknown;
+    handleOpen?: () => unknown;
+    showImagePlaceholder?: boolean;
+    imageSize?: { width: number; height: number };
+  }
+> {
   @Prop() readonly value: string;
   @Prop() readonly metadata: IListMetadata<string>;
   @Prop() readonly title: string;
+  @Prop() readonly handleSearchChange?: (val: string) => unknown;
+  @Prop() readonly handleOpen?: () => unknown;
+  @Prop() readonly showImagePlaceholder: boolean;
+  @Prop() readonly imageSize: { width: number; height: number };
 
   get placeholder() {
     return this.options.placeholder || 'Select Option';
   }
 
   onInputHandler(option: IListOption<string>) {
-    // Fixes a render issue when reselecting the same option as currently selected
-    const val = option ? option.value : this.value;
-    this.emitInput(val);
+    if (option) {
+      this.emitInput(option.value);
+    } else if (this.options.allowEmpty) {
+      this.emitInput(null);
+    } else {
+      this.emitInput(this.value);
+    }
   }
 
   getOptions(): IListMetadata<string> {
@@ -28,6 +46,20 @@ export default class ListInput extends BaseInput<string, IListMetadata<string>> 
       // internalSearch is `true` by default in vue-multiselect
       internalSearch: options.internalSearch == null ? true : options.internalSearch,
       allowEmpty: !!options.allowEmpty, // undefined value is not working for vue-multiselect
+    };
+  }
+
+  getImage(option: { data?: { image?: string } }) {
+    return option.data?.image || '';
+  }
+
+  get iconSizeStyle() {
+    const { width, height } = this.props.imageSize
+      ? this.props.imageSize
+      : { width: 15, height: 15 };
+    return {
+      width: `${width}px`,
+      height: `${height}px`,
     };
   }
 
@@ -41,15 +73,16 @@ export default class ListInput extends BaseInput<string, IListMetadata<string>> 
     }
 
     if (option) return option;
-    if (!!this.getOptions().allowEmpty) return null;
+    if (this.getOptions().allowEmpty) return null;
     return options[0];
   }
 
-  get selectedOption(): IListOption<string> {
+  get selectedOption(): IListOption<string, unknown> {
     return this.options.options.find(option => option.value === this.value);
   }
 
-  onSearchChange(value: string) {
+  private onSearchChangeHandler(value: string) {
     this.$emit('search-change', value);
+    this.$props.handleSearchChange && this.$props.handleSearchChange(value);
   }
 }

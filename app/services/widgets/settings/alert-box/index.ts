@@ -1,5 +1,10 @@
 import uuid from 'uuid/v4';
-import { IWidgetData, WidgetSettingsService, WidgetType } from 'services/widgets';
+import {
+  IWidgetData,
+  WidgetDefinitions,
+  WidgetSettingsService,
+  WidgetType,
+} from 'services/widgets';
 import { WIDGET_INITIAL_STATE } from '../widget-settings';
 import { InheritMutations } from 'services/core/stateful-service';
 import {
@@ -18,7 +23,6 @@ import {
 import { IWidgetSettings } from '../../widgets-api';
 import { $t } from 'services/i18n';
 import { metadata } from 'components/widgets/inputs';
-import { settings } from 'cluster';
 
 export interface IAlertBoxData extends IWidgetData {
   settings: IAlertBoxSettings;
@@ -37,9 +41,9 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
   getApiSettings() {
     return {
       type: WidgetType.AlertBox,
-      url: `https://${this.getHost()}/alert-box/v3/${this.getWidgetToken()}`,
+      url: WidgetDefinitions[WidgetType.AlertBox].url(this.getHost(), this.getWidgetToken()),
       previewUrl: `https://${this.getHost()}/alert-box/v3/${this.getWidgetToken()}`,
-      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/alertbox?include_linked_integrations_only=true`,
+      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/alertbox?include_linked_integrations_only=true&primary_only=false`,
       settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/alertbox`,
       settingsUpdateEvent: 'filteredAlertBoxSettingsUpdate',
       customCodeAllowed: true,
@@ -77,6 +81,16 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
     return {
       moderationDelay: metadata.slider({ title: $t('Alert Moderation delay'), min: 0, max: 600 }),
       alertDelay: metadata.slider({ title: $t('Global Alert Delay'), min: 0, max: 30 }),
+      interruptMode: metadata.toggle({
+        title: $t('Alert Parries'),
+        tooltip: $t('New alerts will interrupt the on screen alert'),
+      }),
+      interruptDelay: metadata.slider({
+        title: $t('Parry Alert Delay'),
+        min: 0,
+        max: 20,
+        interval: 0.5,
+      }),
       textThickness: metadata.slider({
         title: $t('Font Weight'),
         min: 300,
@@ -148,9 +162,7 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
     custom: { js: string; html: string; css: string };
   }): IAlertBoxData {
     const { settings, ...rest } = data;
-    const newSettings = settings.mixer_account
-      ? this.transformSettings({ ...settings, ...settings.mixer_account })
-      : this.transformSettings(settings);
+    const newSettings = this.transformSettings(settings);
     return { ...rest, settings: newSettings, custom_defaults: rest.custom };
   }
 
@@ -162,13 +174,16 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
     const triagedSettings = this.triageSettings(settings);
     Object.keys(triagedSettings).forEach(key => {
       if (key === 'subs') {
-        triagedSettings['subs'] = this.varifySetting({
-          showResubMessage: triagedSettings['resubs'].show_message,
-          ...triagedSettings['subs'],
-          ...triagedSettings['resubs'],
-        });
+        triagedSettings['subs'] = this.varifySetting(
+          {
+            showResubMessage: triagedSettings['resubs'].show_message,
+            ...triagedSettings['subs'],
+            ...triagedSettings['resubs'],
+          },
+          key,
+        );
       } else if (this.apiNames().includes(key) && key !== 'resubs') {
-        triagedSettings[key] = this.varifySetting(triagedSettings[key]);
+        triagedSettings[key] = this.varifySetting(triagedSettings[key], key);
       }
     });
     // resubs are folded into the sub settings
@@ -197,6 +212,10 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
       });
       if (['alert_delay', 'moderation_delay'].includes(key)) {
         newSettings[key] = Math.floor(settings[key] / 1000);
+      } else if (key === 'interrupt_mode_delay') {
+        const constrainedInterruptDelay =
+          settings.interrupt_mode_delay / 1000 <= 20 ? settings.interrupt_mode_delay / 1000 : 20;
+        newSettings[key] = constrainedInterruptDelay;
       } else if (!testSuccess && !/smfredemption/.test(key)) {
         newSettings[key] = settings[key];
       }
@@ -212,10 +231,10 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
     return newSettings;
   }
 
-  private varifySetting(setting: any): IAlertBoxSetting {
+  private varifySetting(setting: any, type: string): IAlertBoxSetting {
     const { show_message, enabled, showResubMessage, ...rest } = setting;
     const variations = setting.variations || [];
-    const defaultVariation = this.reshapeVariation(rest);
+    const defaultVariation = this.reshapeVariation(rest, type);
     const idVariations = variations.map((variation: IAlertBoxVariation) => ({
       id: uuid(),
       ...variation,
@@ -224,7 +243,7 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
     return { enabled, showResubMessage, showMessage: show_message, variations: idVariations };
   }
 
-  private reshapeVariation(setting: any): IAlertBoxVariation {
+  private reshapeVariation(setting: any, type: string): IAlertBoxVariation {
     const imgHref =
       setting.image_href === '/images/gallery/default.gif'
         ? 'http://uploads.twitchalerts.com/image-defaults/1n9bK4w.gif'
@@ -238,7 +257,7 @@ export class AlertBoxService extends WidgetSettingsService<IAlertBoxData> {
       conditionData: null,
       conditions: [],
       name: 'Default',
-      id: 'default',
+      id: `default-${type}`,
       settings: {
         customCss: setting.custom_css,
         customHtml: setting.custom_html,
