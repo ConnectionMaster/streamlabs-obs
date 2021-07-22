@@ -4,7 +4,6 @@ import { $t } from 'services/i18n';
 import { Component } from 'vue-property-decorator';
 import styles from './GoLive.m.less';
 import { Inject } from 'services/core';
-import { UserService } from 'services/user';
 import { TPlatform } from 'services/platforms';
 import { SettingsService } from 'services/settings';
 import { IGoLiveSettings, StreamingService } from 'services/streaming';
@@ -20,6 +19,7 @@ import { Twitter } from 'components/Twitter';
 import { RestreamService } from 'services/restream';
 import Section from './Section';
 import Scrollable from 'components/shared/Scrollable';
+import { MagicLinkService } from 'services/magic-link';
 
 class GoLiveProps {
   value?: IGoLiveSettings = undefined;
@@ -36,7 +36,7 @@ export default class GoLiveSettings extends TsxComponent<GoLiveProps> {
   @Inject() private streamingService: StreamingService;
   @Inject() private streamSettingsService: StreamSettingsService;
   @Inject() private settingsService: SettingsService;
-  @Inject() private userService: UserService;
+  @Inject() private magicLinkService: MagicLinkService;
   @Inject() private restreamService: RestreamService;
   @SyncWithValue() private settings: IGoLiveSettings;
 
@@ -67,7 +67,7 @@ export default class GoLiveSettings extends TsxComponent<GoLiveProps> {
     if (this.restreamService.views.canEnableRestream) {
       this.settingsService.actions.showSettings('Stream');
     } else {
-      this.userService.openPrimeUrl('slobs-multistream');
+      this.magicLinkService.linkToPrime('slobs-multistream');
     }
   }
 
@@ -78,12 +78,12 @@ export default class GoLiveSettings extends TsxComponent<GoLiveProps> {
     const isErrorMode = view.info.error;
     const isLoadingMode = !isErrorMode && ['empty', 'prepopulate'].includes(view.info.lifecycle);
     const shouldShowSettings = !isErrorMode && !isLoadingMode && hasPlatforms;
-    const isAdvancedMode = view.goLiveSettings.advancedMode && view.isMultiplatformMode;
+    const isAdvancedMode = view.savedSettings.advancedMode && view.isMultiplatformMode;
     const shouldShowPrimeLabel = !this.restreamService.state.grandfathered;
     const shouldShowLeftCol = this.streamSettingsService.state.protectedModeEnabled;
     const onlyOnePlatformIsLinked = view.linkedPlatforms.length === 1;
     const shouldShowAddDestButton =
-      view.linkedPlatforms.length + view.goLiveSettings.customDestinations.length < 5;
+      view.linkedPlatforms.length + view.savedSettings.customDestinations.length < 5;
     return (
       <ValidatedForm class={cx('flex', styles.goLiveSettings)}>
         {/*LEFT COLUMN*/}
@@ -131,7 +131,7 @@ export default class GoLiveSettings extends TsxComponent<GoLiveProps> {
               <Section title={isAdvancedMode ? $t('Extras') : ''}>
                 <Twitter
                   vModel={this.settings.tweetText}
-                  streamTitle={this.view.getCommonFields(this.settings).title}
+                  streamTitle={this.view.getCommonFields(this.settings.platforms).title}
                 />
                 <OptimizedProfileSwitcher
                   vModel={this.settings.optimizedProfile}

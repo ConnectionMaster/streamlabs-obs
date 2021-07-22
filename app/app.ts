@@ -32,7 +32,7 @@ import util from 'util';
 import uuid from 'uuid/v4';
 import Blank from 'components/windows/Blank.vue';
 import Main from 'components/windows/Main.vue';
-import CustomLoader from 'components/CustomLoader';
+import { Loader } from 'components/shared/ReactComponent';
 import process from 'process';
 import { MetricsService } from 'services/metrics';
 import { UsageStatisticsService } from 'services/usage-statistics';
@@ -164,7 +164,7 @@ if (isProduction || process.env.SLOBS_REPORT_TO_SENTRY) {
         event.request.url = normalize(event.request.url);
       }
 
-      return isSampled ? event : null;
+      return isSampled || event.tags?.feature === 'highlighter' ? event : null;
     },
     integrations: [new Integrations.Vue({ Vue })],
   });
@@ -234,19 +234,19 @@ document.addEventListener('drop', event => event.preventDefault());
 export const apiInitErrorResultToMessage = (resultCode: obs.EVideoCodes) => {
   switch (resultCode) {
     case obs.EVideoCodes.NotSupported: {
-      return $t('OBSInit.NotSupportedError');
+      return 'Failed to initialize OBS. Your video drivers may be out of date, or Streamlabs OBS may not be supported on your system.';
     }
     case obs.EVideoCodes.ModuleNotFound: {
-      return $t('OBSInit.ModuleNotFoundError');
+      return 'DirectX could not be found on your system. Please install the latest version of DirectX for your machine here <https://www.microsoft.com/en-us/download/details.aspx?id=35?> and try again.';
     }
     default: {
-      return $t('OBSInit.UnknownError');
+      return 'An unknown error was encountered while initializing OBS.';
     }
   }
 };
 
 const showDialog = (message: string): void => {
-  electron.remote.dialog.showErrorBox($t('OBSInit.ErrorTitle'), message);
+  electron.remote.dialog.showErrorBox('Initialization Error', message);
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       crashHandler.unregisterProcess(process.pid);
 
-      obs.NodeObs.StopCrashHandler();
+      obs.NodeObs.InitShutdownSequence();
       obs.IPC.disconnect();
 
       electron.ipcRenderer.send('shutdownComplete');
@@ -339,7 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           return h(ChildWindow);
         }
 
-        return h(CustomLoader);
+        return h(Loader);
       }
       if (windowId === 'main') return h(Main);
       return h(OneOffWindow);

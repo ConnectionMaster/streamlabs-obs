@@ -1,8 +1,9 @@
 import electron, { ipcRenderer } from 'electron';
 import { Subscription } from 'rxjs';
 import { Inject, InitAfter } from 'services/core';
-import { LoginLifecycle, UserService } from 'services/user';
+import { UserService } from 'services/user';
 import { CustomizationService } from 'services/customization';
+import { enableBTTVEmotesScript } from 'services/chat';
 import { WindowsService } from '../windows';
 import { PersistentStatefulService } from 'services/core/persistent-stateful-service';
 import { mutation } from 'services/core/stateful-service';
@@ -215,7 +216,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
     if (pos) {
       const display = electron.remote.screen.getAllDisplays().find(display => {
         const bounds = display.bounds;
-        const intBounds = pos.x > bounds.x && pos.y > bounds.y;
+        const intBounds = pos.x >= bounds.x && pos.y >= bounds.y;
         const extBounds = pos.x < bounds.x + bounds.width && pos.y < bounds.y + bounds.height;
         return intBounds && extBounds;
       });
@@ -285,7 +286,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   async setEnabled(shouldEnable: boolean = true) {
     if (shouldEnable && !this.userService.isLoggedIn) {
-      return Promise.reject($t('Please log in to use the in-game overlay.'));
+      return Promise.reject();
     }
 
     const shouldStop = !shouldEnable && this.state.isEnabled;
@@ -381,6 +382,10 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
       this.overlay.setVisibility(overlayId, this.state.windowProperties[key].enabled);
 
       win.webContents.executeJavaScript(hideInteraction);
+      win.webContents.executeJavaScript(
+        enableBTTVEmotesScript(this.customizationService.isDarkTheme),
+        true,
+      );
 
       // We bind the paint callback in the main process to avoid a memory
       // leak in electron. This can be moved back to the renderer process

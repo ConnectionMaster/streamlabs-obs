@@ -15,9 +15,19 @@ import FFZSettings from 'components/windows/FFZSettings.vue';
 import SourcesShowcase from 'components/windows/SourcesShowcase.vue';
 import SceneTransitions from 'components/windows/SceneTransitions.vue';
 import AddSource from 'components/windows/AddSource.vue';
-import RenameSource from 'components/windows/RenameSource.vue';
 import NameScene from 'components/windows/NameScene.vue';
-import NameFolder from 'components/windows/NameFolder.vue';
+import {
+  NameFolder,
+  GoLiveWindow,
+  EditStreamWindow,
+  IconLibraryProperties,
+  PerformanceMetrics,
+  RenameSource,
+  AdvancedStatistics,
+} from 'components/shared/ReactComponent';
+
+import GoLiveWindowDeprecated from 'components/windows/go-live/GoLiveWindow';
+import EditStreamWindowDeprecated from 'components/windows/go-live/EditStreamWindow';
 import SourceProperties from 'components/windows/SourceProperties.vue';
 import SourceFilters from 'components/windows/SourceFilters.vue';
 import AddSourceFilter from 'components/windows/AddSourceFilter';
@@ -33,13 +43,10 @@ import MediaGallery from 'components/windows/MediaGallery.vue';
 import PlatformAppPopOut from 'components/windows/PlatformAppPopOut.vue';
 import EditTransform from 'components/windows/EditTransform';
 import EventFilterMenu from 'components/windows/EventFilterMenu';
-import AdvancedStatistics from 'components/windows/AdvancedStatistics';
 import OverlayWindow from 'components/windows/OverlayWindow.vue';
 import OverlayPlaceholder from 'components/windows/OverlayPlaceholder';
 import BrowserSourceInteraction from 'components/windows/BrowserSourceInteraction';
 import WelcomeToPrime from 'components/windows/WelcomeToPrime';
-import GoLiveWindow from 'components/windows/go-live/GoLiveWindow';
-import EditStreamWindow from 'components/windows/go-live/EditStreamWindow';
 import ScheduleStreamWindow from 'components/windows/go-live/ScheduleStreamWindow';
 
 import BitGoal from 'components/widgets/goal/BitGoal';
@@ -61,8 +68,8 @@ import SponsorBanner from 'components/widgets/SponsorBanner.vue';
 import MediaShare from 'components/widgets/MediaShare';
 import AlertBox from 'components/widgets/AlertBox.vue';
 import SpinWheel from 'components/widgets/SpinWheel.vue';
+import Poll from 'components/widgets/Poll';
 
-import PerformanceMetrics from 'components/PerformanceMetrics.vue';
 import { byOS, OS } from 'util/operating-systems';
 import { UsageStatisticsService } from './usage-statistics';
 import { Inject } from 'services/core';
@@ -125,10 +132,14 @@ export function getComponents() {
     MediaShare,
     AlertBox,
     SpinWheel,
+    Poll,
     WelcomeToPrime,
     GoLiveWindow,
     EditStreamWindow,
+    GoLiveWindowDeprecated,
+    EditStreamWindowDeprecated,
     ScheduleStreamWindow,
+    IconLibraryProperties,
   };
 }
 
@@ -241,6 +252,10 @@ export class WindowsService extends StatefulService<IWindowsState> {
     this.windows.main = BrowserWindow.fromId(windowIds.main);
     this.windows.child = BrowserWindow.fromId(windowIds.child);
 
+    // Background throttling can produce freezing on certain parts of the UI
+    this.windows.worker.webContents.setBackgroundThrottling(false);
+    this.windows.main.webContents.setBackgroundThrottling(false);
+
     this.updateScaleFactor('main');
     this.updateScaleFactor('child');
     this.windows.main.on('move', () => this.updateScaleFactor('main'));
@@ -255,7 +270,10 @@ export class WindowsService extends StatefulService<IWindowsState> {
   private updateScaleFactor(windowId: string) {
     const window = this.windows[windowId];
     if (window && !window.isDestroyed()) {
-      const bounds = window.getBounds();
+      const bounds = byOS({
+        [OS.Windows]: () => electron.remote.screen.dipToScreenRect(window, window.getBounds()),
+        [OS.Mac]: () => window.getBounds(),
+      });
       const currentDisplay = electron.remote.screen.getDisplayMatching(bounds);
       this.UPDATE_SCALE_FACTOR(windowId, currentDisplay.scaleFactor);
     }
@@ -320,7 +338,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
           height: options.size.height,
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Recovering from error:', err);
 
       childWindow.setMinimumSize(options.size.width, options.size.height);

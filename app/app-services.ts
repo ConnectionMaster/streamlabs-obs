@@ -53,12 +53,14 @@ export { ApplicationMenuService } from 'services/application-menu';
 export { MacPermissionsService } from 'services/mac-permissions';
 export { VirtualWebcamService } from 'services/virtual-webcam';
 export { MetricsService } from 'services/metrics';
+export { HighlighterService } from 'services/highlighter';
 
 // ONLINE SERVICES
 export { UserService } from './services/user';
 export { YoutubeService } from 'services/platforms/youtube';
 export { TwitchService } from 'services/platforms/twitch';
 export { FacebookService } from 'services/platforms/facebook';
+export { TiktokService } from 'services/platforms/tiktok';
 export { RestreamService } from 'services/restream';
 export { TwitterService } from 'services/integrations/twitter';
 export { UsageStatisticsService } from './services/usage-statistics';
@@ -82,6 +84,7 @@ export { PlatformAppAssetsService } from 'services/platform-apps/platform-app-as
 export { ChatService } from 'services/chat';
 export { RecentEventsService } from 'services/recent-events';
 export { MagicLinkService } from 'services/magic-link';
+export { GrowService } from 'services/grow/grow';
 
 // WIDGETS
 export { WidgetSource, WidgetsService } from './services/widgets';
@@ -104,12 +107,14 @@ export { SubGoalService } from 'services/widgets/settings/sub-goal';
 export { MediaShareService } from 'services/widgets/settings/media-share';
 export { AlertBoxService } from 'services/widgets/settings/alert-box';
 export { SpinWheelService } from 'services/widgets/settings/spin-wheel';
+export { PollService } from 'services/widgets/settings/poll';
 
 import { WindowsService } from './services/windows';
 import { CustomizationService } from './services/customization';
 import { ScenesService } from './services/scenes';
 import { EditorCommandsService } from './services/editor-commands';
 import { PerformanceService } from './services/performance';
+import { SourcesService } from './services/sources';
 import { StreamingService } from './services/streaming';
 import { StreamSettingsService } from './services/settings/streaming';
 import { RestreamService } from './services/restream';
@@ -123,7 +128,20 @@ import { FacebookService } from './services/platforms/facebook';
 import { DismissablesService } from './services/dismissables';
 import { NavigationService } from './services/navigation';
 import { AnnouncementsService } from './services/announcements';
+import { PatchNotesService } from './services/patch-notes';
+import { VideoService } from './services/video';
 import { ChatService } from './services/chat';
+import { HighlighterService } from './services/highlighter';
+import { GrowService } from './services/grow/grow';
+import { TransitionsService } from './services/transitions';
+import { MagicLinkService } from './services/magic-link';
+import { UsageStatisticsService } from './services/usage-statistics';
+import { NotificationsService } from './services/notifications';
+import { MediaBackupService } from './services/media-backup';
+import { HotkeysService } from './services/hotkeys';
+import { WidgetsService } from './services/widgets';
+import { HostsService } from './services/hosts';
+import { OnboardingService } from './services/onboarding';
 
 export const AppServices = {
   WindowsService,
@@ -134,6 +152,9 @@ export const AppServices = {
   CustomizationService,
   EditorCommandsService,
   PerformanceService,
+  SourcesService,
+  PatchNotesService,
+  VideoService,
   ChatService,
   StreamingService,
   StreamSettingsService,
@@ -145,4 +166,15 @@ export const AppServices = {
   UserService,
   TwitchService,
   DismissablesService,
+  HighlighterService,
+  GrowService,
+  TransitionsService,
+  MagicLinkService,
+  UsageStatisticsService,
+  NotificationsService,
+  MediaBackupService,
+  HotkeysService,
+  WidgetsService,
+  HostsService,
+  OnboardingService,
 };

@@ -36,6 +36,7 @@
   "View your live stream in a web browser": "View your live stream in a web browser",
   "Edit your stream title and description": "Edit your stream title and description",
   "Go to YouTube Live Dashboard to control your stream": "Go to YouTube Live Dashboard to control your stream",
+  "Go to the Facebook Live Producer Dashboard": "Go to the Facebook Live Producer Dashboard",
   "Are you sure you want to exit while live?": "Are you sure you want to exit while live?",
   "Enable the preview stream": "Enable the preview stream",
   "Disable the preview stream, can help with CPU": "Disable the preview stream, can help with CPU",
@@ -128,7 +129,6 @@
   "Post a tweet": "Post a tweet",
   "You could try reducing the number of your destinations to one for direct streaming.": "You could try reducing the number of your destinations to one for direct streaming.",
   "Add Destination": "Add Destination",
-  "Enable at least one destination to start streaming": "Enable at least one destination to start streaming",
   "Extras": "Extras",
   "Go back to settings": "Go back to settings",
   "Select at least one destination": "Select at least one destination",
@@ -155,5 +155,7 @@
   "Destination": "Destination",
   "You cannot disable the platform you used to sign in to Streamlabs OBS. Please sign in with a different platform to disable streaming to this destinationType.": "You cannot disable the platform you used to sign in to Streamlabs OBS. Please sign in with a different platform to disable streaming to this destinationType.",
   "canNotDisablePrimaryPlatform": "You cannot disable the platform you logged in with.<br/> Do you want to <switch-account-link>log in to another account</switch-account-link> instead?",
-  "Your stream title or description contain banned words": "Your stream title or description contain banned words"
+  "Your stream title or description contain banned words": "Your stream title or description contain banned words",
+  "Invalid settings. Please check the form": "Invalid settings. Please check the form",
+  "Common Stream Settings": "Common Stream Settings"
 }

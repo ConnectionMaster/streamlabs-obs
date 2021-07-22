@@ -19,7 +19,7 @@ import { $t } from 'services/i18n';
 import { encoderFieldsMap, obsEncoderToEncoderFamily } from './output';
 import { VideoEncodingOptimizationService } from 'services/video-encoding-optimizations';
 import { PlatformAppsService } from 'services/platform-apps';
-import { EDeviceType } from 'services/hardware';
+import { EDeviceType, HardwareService } from 'services/hardware';
 import { StreamingService } from 'services/streaming';
 import { byOS, OS } from 'util/operating-systems';
 import path from 'path';
@@ -50,6 +50,7 @@ export interface ISettingsValues {
   Output: {
     RecRB?: boolean;
     RecRBTime?: number;
+    RecFormat: string;
   };
   Video: {
     Base: string;
@@ -111,6 +112,7 @@ export class SettingsService extends StatefulService<ISettingsServiceState> {
   @Inject() private streamingService: StreamingService;
   @Inject() private usageStatisticsService: UsageStatisticsService;
   @Inject() private sceneCollectionsService: SceneCollectionsService;
+  @Inject() private hardwareService: HardwareService;
 
   @Inject()
   private videoEncodingOptimizationService: VideoEncodingOptimizationService;
@@ -127,7 +129,7 @@ export class SettingsService extends StatefulService<ISettingsServiceState> {
       if (fs.existsSync(path.join(this.appService.appDataDirectory, 'HADisable'))) {
         this.usageStatisticsService.recordFeatureUsage('HardwareAccelDisabled');
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('Error fetching hardware acceleration state', e);
     }
 
@@ -320,6 +322,8 @@ export class SettingsService extends StatefulService<ISettingsServiceState> {
   }
 
   private getAudioSettingsFormData(OBSsettings: ISettingsSubCategory): ISettingsSubCategory[] {
+    // Make sure we are working with the latest devices plugged into the system
+    this.hardwareService.refreshDevices(true);
     const audioDevices = this.audioService.getDevices();
     const sourcesInChannels = this.sourcesService.views
       .getSources()
@@ -398,7 +402,7 @@ export class SettingsService extends StatefulService<ISettingsServiceState> {
     this.loadSettingsIntoStore();
   }
 
-  setSettingsPatch(patch: Partial<ISettingsValues>) {
+  setSettingsPatch(patch: DeepPartial<ISettingsValues>) {
     // Tech Debt: This is a product of the node-obs settings API.
     // This function represents a cleaner API we would like to have
     // in the future.

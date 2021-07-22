@@ -1,6 +1,6 @@
 import Vue from 'vue';
 import { Component, Prop, Watch } from 'vue-property-decorator';
-import Chat from 'components/Chat.vue';
+import { Chat } from 'components/shared/ReactComponent';
 import { StreamingService, EStreamingState } from '../services/streaming';
 import { Inject } from 'services/core/injector';
 import { UserService } from '../services/user';
@@ -69,6 +69,7 @@ export default class LiveDock extends Vue {
   viewStreamTooltip = $t('View your live stream in a web browser');
   editStreamInfoTooltip = $t('Edit your stream title and description');
   controlRoomTooltip = $t('Go to YouTube Live Dashboard');
+  liveProducerTooltip = $t('Go to the Facebook Live Producer Dashboard');
 
   mounted() {
     this.elapsedInterval = window.setInterval(() => {
@@ -156,6 +157,10 @@ export default class LiveDock extends Vue {
 
   openFBStreamUrl() {
     electron.remote.shell.openExternal(this.facebookService.streamPageUrl);
+  }
+
+  openFBStreamDashboardUrl() {
+    electron.remote.shell.openExternal(this.facebookService.streamDashboardUrl);
   }
 
   get isTwitch() {

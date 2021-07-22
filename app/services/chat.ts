@@ -10,6 +10,35 @@ import { InitAfter } from './core';
 import Utils from './utils';
 import { StreamingService } from './streaming';
 
+export function enableBTTVEmotesScript(isDarkTheme: boolean) {
+  /*eslint-disable */
+return `
+localStorage.setItem('bttv_clickTwitchEmotes', true);
+localStorage.setItem('bttv_darkenedMode', ${
+  isDarkTheme ? 'true' : 'false'
+});
+
+var bttvscript = document.createElement('script');
+bttvscript.setAttribute('src','https://cdn.betterttv.net/betterttv.js');
+document.head.appendChild(bttvscript);
+
+function loadLazyEmotes() {
+  var els = document.getElementsByClassName('lazy-emote');
+
+  Array.prototype.forEach.call(els, el => {
+    const src = el.getAttribute('data-src');
+    if (el.src !== 'https:' + src) el.src = src;
+  });
+
+  setTimeout(loadLazyEmotes, 1000);
+}
+
+loadLazyEmotes();
+0;
+`
+  /*eslint-enable */
+}
+
 @InitAfter('StreamingService')
 export class ChatService extends Service {
   @Inject() userService: UserService;
@@ -55,7 +84,7 @@ export class ChatService extends Service {
     if (!this.chatView) this.initChat();
     this.electronWindowId = electronWindowId;
     const win = electron.remote.BrowserWindow.fromId(electronWindowId);
-    if (this.chatView) win.addBrowserView(this.chatView);
+    if (this.chatView && win) win.addBrowserView(this.chatView);
   }
 
   setChatBounds(position: IVec2, size: IVec2) {
@@ -72,7 +101,7 @@ export class ChatService extends Service {
   unmountChat() {
     if (!this.electronWindowId) return; // already unmounted
     const win = electron.remote.BrowserWindow.fromId(this.electronWindowId);
-    if (this.chatView) win.removeBrowserView(this.chatView);
+    if (this.chatView && win) win.removeBrowserView(this.chatView);
     this.electronWindowId = null;
   }
 
@@ -199,31 +228,7 @@ export class ChatService extends Service {
 
       if (settings.enableBTTVEmotes && this.userService.platform?.type === 'twitch') {
         this.chatView.webContents.executeJavaScript(
-          /*eslint-disable */
-          `
-          localStorage.setItem('bttv_clickTwitchEmotes', true);
-          localStorage.setItem('bttv_darkenedMode', ${
-            this.customizationService.isDarkTheme ? 'true' : 'false'
-          });
-
-          var bttvscript = document.createElement('script');
-          bttvscript.setAttribute('src','https://cdn.betterttv.net/betterttv.js');
-          document.head.appendChild(bttvscript);
-
-          function loadLazyEmotes() {
-            var els = document.getElementsByClassName('lazy-emote');
-
-            Array.prototype.forEach.call(els, el => {
-              const src = el.getAttribute('data-src');
-              if (el.src !== 'https:' + src) el.src = src;
-            });
-
-            setTimeout(loadLazyEmotes, 1000);
-          }
-
-          loadLazyEmotes();
-          0;
-        ` /*eslint-enable */,
+          enableBTTVEmotesScript(this.customizationService.isDarkTheme),
           true,
         );
       }
@@ -240,19 +245,22 @@ export class ChatService extends Service {
         );
       }
 
-      // the facebook chat does not properly fit in our sidebar and shows ugly scrollbars
-      // inject a script that removing the scrollbars
+      // facebook chat doesn't fit our layout by default
+      // inject a script that removes scrollbars and sets auto width for the chat
       if (this.userService.platform?.type === 'facebook') {
         Utils.sleep(2000).then(() => {
           if (!this.chatView) return;
-          this.chatView.webContents.executeJavaScript(
-            `
-                var chatIframe = document.querySelector('iframe');
-                if (chatIframe) chatIframe.setAttribute('scrolling','no');
-                0;
-        `,
-            true,
-          );
+          this.chatView.webContents
+            .executeJavaScript(
+              `
+                document.querySelector('html').style.overflowY='hidden !important';
+                var chatContainer = document.querySelector('div[data-pagelet="page"] > div');
+                chatContainer.style.marginLeft = '0';
+                chatContainer.style.marginRight = '0';
+                `,
+              true,
+            )
+            .catch(e => {});
         });
       }
     });

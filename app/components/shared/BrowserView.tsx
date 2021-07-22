@@ -72,14 +72,22 @@ export default class BrowserView extends TsxComponent<BrowserViewProps> {
     }, 100);
 
     this.shutdownSubscription = this.appService.shutdownStarted.subscribe(() => {
-      // Prevent zombie processes by destroying the browser view
-      if (this.browserView && !this.browserView.isDestroyed()) this.browserView.destroy();
+      this.destroyBrowserView();
     });
   }
 
+  destroyBrowserView() {
+    if (this.browserView) {
+      electron.remote.getCurrentWindow().removeBrowserView(this.browserView);
+      // See: https://github.com/electron/electron/issues/26929
+      // @ts-ignore
+      this.browserView.webContents.destroy();
+      this.browserView = null;
+    }
+  }
+
   destroyed() {
-    electron.remote.getCurrentWindow().removeBrowserView(this.browserView);
-    this.browserView.destroy();
+    this.destroyBrowserView();
     clearInterval(this.resizeInterval);
     this.shutdownSubscription && this.shutdownSubscription.unsubscribe();
   }
@@ -118,11 +126,13 @@ export default class BrowserView extends TsxComponent<BrowserViewProps> {
   async loadUrl() {
     try {
       await this.browserView.webContents.loadURL(this.props.src);
-    } catch (e) {
+    } catch (e: unknown) {
       // ignore some common errors
       // that happen when the window has been closed before BrowserView accomplished the request
-      if (e.code === 'ERR_ABORTED') return;
-      if (e.message.match(/\(\-3\) loading/)) return;
+      if (typeof e === 'object') {
+        if (e['code'] === 'ERR_ABORTED') return;
+        if (e['message'] && e['message'].match(/\(\-3\) loading/)) return;
+      }
       throw e;
     }
   }

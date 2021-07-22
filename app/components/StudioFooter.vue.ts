@@ -2,15 +2,16 @@ import Vue from 'vue';
 import { Component, Prop } from 'vue-property-decorator';
 import { Inject } from '../services/core/injector';
 import { StreamingService, EReplayBufferState, EStreamingState } from '../services/streaming';
-import StartStreamingButton from './StartStreamingButton.vue';
-import TestWidgets from './TestWidgets.vue';
-import PerformanceMetrics from './PerformanceMetrics.vue';
-import NotificationsArea from './NotificationsArea.vue';
+import {
+  PerformanceMetrics,
+  StartStreamingButton,
+  TestWidgets,
+  NotificationsArea,
+} from 'components/shared/ReactComponent';
 import { UserService } from '../services/user';
 import { getPlatformService } from 'services/platforms';
 import { YoutubeService } from 'services/platforms/youtube';
 import { PerformanceService, EStreamQuality } from 'services/performance';
-import electron from 'electron';
 import { CustomizationService } from 'services/customization';
 import { WindowsService } from 'services/windows';
 import { $t } from 'services/i18n';
@@ -70,12 +71,12 @@ export default class StudioFooterComponent extends Vue {
 
     if (
       this.streamingStatus === EStreamingState.Reconnecting ||
-      this.performanceService.streamQuality === EStreamQuality.POOR
+      this.performanceService.views.streamQuality === EStreamQuality.POOR
     ) {
       return 'warning';
     }
 
-    if (this.performanceService.streamQuality === EStreamQuality.FAIR) {
+    if (this.performanceService.views.streamQuality === EStreamQuality.FAIR) {
       return 'info';
     }
 

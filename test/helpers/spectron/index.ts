@@ -1,4 +1,5 @@
 /// <reference path="../../../app/index.d.ts" />
+/// <reference path="../../../app/jsx.d.ts" />
 import avaTest, { ExecutionContext, TestInterface } from 'ava';
 import { Application } from 'spectron';
 import { getClient } from '../api-client';
@@ -232,7 +233,9 @@ export function useSpectron(options: ITestRunnerOptions = {}) {
           await $chooseStarter.click();
         }
 
-        await (await t.context.app.client.$('h2=Start Fresh')).click();
+        if (await (await t.context.app.client.$('div=Start Fresh')).isExisting()) {
+          await (await t.context.app.client.$('div=Start Fresh')).click();
+        }
         await (await t.context.app.client.$('button=Skip')).click();
         await (await t.context.app.client.$('button=Skip')).click();
       } else {
@@ -262,7 +265,7 @@ export function useSpectron(options: ITestRunnerOptions = {}) {
   stopAppFn = async function stopApp(t: TExecutionContext, clearCache = true) {
     try {
       await app.stop();
-    } catch (e) {
+    } catch (e: unknown) {
       fail('Crash on shutdown');
       console.error(e);
     }
@@ -349,7 +352,7 @@ export function useSpectron(options: ITestRunnerOptions = {}) {
           await stopAppFn(t);
         }
       }
-    } catch (e) {
+    } catch (e: unknown) {
       fail('Test finalization failed');
       console.error(e);
     }
@@ -358,7 +361,6 @@ export function useSpectron(options: ITestRunnerOptions = {}) {
       // consider this test succeed and remove from the `failedTests` list
       removeFailedTestFromFile(testName);
       // save the test execution time
-      console.log('calc stats');
       testStats[testName] = {
         duration: Date.now() - testStartTime,
         syncIPCCalls: getSyncIPCCalls(),
@@ -403,9 +405,11 @@ export function useSpectron(options: ITestRunnerOptions = {}) {
 export async function click(t: TExecutionContext, selector: string) {
   try {
     return await (await t.context.app.client.$(selector)).click();
-  } catch (e) {
+  } catch (e: unknown) {
     const windowId = String(activeWindow);
-    const message = `click to "${selector}" failed in window ${windowId}: ${e.message} ${e.type}`;
+    const message = `click to "${selector}" failed in window ${windowId}: ${(e as any).message} ${
+      (e as any).type
+    }`;
     throw new Error(message);
   }
 }

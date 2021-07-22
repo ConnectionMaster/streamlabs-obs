@@ -12,7 +12,7 @@ import { WindowsService } from 'services/windows';
 import { StreamingService } from 'services/streaming';
 import { TObsFormData } from '../obs/inputs/ObsInput';
 import GenericFormGroups from '../obs/inputs/GenericFormGroups.vue';
-import StartStreamingButton from '../StartStreamingButton.vue';
+import { StartStreamingButton } from 'components/shared/ReactComponent';
 
 @Component({
   components: { ModalLayout, GenericFormGroups, StartStreamingButton },
@@ -20,7 +20,7 @@ import StartStreamingButton from '../StartStreamingButton.vue';
 export default class Troubleshooter extends Vue {
   @Inject() private notificationsService: INotificationsServiceApi;
   @Inject() private settingsService: SettingsService;
-  @Inject() private windowsService: WindowsService;
+  @Inject() private windowsService!: WindowsService;
   @Inject() streamingService: StreamingService;
 
   issueCode = this.windowsService.getChildWindowQueryParams().issueCode as TIssueCode;

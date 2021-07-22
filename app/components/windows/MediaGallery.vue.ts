@@ -196,9 +196,8 @@ export default class MediaGallery extends Vue {
     if (shouldSelect) this.handleSelect();
   }
 
-  async upgradeToPrime() {
-    const link = await this.magicLinkService.getDashboardMagicLink('prime', 'slobs-media-gallery');
-    electron.remote.shell.openExternal(link);
+  upgradeToPrime() {
+    this.magicLinkService.linkToPrime('slobs-media-gallery');
     this.$toasted.show($t('You must have Streamlabs Prime to use this media'), {
       duration: 5000,
       position: 'top-right',
@@ -274,7 +273,7 @@ export default class MediaGallery extends Vue {
         position: 'top-right',
         className: 'toast-success',
       });
-    } catch (e) {
+    } catch (e: unknown) {
       this.$toasted.show($t('Failed to copy URL'), {
         duration: 1000,
         position: 'top-right',

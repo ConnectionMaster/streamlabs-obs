@@ -10,6 +10,7 @@ module.exports = {
   extends: [
     'plugin:vue/essential',
     'airbnb-base',
+    'plugin:react-hooks/recommended',
   ],
   globals: {
     Atomics: 'readonly',
@@ -27,6 +28,14 @@ module.exports = {
   ],
   rules: {
     "prettier/prettier": ERROR,
+    "@typescript-eslint/no-implicit-any-catch": ERROR,
+
+    // The indent rule is redundant when we are using prettier, and it
+    // sometimes conflicts with prettier's recommendation.
+    "indent": OFF,
+
+    // We should consider setting this back to WARN
+    "react-hooks/exhaustive-deps": OFF,
 
     // "variable-name": [ERROR, "ban-keywords", "check-format", "allow-leading-underscore", "allow-pascal-case"],
     // We do imports where our files are suffixed .vue and this rule would expect we import as e.g. MainVue
@@ -114,4 +123,12 @@ module.exports = {
     "no-script-url": OFF,
     "import/no-named-default": OFF,
   },
+  overrides: [
+    {
+      files: ['main.js'],
+      rules: {
+        "@typescript-eslint/no-implicit-any-catch": OFF,
+      }
+    }
+  ]
 };

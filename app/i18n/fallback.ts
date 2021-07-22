@@ -53,8 +53,11 @@ const fallbackDictionary = {
   ...require('./en-US/widget-stream-boss.json'),
   ...require('./en-US/widget-tip-jar.json'),
   ...require('./en-US/widget-viewer-count.json'),
+  ...require('./en-US/widget-poll.json'),
   ...require('./en-US/widgets.json'),
   ...require('./en-US/youtube.json'),
+  ...require('./en-US/grow.json'),
+  ...require('./en-US/tiktok.json'),
 };
 
 export default fallbackDictionary;
