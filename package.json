@@ -62,7 +62,7 @@
   },
   "dependencies": {
     "archiver": "2.1.1",
-    "aws-sdk": "^2.344.0",
+    "aws-sdk": "^2.814.0",
     "color-picker": "https://obs-studio-deployment.s3-us-west-2.amazonaws.com/color-picker-0.0.0.tar.gz",
     "crash-handler": "https://slobs-crash-handler.s3-us-west-2.amazonaws.com/crash-handler-0.0.0.tar.gz",
     "electron-react-devtools": "^0.5.3",
