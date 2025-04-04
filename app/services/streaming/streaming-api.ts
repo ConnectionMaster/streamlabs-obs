@@ -1,11 +1,17 @@
 import { Observable } from 'rxjs';
-import { TPlatform } from '../platforms';
 import { IEncoderProfile } from '../video-encoding-optimizations';
 import { ITwitchStartStreamOptions } from '../platforms/twitch';
 import { IYoutubeStartStreamOptions } from '../platforms/youtube';
 import { IFacebookStartStreamOptions } from '../platforms/facebook';
 import { IStreamError } from './stream-error';
 import { ICustomStreamDestination } from '../settings/streaming';
+import { ITikTokStartStreamOptions } from '../platforms/tiktok';
+import { ITrovoStartStreamOptions } from '../platforms/trovo';
+import { IKickStartStreamOptions } from 'services/platforms/kick';
+import { ITwitterStartStreamOptions } from 'services/platforms/twitter';
+import { IInstagramStartStreamOptions } from 'services/platforms/instagram';
+import { IVideo } from 'obs-studio-node';
+import { TDisplayType } from 'services/settings-v2';
 
 export enum EStreamingState {
   Offline = 'offline',
@@ -20,6 +26,7 @@ export enum ERecordingState {
   Starting = 'starting',
   Recording = 'recording',
   Stopping = 'stopping',
+  Wrote = 'wrote',
 }
 
 export enum EReplayBufferState {
@@ -44,9 +51,14 @@ export interface IStreamInfo {
     twitch: TGoLiveChecklistItemState;
     youtube: TGoLiveChecklistItemState;
     facebook: TGoLiveChecklistItemState;
+    tiktok: TGoLiveChecklistItemState;
+    trovo: TGoLiveChecklistItemState;
+    kick: TGoLiveChecklistItemState;
+    twitter: TGoLiveChecklistItemState;
+    instagram: TGoLiveChecklistItemState;
     setupMultistream: TGoLiveChecklistItemState;
+    setupDualOutput: TGoLiveChecklistItemState;
     startVideoTransmission: TGoLiveChecklistItemState;
-    postTweet: TGoLiveChecklistItemState;
   };
 }
 
@@ -54,9 +66,14 @@ export type TGoLiveChecklistItemState = 'not-started' | 'pending' | 'done' | 'fa
 
 export interface IStreamSettings {
   platforms: {
-    twitch: IPlatformFlags & ITwitchStartStreamOptions;
-    youtube: IPlatformFlags & IYoutubeStartStreamOptions;
-    facebook: IPlatformFlags & IFacebookStartStreamOptions;
+    twitch?: IPlatformFlags & ITwitchStartStreamOptions;
+    youtube?: IPlatformFlags & IYoutubeStartStreamOptions;
+    facebook?: IPlatformFlags & IFacebookStartStreamOptions;
+    tiktok?: IPlatformFlags & ITikTokStartStreamOptions;
+    trovo?: IPlatformFlags & ITrovoStartStreamOptions;
+    kick?: IPlatformFlags & IKickStartStreamOptions;
+    twitter?: IPlatformFlags & ITwitterStartStreamOptions;
+    instagram?: IPlatformFlags & IInstagramStartStreamOptions;
   };
   customDestinations: ICustomStreamDestination[];
   advancedMode: boolean;
@@ -64,18 +81,18 @@ export interface IStreamSettings {
 
 export interface IGoLiveSettings extends IStreamSettings {
   optimizedProfile?: IEncoderProfile;
-  tweetText: string;
-}
-
-export interface IPlatformCommonFields {
-  title: string;
-  description?: string;
-  game?: string;
+  tweetText?: string;
+  prepopulateOptions?: {
+    youtube?: Partial<IYoutubeStartStreamOptions>;
+    facebook?: Partial<IFacebookStartStreamOptions>;
+  };
 }
 
 export interface IPlatformFlags {
   enabled: boolean;
   useCustomFields: boolean;
+  display?: TDisplayType;
+  video?: IVideo;
 }
 
 export interface IStreamingServiceState {
@@ -86,6 +103,7 @@ export interface IStreamingServiceState {
   replayBufferStatus: EReplayBufferState;
   replayBufferStatusTime: string;
   selectiveRecording: boolean;
+  dualOutputMode: boolean;
   info: IStreamInfo;
 }
 
@@ -103,6 +121,12 @@ export interface IStreamingServiceApi {
    * of the streaming output changes.
    */
   recordingStatusChange: Observable<ERecordingState>;
+
+  /**
+   * Subscribe to be notified when the state
+   * of the streaming output changes.
+   */
+  replayBufferStatusChange: Observable<EReplayBufferState>;
 
   /**
    * This subscription receives no events and
@@ -140,4 +164,14 @@ export interface IStreamingServiceApi {
    * Toggle the recording state
    */
   toggleRecording(): void;
+
+  /**
+   * Start replay buffer state
+   */
+  startReplayBuffer(): void;
+
+  /**
+   * Stop replay buffer state
+   */
+  stopReplayBuffer(): void;
 }

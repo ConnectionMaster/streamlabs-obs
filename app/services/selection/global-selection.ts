@@ -2,10 +2,10 @@ import { Selection } from './selection';
 import { Inject, ServiceHelper } from 'services/core';
 import { SelectionService, ISelectionState, TNodesList } from 'services/selection';
 import { $t } from 'services/i18n';
-import electron from 'electron';
 import Utils from 'services/utils';
 import { EditorCommandsService } from 'services/editor-commands';
-import { cloneDeep } from 'lodash';
+import cloneDeep from 'lodash/cloneDeep';
+import * as remote from '@electron/remote';
 
 /**
  * A specific case of a selection that represents what
@@ -14,7 +14,7 @@ import { cloneDeep } from 'lodash';
  * store in the SelectionService, and selecting items
  * actually selects them in OBS.
  */
-@ServiceHelper()
+@ServiceHelper('SelectionService')
 export class GlobalSelection extends Selection {
   @Inject() selectionService: SelectionService;
   @Inject() editorCommandsService: EditorCommandsService;
@@ -60,8 +60,9 @@ export class GlobalSelection extends Selection {
         ? $t('Are you sure you want to remove these %{count} items?', { count: selectionLength })
         : $t('Are you sure you want to remove %{sceneName}?', { sceneName: name });
 
-    electron.remote.dialog
+    remote.dialog
       .showMessageBox(Utils.getMainWindow(), {
+        title: 'Streamlabs Desktop',
         message,
         type: 'warning',
         buttons: [$t('Cancel'), $t('OK')],
@@ -72,12 +73,35 @@ export class GlobalSelection extends Selection {
       });
   }
 
-  select(items: TNodesList) {
+  /**
+   * Filter dual output nodes from selection
+   * @remarks Primarily used when toggling on Selective Recording
+   */
+  filterDualOutputNodes() {
+    const dualOutputItems = this.clone().getItems('vertical');
+    if (!dualOutputItems.length) return;
+
+    const dualOutputSelection = new Selection(this._sceneId, dualOutputItems);
+
+    this.editorCommandsService.executeCommand('RemoveNodesCommand', dualOutputSelection);
+  }
+
+  /**
+   * Selects items in the global selection
+   * @param items The list of items to select
+   * @param sync Whether to select synchronously (use only to resolve race conditions)
+   * @returns the global selection
+   */
+  select(items: TNodesList, sync = false) {
     if (this.isFrozen) {
       throw new Error('Attempted to modify frozen selection');
     }
 
-    this.selectionService.actions.select(items);
+    if (sync) {
+      this.selectionService.select(items);
+    } else {
+      this.selectionService.actions.select(items);
+    }
 
     return this;
   }

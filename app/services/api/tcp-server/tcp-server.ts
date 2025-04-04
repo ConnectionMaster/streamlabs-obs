@@ -13,7 +13,6 @@ import {
 import { IIPAddressDescription, ITcpServerServiceApi, ITcpServersSettings } from './tcp-server-api';
 import { UsageStatisticsService } from 'services/usage-statistics';
 import { ExternalApiService } from '../external-api';
-import { SceneCollectionsService } from 'services/scene-collections';
 // eslint-disable-next-line no-undef
 import WritableStream = NodeJS.WritableStream;
 import { $t } from 'services/i18n';
@@ -50,7 +49,8 @@ const TCP_PORT = 28194;
 /**
  * A transport layer for TCP and Websockets communications with internal API
  */
-export class TcpServerService extends PersistentStatefulService<ITcpServersSettings>
+export class TcpServerService
+  extends PersistentStatefulService<ITcpServersSettings>
   implements ITcpServerServiceApi {
   static defaultState: ITcpServersSettings = {
     token: '',
@@ -129,6 +129,19 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
         ...defaultWebsoketsSettings,
         enabled: true,
         allowRemote: true,
+      },
+    });
+
+    this.listen();
+  }
+
+  disableWebsocketsRemoteConnections() {
+    this.stopListening();
+    // update websockets settings
+    const defaultWebsoketsSettings = this.getDefaultSettings().websockets;
+    this.setSettings({
+      websockets: {
+        ...defaultWebsoketsSettings,
       },
     });
 
@@ -227,7 +240,9 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
         });
       });
     });
-    return addresses;
+
+    // Sort IPv4 before IPv6
+    return addresses.sort((a, b) => parseInt(a.family[3], 10) - parseInt(b.family[3], 10));
   }
 
   generateToken(): string {
@@ -364,7 +379,8 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
     }
 
     const requests = data.split('\n');
-    requests.forEach(requestString => {
+
+    for (const requestString of requests) {
       if (!requestString) return;
       try {
         const request: IJsonRpcRequest = JSON.parse(requestString);
@@ -394,7 +410,7 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
         }
 
         this.sendResponse(client, response);
-      } catch (e) {
+      } catch (e: unknown) {
         this.sendResponse(
           client,
           this.jsonrpcService.createError(null, {
@@ -405,8 +421,16 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
               'by a single newline character LF ( ASCII code 10)',
           }),
         );
+
+        // Disconnect and stop processing requests
+        // IMPORTANT: For security reasons it is important we immediately stop
+        // processing requests that don't look will well formed JSON RPC calls.
+        // Without this check, it is possible to send normal HTTP requests
+        // from an unprivileged web page and make calls to this API.
+        this.disconnectClient(client.id);
+        return;
       }
-    });
+    }
   }
 
   private onServiceEventHandler(event: IJsonRpcResponse<IJsonRpcEvent>) {
@@ -417,12 +441,15 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
 
       // these events will be sent to the client even if isRequestsHandlingStopped = true
       // this allows to send this event even if the app is in the loading state
-      const allowlistedEvents: (keyof SceneCollectionsService)[] = [
+      // TODO: This is pretty brittle - we should probably consider moving to filtering out
+      // specific events, rather than filtering out all events by default.
+      const allowlistedEvents = [
         'collectionWillSwitch',
         'collectionAdded',
         'collectionRemoved',
         'collectionSwitched',
         'collectionUpdated',
+        'studioModeChanged',
       ];
       const force = (allowlistedEvents as string[]).includes(eventName);
 
@@ -441,6 +468,21 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
   }
 
   private hadleTcpServerDirectives(client: IClient, request: IJsonRpcRequest) {
+    // Prevent access to certain particularly sensitive services
+    const protectedResources = ['FileManagerService'];
+
+    if (protectedResources.includes(request.params.resource)) {
+      this.sendResponse(
+        client,
+        this.jsonrpcService.createError(request, {
+          code: E_JSON_RPC_ERROR.INTERNAL_JSON_RPC_ERROR,
+          message: 'The requested resource is not available.',
+        }),
+      );
+
+      return true;
+    }
+
     // handle auth
     if (request.method === 'auth' && request.params.resource === 'TcpServerService') {
       if (this.state.token && request.params.args[0] === this.state.token) {
@@ -526,12 +568,18 @@ export class TcpServerService extends PersistentStatefulService<ITcpServersSetti
       if (!force && !this.forceRequests) return;
     }
 
-    this.log('send response', response);
+    if (!client.socket.writable) {
+      // prevent attempts to write to a closed socket
+
+      this.log('cannot write to closed socket to send response', response);
+      return;
+    }
 
     // unhandled exceptions completely destroy Rx.Observable subscription
     try {
+      this.log('send response', response);
       client.socket.write(`${JSON.stringify(response)}\n`);
-    } catch (e) {
+    } catch (e: unknown) {
       // probably the client has been silently disconnected
       console.info('unable to send response', response, e);
     }
