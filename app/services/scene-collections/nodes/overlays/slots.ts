@@ -1,6 +1,6 @@
 import { ArrayNode } from '../array-node';
 import { SceneItem, Scene, TSceneNode, ScenesService } from 'services/scenes';
-import { VideoService } from 'services/video';
+import { VideoService, TDisplayType } from 'services/video';
 import { SourcesService, TSourceType } from 'services/sources';
 import { SourceFiltersService, TSourceFilterType } from 'services/source-filters';
 import { Inject } from 'services/core/injector';
@@ -9,6 +9,7 @@ import { TextNode } from './text';
 import { WebcamNode } from './webcam';
 import { VideoNode } from './video';
 import { StreamlabelNode } from './streamlabel';
+import { IconLibraryNode } from './icon-library';
 import { WidgetNode } from './widget';
 import { SceneSourceNode } from './scene';
 import { AudioService } from 'services/audio';
@@ -26,7 +27,8 @@ type TContent =
   | StreamlabelNode
   | WidgetNode
   | SceneSourceNode
-  | GameCaptureNode;
+  | GameCaptureNode
+  | IconLibraryNode;
 
 interface IFilterInfo {
   name: string;
@@ -53,6 +55,10 @@ interface IItemSchema {
   filters?: IFilterInfo[];
 
   mixerHidden?: boolean;
+
+  visible?: boolean;
+  display?: TDisplayType;
+  locked: boolean;
 }
 
 export interface IFolderSchema {
@@ -60,6 +66,7 @@ export interface IFolderSchema {
   name: string;
   sceneNodeType: 'folder';
   childrenIds: string[];
+  display?: TDisplayType;
 }
 
 export type TSlotSchema = IItemSchema | IFolderSchema;
@@ -67,6 +74,7 @@ export type TSlotSchema = IItemSchema | IFolderSchema;
 interface IContext {
   assetsPath: string;
   scene: Scene;
+  savedAssets: Dictionary<string>;
 }
 
 export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
@@ -79,10 +87,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
   @Inject() audioService: AudioService;
 
   getItems(context: IContext) {
-    return context.scene
-      .getNodes()
-      .slice()
-      .reverse();
+    return context.scene.getNodes().slice().reverse();
   }
 
   async saveItem(sceneNode: TSceneNode, context: IContext): Promise<TSlotSchema> {
@@ -92,6 +97,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
         sceneNodeType: 'folder',
         name: sceneNode.name,
         childrenIds: sceneNode.childrenIds || [],
+        display: sceneNode?.display,
       };
     }
 
@@ -105,6 +111,8 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       scaleY: sceneNode.transform.scale.y / this.videoService.baseHeight,
       crop: sceneNode.transform.crop,
       rotation: sceneNode.transform.rotation,
+      visible: sceneNode.visible,
+      display: sceneNode?.display,
       filters: sceneNode.getObsInput().filters.map(filter => {
         filter.save();
 
@@ -114,6 +122,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
           settings: filter.settings,
         };
       }),
+      locked: sceneNode.locked,
     };
 
     if (sceneNode.getObsInput().audioMixers) {
@@ -134,9 +143,23 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       return { ...details, content } as IItemSchema;
     }
 
+    if (manager === 'iconLibrary') {
+      const content = new IconLibraryNode();
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
+      return { ...details, content } as IItemSchema;
+    }
+
     if (sceneNode.type === 'image_source') {
       const content = new ImageNode();
-      await content.save({ sceneItem: sceneNode, assetsPath: context.assetsPath });
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
       return { ...details, content } as IItemSchema;
     }
 
@@ -154,7 +177,11 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
 
     if (sceneNode.type === 'ffmpeg_source') {
       const content = new VideoNode();
-      await content.save({ sceneItem: sceneNode, assetsPath: context.assetsPath });
+      await content.save({
+        sceneItem: sceneNode,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
       return { ...details, content } as IItemSchema;
     }
 
@@ -175,9 +202,10 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
     let sceneItem: SceneItem;
 
     const id = obj.id;
+    const display = obj.display;
 
     if (obj.sceneNodeType === 'folder') {
-      context.scene.createFolder(obj.name, { id });
+      context.scene.createFolder(obj.name, { id, display });
       return;
     }
 
@@ -195,13 +223,17 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
       });
 
       if (existingWebcam) {
-        sceneItem = context.scene.addSource(existingWebcam.sourceId, { id, select: false });
+        sceneItem = context.scene.addSource(existingWebcam.sourceId, {
+          id,
+          select: false,
+          display,
+        });
       } else {
         sceneItem = context.scene.createAndAddSource(
           obj.name,
           webcamSourceType,
           {},
-          { id, select: false },
+          { id, select: false, display },
         );
       }
 
@@ -226,7 +258,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
         obj.name,
         'image_source',
         {},
-        { id, select: false },
+        { id, select: false, display },
       );
     } else if (obj.content instanceof GameCaptureNode) {
       if (getOS() === OS.Windows) {
@@ -234,8 +266,13 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
           obj.name,
           'game_capture',
           {},
-          { id, select: false },
+          { id, select: false, display },
         );
+
+        // Adjust scales by the ratio of the exported base resolution to
+        // the users current base resolution
+        obj.scaleX *= obj.content.data.width / this.videoService.baseWidth;
+        obj.scaleY *= obj.content.data.height / this.videoService.baseHeight;
       } else {
         // We will not load this source at all on mac
         return;
@@ -245,21 +282,28 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
         obj.name,
         byOS({ [OS.Windows]: 'text_gdiplus', [OS.Mac]: 'text_ft2_source' }),
         {},
-        { id, select: false },
+        { id, select: false, display },
       );
     } else if (obj.content instanceof VideoNode) {
       sceneItem = context.scene.createAndAddSource(
         obj.name,
         'ffmpeg_source',
         {},
-        { id, select: false },
+        { id, select: false, display },
+      );
+    } else if (obj.content instanceof IconLibraryNode) {
+      sceneItem = context.scene.createAndAddSource(
+        obj.name,
+        'image_source',
+        {},
+        { id, select: false, sourceAddOptions: { propertiesManager: 'iconLibrary' }, display },
       );
     } else if (obj.content instanceof StreamlabelNode) {
       sceneItem = context.scene.createAndAddSource(
         obj.name,
         byOS({ [OS.Windows]: 'text_gdiplus', [OS.Mac]: 'text_ft2_source' }),
         {},
-        { id, select: false },
+        { id, select: false, display },
       );
     } else if (obj.content instanceof WidgetNode) {
       // Check for already existing widgets of the same type instead
@@ -270,7 +314,7 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
           const type: WidgetType = source.getPropertiesManagerSettings().widgetType;
 
           if (widgetType === type) {
-            sceneItem = context.scene.addSource(source.sourceId, { id, select: false });
+            sceneItem = context.scene.addSource(source.sourceId, { id, select: false, display });
             existing = true;
           }
         }
@@ -281,16 +325,29 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
           obj.name,
           'browser_source',
           {},
-          { id, select: false },
+          { id, select: false, display },
         );
       }
     } else if (obj.content instanceof SceneSourceNode) {
       const sceneId = obj.content.data.sceneId;
-      sceneItem = context.scene.addSource(sceneId, { select: false });
+      sceneItem = context.scene.addSource(sceneId, { select: false, display });
+
+      // Adjust scales by the ratio of the exported base resolution to
+      // the users current base resolution
+      obj.scaleX *= obj.content.data.width / this.videoService.baseWidth;
+      obj.scaleY *= obj.content.data.height / this.videoService.baseHeight;
     }
 
     this.adjustTransform(sceneItem, obj);
-    if (!existing) await obj.content.load({ sceneItem, assetsPath: context.assetsPath });
+    this.setExtraSettings(sceneItem, obj);
+
+    if (!existing) {
+      await obj.content.load({
+        sceneItem,
+        assetsPath: context.assetsPath,
+        savedAssets: context.savedAssets,
+      });
+    }
 
     if (sceneItem.getObsInput().audioMixers) {
       this.audioService.views.getSource(sceneItem.sourceId).setHidden(obj.mixerHidden);
@@ -309,17 +366,41 @@ export class SlotsNode extends ArrayNode<TSlotSchema, IContext, TSceneNode> {
   }
 
   adjustTransform(item: SceneItem, obj: IItemSchema) {
-    item.setTransform({
-      position: {
-        x: obj.x * this.videoService.baseWidth,
-        y: obj.y * this.videoService.baseHeight,
-      },
-      scale: {
-        x: obj.scaleX * this.videoService.baseWidth,
-        y: obj.scaleY * this.videoService.baseHeight,
-      },
-      crop: obj.crop,
-      rotation: obj.rotation,
+    // special handling for game capture to show same dimensions on the vertical display as the horizontal
+
+    if (item.type === 'game_capture') {
+      item.setTransform({
+        position: {
+          x: obj.x * this.videoService.baseWidth,
+          y: obj.y * this.videoService.baseHeight,
+        },
+        crop: obj.crop,
+        rotation: obj.rotation,
+      });
+    } else {
+      item.setTransform({
+        position: {
+          x: obj.x * this.videoService.baseWidth,
+          y: obj.y * this.videoService.baseHeight,
+        },
+        scale: {
+          x: obj.scaleX * this.videoService.baseWidth,
+          y: obj.scaleY * this.videoService.baseHeight,
+        },
+        crop: obj.crop,
+        rotation: obj.rotation,
+      });
+    }
+  }
+
+  /*
+   * TODO: this is probably better than doing it individually on every source type
+   * branch, but might impact performance.
+   */
+  setExtraSettings(item: SceneItem, obj: IItemSchema) {
+    item.setSettings({
+      visible: obj.visible ?? true,
+      locked: obj.locked ?? false,
     });
   }
 }

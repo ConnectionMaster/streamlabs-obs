@@ -1,12 +1,18 @@
 {
   "Show details": "Mostra dettagli",
   "Hide details": "Nascondi dettagli",
-  "API token": "Token API",
+  "API Token": "Token API",
   "Generate new": "Genera nuovo",
   "Port": "Porta",
-  "IP addresses": "Indirizzi IP",
-  "You can now control Streamlabs OBS from your phone.": "Ora puoi controllare Streamlabs OBS dal tuo telefono.",
-  "To begin, Scan this QR code with your phone.": "Per iniziare, scansiona questo codice QR col tuo telefono.",
-  "This feature will only work with the most recent version of the Streamlabs mobile app.": "Questa funzionalità è disponibile solamente con la versione più recente dell'applicazione mobile di Streamlabs.",
-  "Click to show": "Fai clic per visualizzare"
+  "IP Addresses": "Indirizzi IP",
+  "Click to show": "Fai clic per visualizzare",
+  "The free Streamlabs Controller app allows you to control Streamlabs Desktop from your iOS or Android device. You must be logged in to use this feature.": "L'app gratuita Streamlabs Controller ti permette di controllare Streamlabs Desktop dal tuo dispositivo iOS o Android. Per utilizzare questa funzione devi aver effettuato l'accesso.",
+  "Allow Controller app connections": "Consenti le connessioni dell'app Controller",
+  "Connected Devices": "Dispositivi connessi",
+  "Disconnect": "Disconnetti",
+  "No devices connected": "Nessun dispositivo connesso",
+  "Some third party applications connect to Streamlabs Desktop via websockets connection. Toggle this to allow such connections and display connection info.": "Alcune applicazioni di terze parti si connettono a Streamlabs Desktop tramite connessione websocket. Attiva questa opzione per consentire tali connessioni e visualizzare informazioni sulla connessione.",
+  "Warning: Displaying this portion on stream may leak sensitive information.": "Avviso: la visualizzazione di questa parte in streaming potrebbe far trapelare informazioni sensibili.",
+  "Allow third party connections": "Consenti le connessioni di terze parti",
+  "Host": "Host"
 }
