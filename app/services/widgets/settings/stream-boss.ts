@@ -5,6 +5,7 @@ import { metadata } from 'components/widgets/inputs/index';
 import { InheritMutations } from 'services/core/stateful-service';
 import { BaseGoalService } from './base-goal';
 import { formMetadata } from 'components/shared/inputs';
+import { TPlatform } from '../../platforms';
 
 export interface IStreamBossSettings extends IWidgetSettings {
   background_color: string;
@@ -63,7 +64,7 @@ export class StreamBossService extends BaseGoalService<IStreamBossData, IStreamB
       dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/streamboss/settings`,
       settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/streamboss/settings`,
       goalUrl: `https://${this.getHost()}/api/v5/slobs/widget/streamboss`,
-      testers: ['Follow', 'Subscription', 'Donation', 'Bits', 'Host'],
+      testers: ['Follow', 'Subscription', 'Donation', 'Bits'],
       customCodeAllowed: true,
       customFieldsAllowed: true,
     };
@@ -166,7 +167,10 @@ export class StreamBossService extends BaseGoalService<IStreamBossData, IStreamB
   }
 
   multipliersByPlatform(): { key: string; title: string; isInteger: boolean }[] {
-    const platform = this.userService.platform.type;
+    const platform = this.userService.platform.type as Exclude<
+      TPlatform,
+      'tiktok' | 'twitter' | 'instagram' | 'kick'
+    >;
     return {
       twitch: [
         { key: 'bit_multiplier', title: $t('Damage Per Bit'), isInteger: true },
@@ -181,6 +185,10 @@ export class StreamBossService extends BaseGoalService<IStreamBossData, IStreamB
         { key: 'sub_multiplier', title: $t('Damage Per Membership'), isInteger: true },
         { key: 'superchat_multiplier', title: $t('Damage Per Superchat Dollar'), isInteger: true },
         { key: 'follow_multiplier', title: $t('Damage Per Subscriber'), isInteger: true },
+      ],
+      trovo: [
+        { key: 'sub_multiplier', title: $t('Damage Per Subscriber'), isInteger: true },
+        { key: 'follow_multiplier', title: $t('Damage Per Follower'), isInteger: true },
       ],
     }[platform];
   }
