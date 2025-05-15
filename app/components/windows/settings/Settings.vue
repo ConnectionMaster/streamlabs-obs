@@ -7,7 +7,7 @@
   >
     <div slot="content" class="settings">
       <NavMenu v-model="categoryName" class="settings-nav">
-        <scrollable style="height: 100%;" :isResizable="false">
+        <scrollable style="height: 100%" :isResizable="false">
           <form-input
             :value="searchStr"
             @input="str => onSearchInput(str)"
@@ -32,19 +32,26 @@
             :ico="icons[category]"
             :class="{ disabled: searchStr && !searchResultPages.includes(category) }"
           >
-            {{ $t(category) }}
+            <div :style="{ display: 'flex' }" @click="dismiss(category)">
+              {{ $t(category) }}
+              <DismissableBadge
+                v-if="
+                  dismissables[category] &&
+                  dismissablesService.views.shouldShow(dismissables[category])
+                "
+                :componentProps="{ dismissableKey: 'custom_menu_settings' }"
+              />
+            </div>
           </NavItem>
           <NavItem
-            v-if="!isPrime && isLoggedIn"
             key="Prime"
-            to="Prime"
-            ico="icon-prime"
-            :icoStyles="{ color: 'var(--prime)' }"
-            :style="{ color: 'var(--prime)' }"
+            to="Ultra"
+            :ultra="true"
+            :class="{ disabled: searchStr && !searchResultPages.includes('ultra') }"
           >
-            Prime
+            Ultra
           </NavItem>
-          <button
+          <div
             class="settings-auth"
             @click="handleAuth()"
             v-track-click="{
@@ -54,9 +61,12 @@
           >
             <i :class="userService.isLoggedIn ? 'fas fa-sign-out-alt' : 'fas fa-sign-in-alt'" />
             <strong>{{ userService.isLoggedIn ? $t('Log Out') : $t('Log In') }}</strong>
-            <platform-logo v-if="userService.isLoggedIn" :platform="userService.platform.type" />
+            <platform-logo
+              v-if="userService.isLoggedIn"
+              :componentProps="{ platform: userService.platform.type, size: 'small' }"
+            />
             <span v-if="userService.isLoggedIn">{{ userService.username }}</span>
-          </button>
+          </div>
         </scrollable>
       </NavMenu>
 
@@ -72,40 +82,21 @@
           @scanCompleted="onScanCompletedHandler"
           v-slot:default="{ page, scanning }"
         >
-          <extra-settings v-if="page === 'General'" />
-          <language-settings v-if="page === 'General'" />
-          <hotkeys
+          <Hotkeys
             v-if="page === 'Hotkeys'"
-            :globalSearchStr="scanning ? '' : searchStr"
-            :highlightSearch="highlightSearch"
-            :scanning="scanning"
+            :componentProps="{
+              highlightSearch,
+              scanning,
+              globalSearchStr: scanning ? '' : searchStr,
+            }"
           />
-          <stream-settings v-if="page === 'Stream'" />
           <developer-settings v-if="page === 'Developer'" />
           <installed-apps v-if="page === 'Installed Apps'" />
           <overlay-settings v-if="page === 'Scene Collections'" />
           <notifications-settings v-if="page === 'Notifications'" />
-          <appearance-settings v-if="page === 'Appearance'" />
-          <experimental-settings v-if="page === 'Experimental'" />
-          <remote-control-settings v-if="page === 'Remote Control'" />
-          <game-overlay-settings v-if="page === 'Game Overlay'" />
-          <virtual-webcam-settings v-if="page === 'Virtual Webcam'" />
+          <ObsSettings v-if="shouldShowReactPage" :componentProps="{ page: page }" />
           <GenericFormGroups
-            v-if="
-              ![
-                'Hotkeys',
-                'Stream',
-                'API',
-                'Overlays',
-                'Notifications',
-                'Appearance',
-                'Experimental',
-                'Remote Control',
-                'Installed Apps',
-                'Virtual Webcam',
-                'Developer',
-              ].includes(page)
-            "
+            v-if="shouldShowVuePage"
             :key="page"
             :categoryName="page"
             :value="settingsData"
@@ -121,6 +112,7 @@
 
 <style lang="less" scoped>
 @import '../../../styles/index';
+@import '../../../styles/badges';
 
 .settings {
   & /deep/ h2 {
@@ -135,8 +127,19 @@
   height: 100%;
 
   .search {
+    width: 100%;
     .margin-left(2);
     .margin-bottom(2);
+    & /deep/ input {
+      padding-left: 30px;
+      width: calc(100% - 30px);
+    }
+    & /deep/ .fa {
+      position: absolute;
+      left: 0;
+      right: auto;
+      pointer-events: none;
+    }
   }
 
   .clear-search-button {
@@ -173,7 +176,7 @@
   padding-left: 24px;
   font-size: 14px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
   position: fixed;
   bottom: 40px;
@@ -189,7 +192,8 @@
     overflow: hidden;
   }
 
-  i {
+  i,
+  .react {
     margin-right: 8px;
   }
   strong {
