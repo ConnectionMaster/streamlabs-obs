@@ -17,14 +17,10 @@ import { UserService } from 'services/user';
 import { SelectionService, Selection } from 'services/selection';
 import { StreamingService } from 'services/streaming';
 import { SettingsService } from 'services/settings';
-import { SourcesService, TSourceType } from 'services/sources';
-import { WidgetsService, WidgetType } from 'services/widgets';
 import { RunInLoadingMode } from 'services/app/app-decorators';
 import compact from 'lodash/compact';
 import invert from 'lodash/invert';
 import forEachRight from 'lodash/forEachRight';
-import { byOS, OS } from 'util/operating-systems';
-import { DefaultHardwareService } from 'services/hardware/default-hardware';
 
 interface IDisplayVideoSettings {
   horizontal: IVideoInfo;
@@ -38,6 +34,9 @@ interface IDualOutputServiceState {
   dualOutputMode: boolean;
   videoSettings: IDisplayVideoSettings;
   isLoading: boolean;
+  recording: TDisplayType[];
+  // TODO: use Set
+  extraOutputPlatforms: TPlatform[];
 }
 
 enum EOutputDisplayType {
@@ -148,6 +147,10 @@ class DualOutputViews extends ViewHandler<IDualOutputServiceState> {
 
   get videoSettings() {
     return this.state.videoSettings;
+  }
+
+  get recording() {
+    return this.state.recording;
   }
 
   get activeDisplays() {
@@ -278,6 +281,27 @@ class DualOutputViews extends ViewHandler<IDualOutputServiceState> {
     const nodeMap = sceneId ? this.sceneNodeMaps[sceneId] : this.activeSceneNodeMap;
     return !!nodeMap && Object.keys(nodeMap).length > 0;
   }
+
+  /**
+   * List of platforms that use extra outputs via the new streaming API
+   */
+  get extraOutputPlatforms() {
+    return this.state.extraOutputPlatforms;
+  }
+
+  /**
+   * Check if a given platform is using extra outputs with the new streaming API
+   */
+  hasExtraOutput(platform: TPlatform) {
+    return this.state.extraOutputPlatforms.includes(platform);
+  }
+
+  /**
+   * Check if there are any platforms using extra outputs
+   */
+  get hasExtraOutputs() {
+    return !!this.state.extraOutputPlatforms.length;
+  }
 }
 
 @InitAfter('ScenesService')
@@ -302,7 +326,10 @@ export class DualOutputService extends PersistentStatefulService<IDualOutputServ
         vertical: false,
       },
     },
+    recording: ['horizontal'],
     isLoading: false,
+    // TODO: I would like to use `Set` but seem to be having issues with it
+    extraOutputPlatforms: [] as TPlatform[],
   };
 
   sceneNodeHandled = new Subject<number>();
@@ -820,6 +847,22 @@ export class DualOutputService extends PersistentStatefulService<IDualOutputServ
     this.SET_IS_LOADING(status);
   }
 
+  /**
+   * Add a platform to the list of platforms that use extra outputs
+   * (in addition to horizontal/vertical).
+   */
+  addExtraOutputPlatform(platform: TPlatform) {
+    this.ADD_EXTRA_OUTPUT_PLATFORM(platform);
+  }
+
+  /**
+   * Remove a platform from the list of platforms that use extra outputs
+   * (in addition to horizontal/vertical).
+   */
+  removeExtraOutputPlatform(platform: TPlatform) {
+    this.REMOVE_EXTRA_OUTPUT_PLATFORM(platform);
+  }
+
   @mutation()
   private SET_SHOW_DUAL_OUTPUT(status?: boolean) {
     this.state = {
@@ -852,5 +895,21 @@ export class DualOutputService extends PersistentStatefulService<IDualOutputServ
   @mutation()
   private SET_IS_LOADING(status: boolean) {
     this.state = { ...this.state, isLoading: status };
+  }
+
+  @mutation()
+  private ADD_EXTRA_OUTPUT_PLATFORM(platform: TPlatform) {
+    // TODO: this is more complex that it needs to be without using Sets
+    if (!this.state.extraOutputPlatforms.includes(platform)) {
+      this.state.extraOutputPlatforms = [...this.state.extraOutputPlatforms, platform];
+    }
+  }
+
+  @mutation()
+  private REMOVE_EXTRA_OUTPUT_PLATFORM(platform: TPlatform) {
+    // TODO: this is more complex that it needs to be without using Sets
+    if (this.state.extraOutputPlatforms.includes(platform)) {
+      this.state.extraOutputPlatforms = this.state.extraOutputPlatforms.filter(p => p !== platform);
+    }
   }
 }
