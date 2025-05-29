@@ -21,6 +21,10 @@ interface INotificationsState {
 }
 
 class NotificationsViews extends ViewHandler<INotificationsState> {
+  get lastNotification(): INotification | null {
+    return this.state.notifications ? this.state.notifications[0] : null;
+  }
+
   getNotification(id: number): INotification {
     return this.state.notifications.find(notify => notify.id === id);
   }
@@ -67,7 +71,8 @@ class NotificationsViews extends ViewHandler<INotificationsState> {
   }
 }
 
-export class NotificationsService extends PersistentStatefulService<INotificationsState>
+export class NotificationsService
+  extends PersistentStatefulService<INotificationsState>
   implements INotificationsServiceApi {
   static defaultState: INotificationsState = {
     notifications: [],
@@ -93,7 +98,7 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
     return new NotificationsViews(this.state);
   }
 
-  filter(state: INotificationsState) {
+  static filter(state: INotificationsState) {
     return { ...state, notifications: [] as INotification[] };
   }
 
@@ -145,8 +150,8 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
 
   showNotifications() {
     this.windowsService.showWindow({
-      componentName: 'Notifications',
-      title: $t('Notifications'),
+      componentName: 'NotificationsAndNews',
+      title: $t('Notifications & News'),
       size: {
         width: 600,
         height: 600,
