@@ -13,9 +13,7 @@ interface IDefaultHardwareServiceState {
   presetFilter: string;
 }
 
-export class DefaultHardwareService extends PersistentStatefulService<
-  IDefaultHardwareServiceState
-> {
+export class DefaultHardwareService extends PersistentStatefulService<IDefaultHardwareServiceState> {
   static defaultState: IDefaultHardwareServiceState = {
     defaultVideoDevice: null,
     defaultAudioDevice: 'default',
@@ -101,15 +99,19 @@ export class DefaultHardwareService extends PersistentStatefulService<
 
   clearTemporarySources() {
     this.audioDevices.forEach(device => {
+      if (!this.sourcesService.views.getSource(device.id)) return;
       this.sourcesService.removeSource(device.id);
     });
 
     this.videoDevices.forEach(device => {
-      const existingSource = this.existingVideoDeviceSources.find(
-        source => source.deviceId === device.id,
-      );
-      if (existingSource) return;
-      this.sourcesService.removeSource(device.id);
+      const deviceProperty = byOS({ [OS.Windows]: 'video_device_id', [OS.Mac]: 'device' });
+      if (
+        this.sourcesService.views.temporarySources.find(
+          s => s.getSettings()[deviceProperty] === device.id,
+        )
+      ) {
+        this.sourcesService.removeSource(device.id);
+      }
     });
   }
 
@@ -118,13 +120,13 @@ export class DefaultHardwareService extends PersistentStatefulService<
   }
 
   get videoDevices() {
-    return this.hardwareService
-      .getDshowDevices()
-      .filter(device => EDeviceType.videoInput === device.type);
+    return this.hardwareService.dshowDevices.filter(
+      device => EDeviceType.videoInput === device.type,
+    );
   }
 
   get audioDevices() {
-    return this.audioService.getDevices().filter(device => device.type === EDeviceType.audioInput);
+    return this.audioService.devices.filter(device => device.type === EDeviceType.audioInput);
   }
 
   get selectedAudioSource() {

@@ -11,6 +11,7 @@ import {
   JsonrpcService,
 } from 'services/api/jsonrpc';
 import { ServicesManager } from '../../services-manager';
+import { RealmObject } from 'services/realm';
 
 export interface ISerializable {
   // really wish to have something like
@@ -57,8 +58,9 @@ export abstract class RpcApi extends Service {
     this.requestErrors = []; // cleanup errors from previous request
     try {
       response = this.handleServiceRequest(request);
-    } catch (e) {
-      this.requestErrors.push(e);
+    } catch (e: unknown) {
+      // TODO: Type is probably wrong here
+      this.requestErrors.push(e as any);
     }
 
     if (this.requestErrors.length) response = this.onErrorsHandler(request, this.requestErrors);
@@ -183,7 +185,20 @@ export abstract class RpcApi extends Service {
 
       promise.then(
         data => this.sendPromiseMessage({ data, promiseId, isRejected: false }),
-        data => this.sendPromiseMessage({ data, promiseId, isRejected: true }),
+        data => {
+          if (request.params.noReturn) {
+            // If this was an async action call with no return, we
+            // need to log the Promise rejection somewhere, otherwise
+            // it will just silenty reject as nothing is listening in
+            // the window that made the request.
+            console.error(
+              `Rejected promise from async action call to ${request.params.resource}.${request.method}:`,
+              data,
+            );
+          } else {
+            this.sendPromiseMessage({ data, promiseId, isRejected: true });
+          }
+        },
       );
 
       // notify the API client that the Promise is created
@@ -212,6 +227,15 @@ export abstract class RpcApi extends Service {
       });
     }
 
+    if (responsePayload instanceof RealmObject) {
+      return this.jsonrpc.createResponse(request.id, {
+        _type: 'REALM_OBJECT',
+        resourceId: responsePayload.idString,
+        realmType: responsePayload.schema.name,
+        // TODO: Compact mode?
+      });
+    }
+
     // payload may contain arrays or objects that may have ServiceHelper objects inside
     // so we have to try to find these ServiceHelpers and serialize them too
     traverse(responsePayload).forEach((item: any) => {
@@ -221,6 +245,15 @@ export abstract class RpcApi extends Service {
           _type: 'HELPER',
           resourceId: helper._resourceId,
           ...(!request.params.compactMode ? this.getResourceModel(helper) : {}),
+        };
+      }
+
+      if (item && item instanceof RealmObject) {
+        return {
+          _type: 'REALM_OBJECT',
+          resourceId: responsePayload.idString,
+          realmType: responsePayload.schema.name,
+          // TODO: Compact mode?
         };
       }
     });
@@ -247,7 +280,7 @@ export abstract class RpcApi extends Service {
       this.requestErrors.push(`Resource not found: ${resourceId}`);
       return null;
     }
-    const resourceScheme = {};
+    const resourceScheme: Dictionary<string> = {};
 
     // collect resource keys from the whole prototype chain
     const keys: string[] = [];
@@ -265,8 +298,8 @@ export abstract class RpcApi extends Service {
   }
 
   private getResourceModel(helper: Object): Object {
-    if (helper['getModel'] && typeof helper['getModel'] === 'function') {
-      return helper['getModel']();
+    if ('getModel' in helper && typeof helper.getModel === 'function') {
+      return helper.getModel();
     }
     return {};
   }
@@ -298,22 +331,45 @@ export abstract class RpcApi extends Service {
    * Send this conformation back to the client
    */
   private sendPromiseMessage(info: { isRejected: boolean; promiseId: string; data: any }) {
-    if (info.data instanceof Error || info.data instanceof Response) {
-      info.data = JSON.parse(JSON.stringify(info.data));
+    let serializedDataPromise: Promise<any>;
+
+    if (info.data instanceof Response) {
+      const contentType = info.data.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+      const serialized: any = { url: info.data.url, status: info.data.status };
+
+      if (isJson) {
+        serializedDataPromise = info.data
+          .json()
+          .then(j => {
+            return { ...serialized, body: j };
+          })
+          .catch(e => {
+            return { ...serialized, body: e };
+          });
+      } else {
+        serializedDataPromise = info.data.text().then(b => {
+          return { ...serialized, body: b };
+        });
+      }
+    } else if (info.data instanceof Error) {
+      serializedDataPromise = Promise.resolve({
+        error: `${info.data.name}: ${info.data.message}`,
+        stack: info.data.stack,
+      });
+    } else {
+      serializedDataPromise = Promise.resolve(info.data);
     }
 
-    // serialize errors
-    const serializedData = info.isRejected
-      ? { message: info.data?.message, ...info.data }
-      : info.data;
-
-    this.serviceEvent.next(
-      this.jsonrpc.createEvent({
-        emitter: 'PROMISE',
-        data: serializedData,
-        resourceId: info.promiseId,
-        isRejected: info.isRejected,
-      }),
-    );
+    serializedDataPromise.then(d => {
+      this.serviceEvent.next(
+        this.jsonrpc.createEvent({
+          emitter: 'PROMISE',
+          data: d,
+          resourceId: info.promiseId,
+          isRejected: info.isRejected,
+        }),
+      );
+    });
   }
 }
