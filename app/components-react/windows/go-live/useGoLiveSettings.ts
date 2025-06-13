@@ -1,6 +1,5 @@
 import { IGoLiveSettings, StreamInfoView } from '../../../services/streaming';
 import { TPlatform } from '../../../services/platforms';
-import { TDisplayDestinations } from 'services/dual-output';
 import { ICustomStreamDestination } from 'services/settings/streaming';
 import { Services } from '../../service-provider';
 import cloneDeep from 'lodash/cloneDeep';
@@ -62,7 +61,7 @@ class GoLiveSettingsState extends StreamInfoView<IGoLiveSettingsState> {
     Object.assign(this.state, { ...newSettings, platforms, customDestinations });
   }
   /**
-   * Update settings for a specific platforms
+   * Update settings for a specific platform
    */
   updatePlatform(platform: TPlatform, patch: Partial<IGoLiveSettings['platforms'][TPlatform]>) {
     const updated = {
@@ -72,6 +71,10 @@ class GoLiveSettingsState extends StreamInfoView<IGoLiveSettingsState> {
       },
     };
     this.updateSettings(updated);
+  }
+
+  getCanDualStream(platform: TPlatform) {
+    return Services.StreamingService.views.supports('dualStream', [platform]);
   }
 
   switchPlatforms(enabledPlatforms: TPlatform[]) {
@@ -119,6 +122,26 @@ class GoLiveSettingsState extends StreamInfoView<IGoLiveSettingsState> {
     // reset common fields for all platforms in simple mode
     if (!enabled) this.updateCommonFields(this.getView().commonFields);
   }
+
+  /**
+   * Set displays for recording
+   * @remark Primarily used for dual output recording
+   * @param display - Display to toggle
+   * @param radioBtn - If true, the display will be the only one selected for recording
+   */
+  toggleRecordingDisplay(display: TDisplayType, radioBtn: boolean = false) {
+    if (radioBtn) {
+      this.updateSettings({ recording: [display] });
+      return;
+    }
+
+    if (this.state.recording.includes(display)) {
+      this.updateSettings({ recording: this.state.recording.filter(d => d !== display) });
+    } else {
+      this.updateSettings({ recording: [...this.state.recording, display] });
+    }
+  }
+
   /**
    * Set a common field like title or description for all eligible platforms
    **/
@@ -173,6 +196,10 @@ export class GoLiveSettingsModule {
         windowParams as IGoLiveSettings['prepopulateOptions'],
       );
     }
+
+    // determine if TikTok apply notification should be shown
+    Services.TikTokService.actions.handleApplyPrompt();
+
     await this.prepopulate();
   }
 
@@ -343,8 +370,8 @@ export class GoLiveSettingsModule {
       this.state.isEnabled('tiktok') &&
       (Services.TikTokService.neverApplied || Services.TikTokService.denied)
     ) {
-      // TODO: this is a patch to allow users to attempt to go live with rtmp regardless of tiktok status
-      return message.info(
+      // Show this allow users to attempt to go live with rtmp regardless of tiktok status
+      message.info(
         $t("Couldn't confirm TikTok Live Access. Apply for Live Permissions below"),
         2,
         () => true,
