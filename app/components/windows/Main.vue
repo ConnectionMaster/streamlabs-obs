@@ -5,7 +5,6 @@
       :class="{ 'titlebar--error': errorAlert }"
       v-if="uiReady"
     />
-    <news-banner v-if="uiReady" />
     <div
       class="main-contents"
       v-if="uiReady"
@@ -15,15 +14,22 @@
         'main-contents--onboarding': page === 'Onboarding',
       }"
     >
-      <side-nav v-if="page !== 'Onboarding' && !showLoadingSpinner" :locked="applicationLoading" />
+      <side-nav
+        v-if="page !== 'Onboarding' && !showLoadingSpinner"
+        :locked="applicationLoading"
+        class="sidenav"
+      />
       <div class="live-dock-wrapper" v-if="renderDock && leftDock">
-        <live-dock :onLeft="true" />
+        <live-dock :component-props="{ onLeft: true }" />
         <resize-bar
           v-if="!isDockCollapsed"
           class="live-dock-resize-bar live-dock-resize-bar--left"
           position="right"
           @resizestart="onResizeStartHandler"
           @resizestop="onResizeStopHandler"
+          :max="maxDockWidth"
+          :min="minDockWidth"
+          :value="liveDockSize"
         />
       </div>
 
@@ -34,7 +40,9 @@
           v-if="!showLoadingSpinner"
           :is="page"
           :params="params"
+          :component-props="{ onTotalWidth: width => handleEditorWidth(width), params }"
           @totalWidth="width => handleEditorWidth(width)"
+          style="grid-row: 1 / span 1"
         />
         <studio-footer v-if="!applicationLoading && page !== 'Onboarding'" />
       </div>
@@ -46,13 +54,21 @@
           position="left"
           @resizestart="onResizeStartHandler"
           @resizestop="onResizeStopHandler"
+          :max="maxDockWidth"
+          :min="minDockWidth"
+          :value="liveDockSize"
+          :reverse="true"
         />
         <live-dock class="live-dock" />
       </div>
     </div>
     <ModalWrapper :renderFn="modalOptions.renderFn" />
     <transition name="loader">
-      <div class="main-loading" v-if="!uiReady || showLoadingSpinner">
+      <div
+        class="main-loading"
+        :class="{ 'initial-loading': !uiReady }"
+        v-if="!uiReady || showLoadingSpinner"
+      >
         <custom-loader></custom-loader>
       </div>
     </transition>
@@ -75,6 +91,13 @@
 
 <style lang="less" scoped>
 @import '../../styles/index';
+
+.sidenav {
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-grow: 1;
+}
 
 .main {
   display: flex;
@@ -100,13 +123,16 @@
 
 .main-contents--onboarding {
   grid-template-columns: 1fr;
+
+  .main-middle {
+    grid-template-rows: 1fr;
+  }
 }
 
 .main-middle {
   flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 48px;
   position: relative;
   height: 100%;
 }
@@ -141,6 +167,10 @@
   /deep/ .s-loader__bg {
     top: 30px;
   }
+}
+
+.initial-loading {
+  top: 0px !important;
 }
 
 .loader-enter-active,
