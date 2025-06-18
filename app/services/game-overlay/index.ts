@@ -1,8 +1,9 @@
 import electron, { ipcRenderer } from 'electron';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { Inject, InitAfter } from 'services/core';
-import { LoginLifecycle, UserService } from 'services/user';
+import { UserService } from 'services/user';
 import { CustomizationService } from 'services/customization';
+import { enableBTTVEmotesScript } from 'services/chat';
 import { WindowsService } from '../windows';
 import { PersistentStatefulService } from 'services/core/persistent-stateful-service';
 import { mutation } from 'services/core/stateful-service';
@@ -10,8 +11,9 @@ import { $t } from 'services/i18n';
 import { getOS, OS } from 'util/operating-systems';
 import { StreamingService } from '../streaming';
 import { UsageStatisticsService } from 'services/usage-statistics';
+import * as remote from '@electron/remote';
 
-const { BrowserWindow } = electron.remote;
+const { BrowserWindow } = remote;
 
 interface IWindowProperties {
   chat: { position: IVec2; id: number; enabled: boolean };
@@ -31,17 +33,53 @@ const hideInteraction = `
   const elements = [];
 
   /* Platform Chats */
+  // TODO: remove .chat-input if it was only for Twitch, as it wasn't working and fixed below
   elements.push(document.querySelector('.chat-input'));
   elements.push(document.querySelector('.webComposerBlock__3lT5b'));
 
-  /* Recent Events */
-  elements.push(document.querySelector('.recent-events__header'));
-  elements.push(document.querySelector('.recent-events__tabs'));
-  elements.push(document.querySelector('.popout--recent-events'));
   elements.forEach((el) => {
     if (el) { el.style.cssText = 'display: none !important'; }
   });
+
+  const el = document.createElement('style');
+  document.head.appendChild(el);
+  const sheet = el.sheet;
+
+  /* Recent Events */
+  sheet.insertRule('.recent-events__header, .recent-events__tabs, .popout--recent-events { display: none !important; }');
+
+  /* Twitch Chat */
+  // Header
+  sheet.insertRule('.stream-chat .stream-chat-header { display: none !important; }', sheet.cssRules.length);
+  // Chat Input
+  sheet.insertRule('.stream-chat .chat-input { display: none !important; }', sheet.cssRules.length);
+
+  /* Trovo Chat */
+  // Fix chat container that's cut off on Game Overlay's 300px wide window
+  /*
+   * The input box is rendered way after this code runs, insert a CSS rule to hide it instead of
+   * manipulating style directly since we will never find the element here.
+   * Since we're using CSSStyleSheet we add the rest of the rules here.
+   *
+   * 1. Fix chat wrapper width.
+   * 2. Hide chat input panel.
+   * 3. Hide all headers, including Gift Rank.
+   */
+  sheet.insertRule('#__layout .popout-container .chat-wrap { min-width: 300px }', sheet.cssRules.length);
+  sheet.insertRule('#__layout .popout-container .chat-wrap .chat-header { display: none }', sheet.cssRules.length);
+  sheet.insertRule('#__layout .popout-container .input-panels-container { display: none }', sheet.cssRules.length);
+  sheet.insertRule('#__layout .popout-container .gift-rank-header { display: none }', sheet.cssRules.length);
 `;
+
+export enum EGameOverlayState {
+  Disabled = 'disabled',
+  Enabled = 'enabled',
+}
+
+export enum EGameOverlayVisibility {
+  Hidden = 'hidden',
+  Visible = 'visible',
+}
 
 @InitAfter('UserService')
 export class GameOverlayService extends PersistentStatefulService<GameOverlayState> {
@@ -83,6 +121,9 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
   // TODO: This module has types but we can't use them in their current state
   private overlay: any;
 
+  overlayStatusChanged = new Subject<EGameOverlayState>();
+  overlayVisibilityChanged = new Subject<EGameOverlayVisibility>();
+
   async init() {
     // Game overlay is windows only
     if (getOS() !== OS.Windows) return;
@@ -96,7 +137,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   initializeOverlay() {
     if (!this.state.isEnabled) return;
-    this.overlay = electron.remote.require('game-overlay');
+    this.overlay = remote.require('game_overlay');
 
     if (this.overlayRunning) return;
     this.overlayRunning = true;
@@ -104,7 +145,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
     let crashHandlerLogPath = '';
     if (process.env.NODE_ENV !== 'production' || !!process.env.SLOBS_PREVIEW) {
       const overlayLogFile = '\\game-overlays.log';
-      crashHandlerLogPath = electron.remote.app.getPath('userData') + overlayLogFile;
+      crashHandlerLogPath = remote.app.getPath('userData') + overlayLogFile;
     }
 
     this.overlay.start(crashHandlerLogPath);
@@ -117,7 +158,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
       width: 600,
       componentName: 'GameOverlayEventFeed',
       queryParams: { gameOverlay: true },
-      webPreferences: { offscreen: true, nodeIntegration: true, enableRemoteModule: true },
+      webPreferences: { offscreen: true, nodeIntegration: true, contextIsolation: false },
       isFullScreen: true,
     });
     this.windows.chat = new BrowserWindow({
@@ -134,8 +175,10 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   assignCommonWindowOptions() {
     const [containerX, containerY] = this.getWindowContainerStartingPosition();
+    const { r, g, b } = this.customizationService.themeBackground;
+
     this.commonWindowOptions = {
-      backgroundColor: this.customizationService.themeBackground,
+      backgroundColor: '#' + r + g + b,
       show: false,
       frame: false,
       width: 300,
@@ -154,7 +197,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
       ...this.commonWindowOptions,
       width: 600,
       transparent: true,
-      webPreferences: { offscreen: false, nodeIntegration: true, enableRemoteModule: true },
+      webPreferences: { offscreen: false, nodeIntegration: true, contextIsolation: false },
       isFullScreen: true,
       alwaysOnTop: true,
       componentName: 'OverlayPlaceholder',
@@ -165,7 +208,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
       ...this.commonWindowOptions,
       height: 600,
       transparent: true,
-      webPreferences: { offscreen: false, nodeIntegration: true, enableRemoteModule: true },
+      webPreferences: { offscreen: false, nodeIntegration: true, contextIsolation: false },
       isFullScreen: true,
       alwaysOnTop: true,
       componentName: 'OverlayPlaceholder',
@@ -175,11 +218,15 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   configureWindows() {
     Object.keys(this.windows).forEach((key: string) => {
+      // TODO: index
+      // @ts-ignore
       const win = this.windows[key];
 
       const position = this.determineStartPosition(key);
       const size = key === 'chat' ? { width: 300, height: 600 } : { width: 600, height: 300 };
       win.setBounds({ ...position, ...size });
+      // TODO: index
+      // @ts-ignore
       this.previewWindows[key].setBounds({ ...position, ...size });
     });
 
@@ -211,11 +258,13 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
   }
 
   determineStartPosition(window: string) {
+    // TODO: index
+    // @ts-ignore
     const pos = this.state.windowProperties[window].position;
     if (pos) {
-      const display = electron.remote.screen.getAllDisplays().find(display => {
+      const display = remote.screen.getAllDisplays().find(display => {
         const bounds = display.bounds;
-        const intBounds = pos.x > bounds.x && pos.y > bounds.y;
+        const intBounds = pos.x >= bounds.x && pos.y >= bounds.y;
         const extBounds = pos.x < bounds.x + bounds.width && pos.y < bounds.y + bounds.height;
         return intBounds && extBounds;
       });
@@ -229,6 +278,8 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   resetPosition() {
     this.enabledWindows.forEach((key: string) => {
+      // TODO: index
+      // @ts-ignore
       const overlayId = this.state.windowProperties[key].id;
       if (!overlayId) return;
 
@@ -236,7 +287,11 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
       const pos = this.defaultPosition(key);
       const size = key === 'chat' ? { width: 300, height: 600 } : { width: 600, height: 300 };
 
+      // TODO: index
+      // @ts-ignore
       this.windows[key].setBounds({ ...pos, ...size });
+      // TODO: index
+      // @ts-ignore
       this.previewWindows[key].setBounds({ ...pos, ...size });
       this.overlay.setPosition(overlayId, pos.x, pos.y, size.width, size.height);
     });
@@ -257,11 +312,14 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
     // Force a refresh to trigger a paint event
     Object.values(this.windows).forEach(win => win.webContents.invalidate());
+
+    this.overlayVisibilityChanged.next(EGameOverlayVisibility.Visible);
   }
 
   hideOverlay() {
     this.overlay.hide();
     this.TOGGLE_OVERLAY(false);
+    this.overlayVisibilityChanged.next(EGameOverlayVisibility.Hidden);
   }
 
   toggleOverlay() {
@@ -279,31 +337,47 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   get enabledWindows() {
     return Object.keys(this.windows).filter(
+      // TODO: index
+      // @ts-ignore
       (win: string) => this.state.windowProperties[win].enabled,
     );
   }
 
   async setEnabled(shouldEnable: boolean = true) {
     if (shouldEnable && !this.userService.isLoggedIn) {
-      return Promise.reject($t('Please log in to use the in-game overlay.'));
+      return Promise.reject();
     }
 
     const shouldStop = !shouldEnable && this.state.isEnabled;
 
     this.SET_ENABLED(shouldEnable);
     if (shouldStop) await this.destroyOverlay();
+
+    this.overlayStatusChanged.next(
+      shouldEnable ? EGameOverlayState.Enabled : EGameOverlayState.Disabled,
+    );
   }
 
   async toggleWindowEnabled(window: string) {
     this.TOGGLE_WINDOW_ENABLED(window);
 
+    // TODO: index
+    // @ts-ignore
     const id = this.state.windowProperties[window].id;
 
+    // TODO: index
+    // @ts-ignore
     this.overlay.setVisibility(id, this.state.windowProperties[window].enabled);
 
+    // TODO: index
+    // @ts-ignore
     if (!this.state.windowProperties[window].enabled) {
+      // TODO: index
+      // @ts-ignore
       this.previewWindows[window].hide();
     } else if (this.state.previewMode) {
+      // TODO: index
+      // @ts-ignore
       this.previewWindows[window].show();
     }
   }
@@ -314,10 +388,16 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
     if (!this.state.isEnabled) return;
     this.SET_PREVIEW_MODE(previewMode);
     if (previewMode) {
+      // TODO: index
+      // @ts-ignore
       this.enabledWindows.forEach(win => this.previewWindows[win].show());
     } else {
       this.enabledWindows.forEach(async key => {
+        // TODO: index
+        // @ts-ignore
         const win: electron.BrowserWindow = this.previewWindows[key];
+        // TODO: index
+        // @ts-ignore
         const overlayId = this.state.windowProperties[key].id;
 
         const [x, y] = win.getPosition();
@@ -334,6 +414,8 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
     this.SET_OPACITY(percentage);
     if (!this.state.isEnabled) return;
     Object.keys(this.windows).forEach(key => {
+      // TODO: index
+      // @ts-ignore
       const overlayId = this.state.windowProperties[key].id;
 
       this.overlay.setTransparency(overlayId, percentage * 2.55);
@@ -342,6 +424,7 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   async destroy() {
     await this.destroyOverlay();
+    this.overlayVisibilityChanged.next(EGameOverlayVisibility.Hidden);
   }
 
   async destroyOverlay() {
@@ -360,6 +443,8 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   private createWindowOverlays() {
     Object.keys(this.windows).forEach((key: string) => {
+      // TODO: index
+      // @ts-ignore
       const win: electron.BrowserWindow = this.windows[key];
       // Fix race condition in screen tests
       if (win.isDestroyed()) return;
@@ -378,9 +463,15 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
       this.overlay.setPosition(overlayId, position.x, position.y, width, height);
       this.overlay.setTransparency(overlayId, this.state.opacity * 2.55);
+      // TODO: index
+      // @ts-ignore
       this.overlay.setVisibility(overlayId, this.state.windowProperties[key].enabled);
 
       win.webContents.executeJavaScript(hideInteraction);
+      win.webContents.executeJavaScript(
+        enableBTTVEmotesScript(this.customizationService.isDarkTheme),
+        true,
+      );
 
       // We bind the paint callback in the main process to avoid a memory
       // leak in electron. This can be moved back to the renderer process
@@ -391,7 +482,11 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
   }
 
   private getPosition(key: string, win: electron.BrowserWindow) {
+    // TODO: index
+    // @ts-ignore
     if (this.state.windowProperties[key].position) {
+      // TODO: index
+      // @ts-ignore
       return this.state.windowProperties[key].position;
     }
     const [x, y] = win.getPosition();
@@ -421,16 +516,22 @@ export class GameOverlayService extends PersistentStatefulService<GameOverlaySta
 
   @mutation()
   private SET_WINDOW_ID(window: string, id: number) {
+    // TODO: index
+    // @ts-ignore
     this.state.windowProperties[window].id = id;
   }
 
   @mutation()
   private SET_WINDOW_POSITION(window: string, position: IVec2) {
+    // TODO: index
+    // @ts-ignore
     this.state.windowProperties[window].position = position;
   }
 
   @mutation()
   private TOGGLE_WINDOW_ENABLED(window: string) {
+    // TODO: index
+    // @ts-ignore
     this.state.windowProperties[window].enabled = !this.state.windowProperties[window].enabled;
   }
 
