@@ -43,9 +43,7 @@ export default function ClipsView({
   emitSetView: (data: IViewState) => void;
 }) {
   const { HighlighterService, UsageStatisticsService, IncrementalRolloutService } = Services;
-  const aiHighlighterFeatureEnabled = IncrementalRolloutService.views.featureIsEnabled(
-    EAvailableFeatures.aiHighlighter,
-  );
+  const aiHighlighterFeatureEnabled = HighlighterService.aiHighlighterFeatureEnabled;
   const clipsAmount = useVuex(() => HighlighterService.views.clips.length);
   const [clips, setClips] = useState<{
     ordered: { id: string }[];
@@ -55,6 +53,7 @@ export default function ClipsView({
   const [activeFilter, setActiveFilter] = useState('all'); // Currently not using the setActiveFilter option
 
   const [clipsLoaded, setClipsLoaded] = useState<boolean>(false);
+
   const loadClips = useCallback(async (id: string | undefined) => {
     await HighlighterService.actions.return.loadClips(id);
     setClipsLoaded(true);
@@ -63,8 +62,6 @@ export default function ClipsView({
   const getClips = useCallback(() => {
     return HighlighterService.getClips(HighlighterService.views.clips, props.id);
   }, [props.id]);
-
-  const noClipsToExport = getClips().some(clip => clip.enabled) === false;
 
   useEffect(() => {
     setClipsLoaded(false);
@@ -211,28 +208,7 @@ export default function ClipsView({
               >
                 {$t('Share feedback')}
               </Button>
-              <Tooltip
-                title={
-                  noClipsToExport ? $t('Select at least one clip to preview your video') : null
-                }
-                placement="bottom"
-              >
-                <Button disabled={noClipsToExport} onClick={() => setModal({ modal: 'preview' })}>
-                  {$t('Preview')}
-                </Button>
-              </Tooltip>
-              <Tooltip
-                title={noClipsToExport ? $t('Select at least one clip to export your video') : null}
-                placement="bottom"
-              >
-                <Button
-                  disabled={noClipsToExport}
-                  type="primary"
-                  onClick={() => setModal({ modal: 'export' })}
-                >
-                  {$t('Export')}
-                </Button>
-              </Tooltip>
+              <PreviewExportButton streamId={streamId} setModal={setModal} />
             </div>
           </div>
           {sortedList.length === 0 ? (
@@ -316,6 +292,7 @@ export default function ClipsView({
                                 remote.shell.showItemInFolder(clip.path);
                               }}
                               streamId={streamId}
+                              game={game}
                             />
                           </div>
                         );
@@ -338,11 +315,11 @@ export default function ClipsView({
           streamId={props.id}
           modal={modal}
           onClose={() => setModal(null)}
-          deleteClip={(clipId, streamId) =>
+          deleteClip={(clipIds, streamId) =>
             setClips(
               sortAndFilterClips(
                 HighlighterService.getClips(HighlighterService.views.clips, props.id).filter(
-                  clip => clip.path !== clipId,
+                  clip => !clipIds.includes(clip.path),
                 ),
                 streamId,
                 'all',
@@ -478,4 +455,43 @@ export function sortAndFilterClips(clips: TClip[], streamId: string | undefined,
   }));
 
   return { ordered, orderedFiltered };
+}
+
+function PreviewExportButton({
+  streamId,
+  setModal,
+}: {
+  streamId: string | undefined;
+  setModal: (modal: { modal: TModalClipsView }) => void;
+}) {
+  const { HighlighterService } = Services;
+  const clips = useVuex(() =>
+    HighlighterService.getClips(HighlighterService.views.clips, streamId),
+  );
+  const hasClipsToExport = clips.some(clip => clip.enabled);
+
+  return (
+    <>
+      <Tooltip
+        title={!hasClipsToExport ? $t('Select at least one clip to preview your video') : null}
+        placement="bottom"
+      >
+        <Button disabled={!hasClipsToExport} onClick={() => setModal({ modal: 'preview' })}>
+          {$t('Preview')}
+        </Button>
+      </Tooltip>
+      <Tooltip
+        title={!hasClipsToExport ? $t('Select at least one clip to export your video') : null}
+        placement="bottom"
+      >
+        <Button
+          disabled={!hasClipsToExport}
+          type="primary"
+          onClick={() => setModal({ modal: 'export' })}
+        >
+          {$t('Export')}
+        </Button>
+      </Tooltip>
+    </>
+  );
 }
