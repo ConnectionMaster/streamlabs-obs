@@ -1,10 +1,12 @@
 /// <reference path="../vendor/toasted.d.ts" />
 /// <reference path="../vendor/urijs.d.ts" />
-///<reference path="./jsx.d.ts"/>
 
 // all global interfaces here
 
 declare const SLOBS_BUNDLE_ID: string;
+declare const SLD_SENTRY_BACKEND_SERVER_URL: string;
+declare const SLD_SENTRY_FRONTEND_DSN: string;
+declare const SLD_SENTRY_BACKEND_SERVER_PREVIEW_URL: string;
 
 interface Dictionary<TItemType> {
   [key: string]: TItemType;
@@ -44,6 +46,8 @@ interface IRGBColor {
   b: number;
 }
 
+type DeepPartial<T> = Partial<{ [P in keyof T]: DeepPartial<T[P]> }>;
+
 /**
  * This is a much more typesafe type for json to return,
  * as it requires declaring its type before use.
@@ -76,6 +80,7 @@ declare module 'vue-resize';
 declare module 'serve-handler';
 declare module 'v-selectpage';
 declare module '*.m.less';
+declare module '*.lazy.less';
 declare module 'streamlabs-beaker';
 declare module '*.vert';
 declare module '*.frag';
@@ -84,6 +89,11 @@ declare module 'vuejs-datepicker';
 declare module 'vuejs-datepicker/dist/locale';
 declare module 'color-picker';
 declare module 'overlayscrollbars-vue';
+declare module 'gl-transitions';
+
+// React modules
+declare module 'rc-animate';
+declare module 'react-dom';
 
 // uncomment to allow TS to import components without type definitions
 // webpack still checks the module existence
