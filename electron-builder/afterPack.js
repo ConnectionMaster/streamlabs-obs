@@ -1,10 +1,13 @@
 const cp = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const buildCameraExt = require('./build-mac-virtualcam');
 
-function signAndCheck(filePath) {
+function signAndCheck(identity, filePath) {
   console.log(`Signing: ${filePath}`);
-  cp.execSync(`codesign -fs "Developer ID Application: Streamlabs LLC (UT675MBB9Q)" "${filePath}"`);
+
+  cp.execSync(`codesign -fs "Developer ID Application: ${identity}" "${filePath}"`);
 
   // All files need to be writable for update to succeed on mac
   console.log(`Checking Writable: ${filePath}`);
@@ -15,14 +18,14 @@ function signAndCheck(filePath) {
   }
 }
 
-function signBinaries(directory) {
+function signBinaries(identity, directory) {
   const files = fs.readdirSync(directory);
 
   for (const file of files) {
     const fullPath = path.join(directory, file);
 
     if (fs.statSync(fullPath).isDirectory()) {
-      signBinaries(fullPath);
+      signBinaries(identity, fullPath);
     } else {
       const absolutePath = path.resolve(fullPath);
       const ext = path.extname(absolutePath);
@@ -32,7 +35,7 @@ function signBinaries(directory) {
 
       // Sign dynamic libraries
       if (ext === '.so' || ext === '.dylib') {
-        signAndCheck(absolutePath);
+        signAndCheck(identity, absolutePath);
         continue;
       }
 
@@ -44,20 +47,70 @@ function signBinaries(directory) {
         continue;
       }
 
-      signAndCheck(absolutePath);
+      signAndCheck(identity, absolutePath);
     }
   }
 }
 
-exports.default = async function(context) {
-  if (process.platform !== 'darwin') return;
+function signXcodeApps(context) {
+  // For apps that requires specific entitlements. Ensures the entitlements file is provided during signing
+  const entitlements = "--entitlements electron-builder/mac-virtual-cam-entitlements.plist";
+  const installerPath = `${context.appOutDir}/${context.packager.appInfo.productName}.app/Contents/Frameworks/slobs-virtual-cam-installer.app`;
+  const extensionPath = `${installerPath}/Contents/Library/SystemExtensions/com.streamlabs.slobs.mac-camera-extension.systemextension`;
+  const executables = [extensionPath, installerPath]; // sign the extension first, then the parent app bundle (the installer)
+  for (const exe of executables) {
+    cp.execSync(
+      `codesign --sign "Developer ID Application: ${context.packager.config.mac.identity}" ${entitlements} --options runtime --deep --force --verbose "${exe}"`,
+    );
+    // All files need to be writable for update to succeed on mac
+    console.log(`Checking Writable: ${exe}`);
+    try {
+      fs.accessSync(exe, fs.constants.W_OK);
+    } catch {
+      throw new Error(`File ${exe} is not writable!`);
+    }
+  }
+}
 
+async function afterPackMac(context) {
   console.log('Updating dependency paths');
   cp.execSync(
-    `install_name_tool -change ./node_modules/node-libuiohook/libuiohook.1.dylib @executable_path/../Resources/app.asar.unpacked/node_modules/node-libuiohook/libuiohook.1.dylib ${context.appOutDir}/Streamlabs\\ OBS.app/Contents/Resources/app.asar.unpacked/node_modules/node-libuiohook/node_libuiohook.node`,
+    `install_name_tool -change ./node_modules/node-libuiohook/libuiohook.1.dylib @executable_path/../Resources/app.asar.unpacked/node_modules/node-libuiohook/libuiohook.1.dylib \"${context.appOutDir}/${context.packager.appInfo.productName}.app/Contents/Resources/app.asar.unpacked/node_modules/node-libuiohook/node_libuiohook.node\"`,
   );
 
+  cp.execSync(
+    `cp -R ./node_modules/obs-studio-node/Frameworks \"${context.appOutDir}/${context.packager.appInfo.productName}.app/Contents/\"`,
+  );
+
+  cp.execSync(
+    `cp -R ./node_modules/obs-studio-node/Frameworks \"${context.appOutDir}/${context.packager.appInfo.productName}.app/Contents/Resources/app.asar.unpacked/node_modules/\"`,
+  );
+
+  await buildCameraExt(context);
+
+  if (process.env.SLOBS_NO_SIGN) return;
+
   signBinaries(
+    context.packager.config.mac.identity,
     `${context.appOutDir}/${context.packager.appInfo.productName}.app/Contents/Resources/app.asar.unpacked`,
   );
+  signXcodeApps(context);
+}
+
+function afterPackWin() {
+  if (process.env.SLOBS_NO_SIGN) return;
+
+  // Ensure an empty signing manifest file
+  const signingPath = path.join(os.tmpdir(), 'sldesktopsigning');
+  fs.writeFileSync(signingPath, '', { flag: 'w' });
+}
+
+exports.default = async function(context) {
+  if (process.platform === 'darwin') {
+    afterPackMac(context);
+  }
+
+  if (process.platform === 'win32') {
+    afterPackWin();
+  }
 };
