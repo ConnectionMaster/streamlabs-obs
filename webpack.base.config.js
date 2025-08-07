@@ -8,16 +8,27 @@ const fs = require('fs');
 
 const plugins = [];
 
-const commit = cp
-  .execSync('git rev-parse --short HEAD')
-  .toString()
-  .replace('\n', '');
+const commit = cp.execSync('git rev-parse --short HEAD').toString().replace('\n', '');
 
-plugins.push(
-  new webpack.DefinePlugin({
-    SLOBS_BUNDLE_ID: JSON.stringify(commit),
-  }),
-);
+const envDef = {
+  SLOBS_BUNDLE_ID: JSON.stringify(commit),
+  SLD_SENTRY_FRONTEND_DSN: JSON.stringify(process.env.SLD_SENTRY_FRONTEND_DSN ?? ''),
+  SLD_SENTRY_BACKEND_SERVER_URL: JSON.stringify(process.env.SLD_SENTRY_BACKEND_SERVER_URL ?? ''),
+  SLD_SENTRY_BACKEND_SERVER_PREVIEW_URL: JSON.stringify(
+    process.env.SLD_SENTRY_BACKEND_SERVER_PREVIEW_URL ?? '',
+  ),
+};
+
+if (process.env.SLD_COMPILE_FOR_BETA) {
+  console.log('Compiling build with forced beta SL host.');
+  envDef['process.env.SLD_COMPILE_FOR_BETA'] = JSON.stringify(true);
+}
+if (process.env.HIGHLIGHTER_ENV) {
+  console.log('Compiling build with ' + process.env.HIGHLIGHTER_ENV + ' highlighter version.');
+  envDef['process.env.HIGHLIGHTER_ENV'] = JSON.stringify(process.env.HIGHLIGHTER_ENV ?? '');
+}
+
+plugins.push(new webpack.DefinePlugin(envDef));
 
 plugins.push(
   new WebpackManifestPlugin({
@@ -30,6 +41,8 @@ plugins.push(
 
 plugins.push(new CleanWebpackPlugin());
 plugins.push(new VueLoaderPlugin());
+
+const OUTPUT_DIR = path.join(__dirname, 'bundles');
 
 const tsFiles = [];
 const tsxFiles = [];
@@ -56,7 +69,7 @@ module.exports = {
   },
 
   output: {
-    path: __dirname + '/bundles',
+    path: OUTPUT_DIR,
     filename: '[name].js',
     publicPath: '',
   },
@@ -73,6 +86,8 @@ module.exports = {
   externals: {
     'font-manager': 'require("font-manager")',
     'color-picker': 'require("color-picker")',
+    '@electron/remote': 'require("@electron/remote")',
+    realm: 'require("realm")',
 
     // Not actually a native addons, but for one reason or another
     // we don't want them compiled in our webpack bundle.
@@ -196,7 +211,7 @@ module.exports = {
           path.resolve(__dirname, 'app/components-react'),
         ],
         use: [
-          { loader: 'style-loader' },
+          { loader: 'style-loader', options: { attributes: { name: 'local' } } },
           {
             loader: 'css-loader',
             options: {
@@ -217,13 +232,37 @@ module.exports = {
         ],
       },
       {
+        test: /\.lazy.less$/, // antd themes
+        include: [path.resolve(__dirname, 'app/styles/antd')],
+        use: [
+          {
+            loader: 'style-loader',
+            options: { injectType: 'lazyStyleTag', attributes: { name: 'antd' } },
+          },
+          {
+            loader: 'css-loader',
+            options: {
+              importLoaders: 1,
+            },
+          },
+          {
+            loader: 'less-loader',
+            options: {
+              lessOptions: {
+                javascriptEnabled: true,
+              },
+            },
+          },
+        ],
+      },
+      {
         test: /\.g\.less$/, // Global styles
         include: [
           path.resolve(__dirname, 'app/app.g.less'),
           path.resolve(__dirname, 'app/themes.g.less'),
         ],
         use: [
-          'style-loader',
+          { loader: 'style-loader', options: { attributes: { name: 'global' } } },
           {
             loader: 'css-loader',
             options: {
@@ -248,6 +287,7 @@ module.exports = {
           path.resolve(__dirname, 'app/components-react'),
           path.resolve(__dirname, 'app/app.g.less'),
           path.resolve(__dirname, 'app/themes.g.less'),
+          path.resolve(__dirname, 'app/styles/antd'),
         ],
         use: [
           'style-loader',

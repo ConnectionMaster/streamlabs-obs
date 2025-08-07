@@ -80,12 +80,15 @@ export class CacheUploaderService extends Service {
       this.addFileIfExists(archive, 'crash-handler.log.old');
       this.addFileIfExists(archive, 'game-overlays.log');
       this.addFileIfExists(archive, 'game-overlays.log.old');
+      this.addFileIfExists(archive, 'long_calls.txt');
       archive.file(path.join(cacheDir, 'basic.ini'), { name: 'basic.ini' });
       archive.file(path.join(cacheDir, 'global.ini'), { name: 'global.ini' });
       archive.file(path.join(cacheDir, 'service-protected.json'), { name: 'service.json' });
       archive.file(path.join(cacheDir, 'streamEncoder.json'), { name: 'streamEncoder.json' });
       archive.file(path.join(cacheDir, 'recordEncoder.json'), { name: 'recordEncoder.json' });
       archive.file(path.join(cacheDir, 'window-state.json'), { name: 'window-state.json' });
+      archive.file(path.join(cacheDir, 'persistent.realm'), { name: 'persistent.realm' });
+      archive.file(path.join(cacheDir, 'ephemeral-copy.realm'), { name: 'ephemeral-copy.realm' });
       archive.finalize();
     });
   }
