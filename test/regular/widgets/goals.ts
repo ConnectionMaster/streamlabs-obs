@@ -1,12 +1,12 @@
-import { test, useSpectron } from '../../helpers/spectron';
-import { addSource } from '../../helpers/spectron/sources';
-import { logIn } from '../../helpers/spectron/user';
+import { test, useWebdriver } from '../../helpers/webdriver';
+import { addSource } from '../../helpers/modules/sources';
+import { logIn } from '../../helpers/webdriver/user';
 import { FormMonkey } from '../../helpers/form-monkey';
 import { waitForWidgetSettingsSync } from '../../helpers/widget-helpers';
 
-useSpectron();
+useWebdriver();
 
-testGoal('Donation Goal');
+testGoal('Tip Goal');
 testGoal('Follower Goal');
 testGoal('Bit Goal');
 
@@ -14,7 +14,7 @@ function testGoal(goalType: string) {
   test.skip(`${goalType} create and delete`, async t => {
     const client = t.context.app.client;
     if (!(await logIn(t))) return;
-    await addSource(t, goalType, goalType, false);
+    await addSource(goalType, goalType, false);
 
     // end goal if it's already exist
     if (await (await client.$('button=End Goal')).isDisplayed()) {
@@ -41,7 +41,7 @@ function testGoal(goalType: string) {
     const client = t.context.app.client;
     if (!(await logIn(t))) return;
 
-    await addSource(t, goalType, goalType, false);
+    await addSource(goalType, goalType, false);
 
     await (await client.$('li=Visual Settings')).waitForExist();
     await (await client.$('li=Visual Settings')).click();
