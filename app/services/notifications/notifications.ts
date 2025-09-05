@@ -21,13 +21,18 @@ interface INotificationsState {
 }
 
 class NotificationsViews extends ViewHandler<INotificationsState> {
+  get lastNotification(): INotification | null {
+    return this.state.notifications ? this.state.notifications[0] : null;
+  }
+
   getNotification(id: number): INotification {
     return this.state.notifications.find(notify => notify.id === id);
   }
 
   getAll(type?: ENotificationType): INotification[] {
+    if (!type) return this.state.notifications;
     return this.state.notifications.filter(notify => {
-      return !type || notify.type === type;
+      return notify.type === type;
     });
   }
 
@@ -67,7 +72,8 @@ class NotificationsViews extends ViewHandler<INotificationsState> {
   }
 }
 
-export class NotificationsService extends PersistentStatefulService<INotificationsState>
+export class NotificationsService
+  extends PersistentStatefulService<INotificationsState>
   implements INotificationsServiceApi {
   static defaultState: INotificationsState = {
     notifications: [],
@@ -93,11 +99,15 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
     return new NotificationsViews(this.state);
   }
 
-  filter(state: INotificationsState) {
+  static filter(state: INotificationsState) {
     return { ...state, notifications: [] as INotification[] };
   }
 
   push(notifyInfo: INotificationOptions): INotification {
+    if (notifyInfo.singleton) {
+      const existingNotif = this.views.getAll().find(notif => notif.message === notifyInfo.message);
+      if (existingNotif) return;
+    }
     const notify = {
       id: this.nextId++,
       unread: true,
@@ -145,8 +155,8 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
 
   showNotifications() {
     this.windowsService.showWindow({
-      componentName: 'Notifications',
-      title: $t('Notifications'),
+      componentName: 'NotificationsAndNews',
+      title: $t('Notifications & News'),
       size: {
         width: 600,
         height: 600,

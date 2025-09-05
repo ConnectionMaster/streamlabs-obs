@@ -56,8 +56,10 @@ export default class GenericGoal extends WidgetSettings<IGoalData, GenericGoalSe
     try {
       await this.service.saveGoal(this.goalCreateOptions);
       this.requestState = 'success';
-    } catch (e) {
-      this.failHandler(e.message);
+    } catch (e: unknown) {
+      // TODO: index
+      // @ts-ignore
+      this.failHandler(e['message']);
       this.requestState = 'fail';
     }
   }
