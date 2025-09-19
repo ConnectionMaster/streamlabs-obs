@@ -1,50 +1,47 @@
 import { readdir } from 'fs-extra';
-import { focusMain, test, useSpectron } from '../helpers/spectron';
-import { sleep } from '../helpers/sleep';
-import { setOutputResolution, setTemporaryRecordingPath } from '../helpers/spectron/output';
-import { addSource } from '../helpers/spectron/sources';
+import { test, useWebdriver } from '../helpers/webdriver';
+import { addSource } from '../helpers/modules/sources';
+import {
+  setOutputResolution,
+  setTemporaryRecordingPath,
+} from '../helpers/modules/settings/settings';
+import { focusMain } from '../helpers/modules/core';
 
-useSpectron();
+useWebdriver();
 
 test('Selective Recording', async t => {
   const sourceType = 'Browser Source';
   const sourceName = `Example ${sourceType}`;
   const { client } = t.context.app;
-  const tmpDir = await setTemporaryRecordingPath(t);
+  const tmpDir = await setTemporaryRecordingPath();
 
   // set lower resolution for better performance in CI
-  await setOutputResolution(t, '100x100');
+  await setOutputResolution('100x100');
 
   // Add a browser source
-  await addSource(t, sourceType, sourceName);
+  await addSource(sourceType, sourceName);
 
   // Toggle selective recording
-  await focusMain(t);
-  await (await client.$('.studio-controls-top .icon-smart-record')).click();
+  await focusMain();
+  await (await client.$('[data-name=sourcesControls] .icon-smart-record')).click();
 
   // Check that selective recording icon is active
-  await (await client.$('.icon-smart-record.icon--active')).waitForExist();
+  await (await client.$('.icon-smart-record.active')).waitForExist();
 
   // Check that browser source has a selective recording toggle
-  t.true(
-    await (
-      await client.$('.sl-vue-tree-sidebar .source-selector-action.icon-smart-record')
-    ).isExisting(),
-  );
+  t.true(await (await client.$('[data-role=source] .icon-smart-record')).isExisting());
 
   // Cycle selective recording mode on browser source
-  await (await client.$('.sl-vue-tree-sidebar .source-selector-action.icon-smart-record')).click();
+  await (await client.$('[data-role=source] .icon-smart-record')).click();
 
   // Check that source is set to stream only
-  await (
-    await client.$('.sl-vue-tree-sidebar .source-selector-action.icon-broadcast')
-  ).waitForExist();
+  await (await client.$('[data-role=source] .icon-broadcast')).waitForExist();
 
   // Cycle selective recording mode to record only
-  await (await client.$('.sl-vue-tree-sidebar .source-selector-action.icon-broadcast')).click();
+  await (await client.$('[data-role=source] .icon-broadcast')).click();
 
   // Check that source is set to record only
-  await (await client.$('.sl-vue-tree-sidebar .source-selector-action.icon-studio')).waitForExist();
+  await (await client.$('[data-role=source] .icon-studio')).waitForExist();
 
   // Start recording and wait
   await (await client.$('.record-button')).click();
