@@ -5,9 +5,10 @@ import { HostsService } from 'services/hosts';
 import { authorizedHeaders, jfetch } from 'util/requests';
 import { Subject } from 'rxjs';
 import { AppService } from 'services/app';
-import { IRecentEvent } from 'services/recent-events';
+import { IRecentEvent, ISafeModeServerSettings } from 'services/recent-events';
 import { importSocketIOClient } from '../util/slow-imports';
 import { SceneCollectionsService } from 'services/scene-collections';
+import { TPlatform } from './platforms';
 
 export type TSocketEvent =
   | IStreamlabelsSocketEvent
@@ -19,7 +20,16 @@ export type TSocketEvent =
   | IMediaSharingSettingsUpdateSocketEvent
   | IPauseEventQueueSocketEvent
   | IUnpauseEventQueueSocketEvent
-  | IPrimeSubEvent;
+  | IPrimeSubEvent
+  | ISafeModeEnabledSocketEvent
+  | ISafeModeDisabledSocketEvent
+  | ISLIDMerged
+  | IUserAccountMerged
+  | IUserAccountUnlinked
+  | IUserAccountMergeError
+  | IAccountPermissionsRequired
+  | IVisionSocketEvent
+  | IUserStateSocketEvent;
 
 interface IStreamlabelsSocketEvent {
   type: 'streamlabels';
@@ -49,7 +59,10 @@ export interface IEventSocketEvent {
     | 'tiltifydonation'
     | 'donordrivedonation'
     | 'justgivingdonation'
-    | 'treat';
+    | 'treat'
+    | 'account_permissions_required'
+    | 'visionEvent'
+    | 'userStateUpdated';
   for: string;
   message: IRecentEvent[];
 }
@@ -103,6 +116,59 @@ interface IMediaSharingSettingsUpdateSocketEvent {
   };
 }
 
+export interface ISafeModeEnabledSocketEvent {
+  type: 'safeModeEnabled';
+  message: ISafeModeServerSettings & { ends_at: number };
+}
+
+interface ISafeModeDisabledSocketEvent {
+  type: 'safeModeDisabled';
+  message: {};
+}
+
+interface ISLIDMerged {
+  type: 'slid.force_logout';
+  for: string;
+}
+
+interface IUserAccountMerged {
+  type: 'account_merged';
+  for: string;
+}
+interface IUserAccountUnlinked {
+  type: 'account_unlinked';
+  for: string;
+}
+interface IUserAccountMergeError {
+  type: 'account_merge_error';
+  for: string;
+  platform: TPlatform;
+  message: string;
+  code: number;
+}
+
+interface IAccountPermissionsRequired {
+  type: 'account_permissions_required';
+  for: string;
+  message: {
+    platform: string;
+    url: any;
+  }[];
+}
+
+interface IVisionSocketEvent {
+  type: 'visionEvent';
+  message: {};
+}
+
+interface IUserStateSocketEvent {
+  type: 'userStateUpdated';
+  message: {
+    updated_states: any;
+    updated_states_tree: any;
+  };
+}
+
 export class WebsocketService extends Service {
   @Inject() private userService: UserService;
   @Inject() private hostsService: HostsService;
@@ -112,6 +178,7 @@ export class WebsocketService extends Service {
   socket: SocketIOClient.Socket;
 
   socketEvent = new Subject<TSocketEvent>();
+  ultraSubscription = new Subject<boolean>();
   io: SocketIOClientStatic;
 
   init() {
