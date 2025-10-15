@@ -3,8 +3,21 @@
     <div class="container" slot="content">
       <div class="top-settings" v-if="properties">
         <generic-form :value="topProperties" @input="onPropsInputHandler" />
+
+        <div class="ant-alert ant-alert-info" role="alert" v-if="shouldShowAlertboxSwitcher">
+          <div class="ant-alert-content">
+            <div
+              class="ant-alert-message"
+              v-if="props.isAlertBox"
+              style="cursor: pointer"
+              @click="switchToNewAlertboxUI()"
+            >
+              {{ $t('Try the new simplified AlertBox settings') }}
+            </div>
+          </div>
+        </div>
         <div v-if="apiSettings.testers" class="button button--action test-button">
-          <test-widgets :testers="apiSettings.testers" />
+          <test-widgets />
         </div>
       </div>
 
@@ -35,9 +48,11 @@
         >
           <div class="display">
             <display
-              v-if="!animating && !hideStyleBlockers"
-              :sourceId="widget.previewSourceId"
-              @click="createProjector"
+              v-if="!animating"
+              :componentProps="{
+                sourceId: widget.previewSourceId,
+                clickHandler: e => createProjector(e),
+              }"
             />
           </div>
           <div class="sidebar">
@@ -54,7 +69,7 @@
               <h2 class="subsection__title">{{ $t('Sources and Settings') }}</h2>
               <scrollable
                 class="os-host-flexbox"
-                style="margin: 0;"
+                style="margin: 0"
                 :isResizable="false"
                 :autoSizeCapable="true"
               >
@@ -117,8 +132,8 @@
             <custom-fields-editor
               v-if="
                 canShowEditor &&
-                  apiSettings.customFieldsAllowed &&
-                  currentCodeTab === 'customFields'
+                apiSettings.customFieldsAllowed &&
+                currentCodeTab === 'customFields'
               "
               key="customFields"
               class="code-tab"
@@ -126,7 +141,7 @@
               :metadata="{ selectedId, selectedAlert }"
             />
           </div>
-          <div v-else-if="customCodeIsEnabled && loadingFailed" style="padding: 8px;">
+          <div v-else-if="customCodeIsEnabled && loadingFailed" style="padding: 8px">
             <div>{{ $t('Failed to load settings') }}</div>
             <button class="button button--warn retry-button" @click="retryDataFetch()">
               {{ $t('Retry') }}
@@ -184,7 +199,7 @@
 }
 
 .test-button .link {
-  color: var(--white);
+  color: var(--action-button-text);
 }
 </style>
 
@@ -262,7 +277,7 @@
   }
 
   .display {
-    transform: scale(0.82, 0.8) translate(-10%);
+    transform: scale(0.7, 0.7) translate(-21.4%);
   }
 }
 
@@ -278,7 +293,7 @@
   }
 
   .display {
-    transform: scale(1, 0.63) translate(0, -29%);
+    transform: scale(1, 0.4) translate(0, -73%);
   }
 }
 
@@ -289,13 +304,13 @@
   }
 
   .display {
-    transform: scale(0.7, 0.7) translate(-3.7%);
+    transform: scale(0.5, 0.5) translate(-10%);
   }
 }
 
 .content-container.has-leftbar.vertical {
   .display {
-    transform: scale(0.6, 0.6) translate(5%, -31%);
+    transform: scale(0.8, 0.4) translate(12.7%, -75%);
   }
 }
 
@@ -416,7 +431,7 @@
   position: absolute;
   display: flex;
   top: 0;
-  left: 215px;
+  left: 225px;
   align-items: center;
   height: 24px;
   border-left: 1px solid var(--border);
@@ -440,7 +455,7 @@
   height: 6px;
   position: absolute;
   top: calc(~'50% - 3px');
-  left: 200px;
+  left: 210px;
   transform: translate(0, -50%);
   background-color: var(--button);
 }
