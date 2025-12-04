@@ -43,10 +43,14 @@ export default class EventList extends WidgetSettings<IEventListData, EventListS
   }
 
   valueForEvent(event: { key: string; title: string }) {
+    // TODO: index
+    // @ts-ignore
     return this.wData.settings[event.key];
   }
 
   setEvent(event: { key: string; title: string }, value: boolean) {
+    // TODO: index
+    // @ts-ignore
     this.wData.settings[event.key] = value;
   }
 
@@ -60,10 +64,12 @@ export default class EventList extends WidgetSettings<IEventListData, EventListS
     'The font size in pixels. Reasonable size typically ranges between 24px and 48px.',
   );
 
-  navItems = [
-    { value: 'manage-list', label: $t('Manage List') },
-    { value: 'font', label: $t('Font Settings') },
-    { value: 'visual', label: $t('Visual Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-list', label: $t('Manage List') },
+      { value: 'font', label: $t('Font Settings') },
+      { value: 'visual', label: $t('Visual Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 }
