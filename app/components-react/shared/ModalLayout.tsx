@@ -1,48 +1,74 @@
 import React, { ReactNode, CSSProperties } from 'react';
-import { useOnCreate, useVuex } from '../hooks';
 import { Services } from '../service-provider';
 import { getOS, OS } from '../../util/operating-systems';
 import cx from 'classnames';
 import { $t } from '../../services/i18n';
 import { Button } from 'antd';
 import { ModalProps } from 'antd/lib/modal';
+import Scrollable from './Scrollable';
+import { useRealmObject } from 'components-react/hooks/realm';
 
 // use props of Modal from the antd lib
-type TProps = { children: ReactNode } & Pick<ModalProps, 'footer' | 'onOk' | 'okText'>;
+type TProps = {
+  children: ReactNode;
+  fixedChild?: ReactNode;
+  hideFooter?: boolean;
+  scrollable?: boolean;
+  wrapperStyle?: React.CSSProperties;
+  className?: string;
+  bodyClassName?: string;
+} & Pick<ModalProps, 'footer' | 'onOk' | 'okText' | 'bodyStyle' | 'confirmLoading' | 'onCancel'>;
 
 // calculate OS dependent styles
 const titleHeight = getOS() === OS.Mac ? 22 : 30;
-const footerHeight = 53;
 const wrapperStyles: CSSProperties = {
   height: `calc(100% - ${titleHeight}px)`,
 };
-const bodyStyles: CSSProperties = {
-  height: `calc(100% - ${footerHeight}px)`,
+const fixedStyles: CSSProperties = {
+  height: '200px',
+  background: 'var(--section)',
+  margin: 0,
+  display: 'flex',
+  justifyContent: 'center',
+  alignItems: 'center',
 };
 
 /**
  * Wraps content for the child windows
  */
 export function ModalLayout(p: TProps) {
+  const footerHeight = p.hideFooter ? 0 : 53;
+  const bodyStyles: CSSProperties = {
+    height: p.fixedChild
+      ? `calc(100% - ${footerHeight + 200}px)`
+      : `calc(100% - ${footerHeight}px)`,
+    ...(p.bodyStyle || {}),
+  };
+
   // inject services
   const { WindowsService, CustomizationService } = Services;
 
-  // define a vuex state
-  const v = useVuex(() => ({ currentTheme: CustomizationService.currentTheme }));
+  const currentTheme = useRealmObject(CustomizationService.state).theme;
 
   // define a close method for the modal
   function close() {
     WindowsService.actions.closeChildWindow();
   }
 
+  // pick variables for the template
+
   // render a default footer with action buttons
-  function renderDefaultFooter() {
-    const okText = p.okText && $t('Done');
+  function DefaultFooter() {
+    const okText = p.okText || $t('Done');
+    const closeFunc = p.onCancel || close;
     return (
       <>
-        <Button onClick={close}>{$t('Close')}</Button>
+        <Button onClick={closeFunc}>{$t('Close')}</Button>
         {p.onOk && (
-          <Button onClick={p.onOk} type="primary">
+          <Button onClick={p.onOk} type="primary" disabled={p.confirmLoading}>
+            {p.confirmLoading && (
+              <i className="fa fa-pulse fa-spinner" style={{ marginRight: 8 }} />
+            )}
             {okText}
           </Button>
         )}
@@ -51,11 +77,25 @@ export function ModalLayout(p: TProps) {
   }
 
   return (
-    <div className={cx('ant-modal-content', v.currentTheme)} style={wrapperStyles}>
-      <div className="ant-modal-body" style={bodyStyles}>
-        {p.children}
-      </div>
-      <div className="ant-modal-footer">{p.footer || renderDefaultFooter()}</div>
+    <div
+      className={cx('ant-modal-content', currentTheme, p.className)}
+      style={{ ...wrapperStyles, ...p.wrapperStyle }}
+    >
+      {p.fixedChild && <div style={fixedStyles}>{p.fixedChild}</div>}
+
+      {p.scrollable ? (
+        <div style={bodyStyles}>
+          <Scrollable isResizable={false} style={{ height: '100%' }}>
+            <div className={cx('ant-modal-body', p.bodyClassName)}>{p.children}</div>
+          </Scrollable>
+        </div>
+      ) : (
+        <div className={cx('ant-modal-body', p.bodyClassName)} style={bodyStyles}>
+          {p.children}
+        </div>
+      )}
+
+      {!p.hideFooter && <div className="ant-modal-footer">{p.footer || <DefaultFooter />}</div>}
     </div>
   );
 }
