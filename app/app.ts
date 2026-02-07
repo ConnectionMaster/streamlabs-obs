@@ -1,4 +1,5 @@
 /*global SLOBS_BUNDLE_ID*/
+/*global SLD_SENTRY_BACKEND_SERVER_URL, SLD_SENTRY_FRONTEND_DSN, SLD_SENTRY_BACKEND_SERVER_PREVIEW_URL*/
 
 import { I18nService, $t } from 'services/i18n';
 
@@ -29,51 +30,44 @@ import { getResource } from 'services';
 import * as obs from '../obs-api';
 import path from 'path';
 import util from 'util';
-import uuid from 'uuid/v4';
-import Blank from 'components/windows/Blank.vue';
-import Main from 'components/windows/Main.vue';
-import CustomLoader from 'components/CustomLoader';
+import { Loader, Blank } from 'components/shared/ReactComponentList';
+import Main from 'components/windows/Main';
 import process from 'process';
 import { MetricsService } from 'services/metrics';
 import { UsageStatisticsService } from 'services/usage-statistics';
+import * as remote from '@electron/remote';
+import { RealmService } from 'app-services';
 
-const crashHandler = window['require']('crash-handler');
+// // TODO: commented until we remove slap library
+// // For React Windows
+// import React from 'react';
+// import ReactDOM from 'react-dom';
+// import Main from 'components-react/windows/Main';
 
-const { ipcRenderer, remote, app, contentTracing } = electron;
+const { ipcRenderer } = electron;
 const slobsVersion = Utils.env.SLOBS_VERSION;
 const isProduction = Utils.env.NODE_ENV === 'production';
 const isPreview = !!Utils.env.SLOBS_PREVIEW;
 
-// Used by Eddy for debugging on mac.
-if (!isProduction) {
-  const windowId = Utils.getWindowId();
-  process.title = `SLOBS Renderer ${windowId}`;
-}
-
-// This is the development DSN
-let sentryDsn = 'https://8f444a81edd446b69ce75421d5e91d4d@sentry.io/252950';
-
 if (isProduction) {
-  // This is the production DSN
-  sentryDsn = 'https://6971fa187bb64f58ab29ac514aa0eb3d@sentry.io/251674';
-
-  electron.crashReporter.start({
-    productName: 'streamlabs-obs',
-    companyName: 'streamlabs',
-    ignoreSystemCrashHandler: true,
-    submitURL:
-      'https://sentry.io/api/1283430/minidump/?sentry_key=01fc20f909124c8499b4972e9a5253f2',
-    extra: {
-      'sentry[release]': slobsVersion,
-      windowId: Utils.getWindowId(),
-    },
-  });
+  electron.crashReporter.addExtraParameter('windowId', Utils.getWindowId());
 }
 
 let usingSentry = false;
 const windowId = Utils.getWindowId();
 
-function wrapLogFn(fn: string) {
+// TODO: Remove after 1.6.0
+const styleSheets = document.styleSheets;
+
+for (let i = 0; i < styleSheets.length; i++) {
+  const sheet = styleSheets[i];
+  if (sheet.href?.match(/foundation\.min\.css/)) {
+    sheet.disabled = true;
+    break;
+  }
+}
+
+function wrapLogFn(fn: 'debug' | 'error' | 'info' | 'log') {
   const old: Function = console[fn];
   console[fn] = (...args: any[]) => {
     old.apply(console, args);
@@ -112,9 +106,25 @@ window.addEventListener('unhandledrejection', e => {
 
 // Remove the startup event listener that catches bundle parse errors and other
 // critical issues starting up the renderer.
-if (window['_startupErrorHandler']) {
-  window.removeEventListener('error', window['_startupErrorHandler']);
-  delete window['_startupErrorHandler'];
+declare global {
+  interface Window {
+    _startupErrorHandler: EventListenerOrEventListenerObject | undefined;
+  }
+}
+
+// TODO: can't find `_startupErrorHandler` in electron or chromium sources
+// This might no longer be relevant, we should breakpoint below and see if
+// it exists.
+if (window._startupErrorHandler) {
+  window.removeEventListener('error', window._startupErrorHandler);
+  delete window._startupErrorHandler;
+}
+
+// Used by Eddy for debugging on mac.
+if (!isProduction) {
+  const windowId = Utils.getWindowId();
+  process.title = `SLOBS Renderer ${windowId}`;
+  console.log(`${windowId} - PID: ${process.pid}`);
 }
 
 if (isProduction || process.env.SLOBS_REPORT_TO_SENTRY) {
@@ -131,7 +141,7 @@ if (isProduction || process.env.SLOBS_REPORT_TO_SENTRY) {
   const bundleNames = electron.ipcRenderer.sendSync('getBundleNames', bundles);
 
   Sentry.init({
-    dsn: sentryDsn,
+    dsn: SLD_SENTRY_FRONTEND_DSN,
     release: `${slobsVersion}-${SLOBS_BUNDLE_ID}`,
     beforeSend: (event, hint) => {
       // Because our URLs are local files and not publicly
@@ -164,7 +174,7 @@ if (isProduction || process.env.SLOBS_REPORT_TO_SENTRY) {
         event.request.url = normalize(event.request.url);
       }
 
-      return isSampled ? event : null;
+      return isSampled || event.tags?.feature === 'highlighter' ? event : null;
     },
     integrations: [new Integrations.Vue({ Vue })],
   });
@@ -205,51 +215,41 @@ Vue.use(Toasted);
 Vue.use(VeeValidate); // form validations
 Vue.use(VModal);
 
-Vue.directive('trackClick', {
-  bind(el: HTMLElement, binding: { value?: { component: string; target: string } }) {
-    if (typeof binding.value.component !== 'string') {
-      throw new Error(
-        `vTrackClick requires "component" to be passed. Got: ${binding.value.component}`,
-      );
-    }
-
-    if (typeof binding.value.target !== 'string') {
-      throw new Error(`vTrackClick requires "target" to be passed. Got: ${binding.value.target}`);
-    }
-
-    el.addEventListener('click', () => {
-      getResource<UsageStatisticsService>('UsageStatisticsService').actions.recordClick(
-        binding.value.component,
-        binding.value.target,
-      );
-    });
-  },
-});
-
 // Disable chrome default drag/drop behavior
 document.addEventListener('dragover', event => event.preventDefault());
 document.addEventListener('dragenter', event => event.preventDefault());
 document.addEventListener('drop', event => event.preventDefault());
 
+const ctxMenu = remote.Menu.buildFromTemplate([
+  { role: 'copy', accelerator: 'CommandOrControl+C' },
+  { role: 'paste', accelerator: 'CommandOrControl+V' },
+]);
+
+document.addEventListener('contextmenu', () => {
+  ctxMenu.popup();
+});
+
 export const apiInitErrorResultToMessage = (resultCode: obs.EVideoCodes) => {
   switch (resultCode) {
     case obs.EVideoCodes.NotSupported: {
-      return $t('OBSInit.NotSupportedError');
+      return 'Failed to initialize Streamlabs Desktop. Your video drivers may be out of date, or Streamlabs Desktop may not be supported on your system.';
     }
     case obs.EVideoCodes.ModuleNotFound: {
-      return $t('OBSInit.ModuleNotFoundError');
+      return 'DirectX could not be found on your system. Please install the latest version of DirectX for your machine here <https://www.microsoft.com/en-us/download/details.aspx?id=35?> and try again.';
     }
     default: {
-      return $t('OBSInit.UnknownError');
+      return 'An unknown error was encountered while initializing Streamlabs Desktop.';
     }
   }
 };
 
 const showDialog = (message: string): void => {
-  electron.remote.dialog.showErrorBox($t('OBSInit.ErrorTitle'), message);
+  remote.dialog.showErrorBox('Initialization Error', message);
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
+  await RealmService.instance.connect();
+
   const store = createStore();
 
   // setup VueI18n plugin
@@ -267,8 +267,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   I18nService.setVuei18nInstance(i18n);
 
-  if (!Utils.isOneOffWindow()) {
-    crashHandler.registerProcess(process.pid, false);
+  // We don't register main/child windows in dev mode to allow refreshing
+  if (!Utils.isOneOffWindow() && !Utils.isDevMode()) {
+    ipcRenderer.send('register-in-crash-handler', { pid: process.pid, critical: false });
   }
 
   // The worker window can safely access services immediately
@@ -280,13 +281,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const obsUserPluginsService: ObsUserPluginsService = ObsUserPluginsService.instance;
 
     // This is used for debugging
-    window['obs'] = obs;
+    (window as typeof window & { obs: typeof obs }).obs = obs;
 
     // Host a new OBS server instance
-    obs.IPC.host(`slobs-${uuid()}`);
+    obs.IPC.host(remote.process.env.IPC_UUID);
     obs.NodeObs.SetWorkingDirectory(
       path.join(
-        electron.remote.app.getAppPath().replace('app.asar', 'app.asar.unpacked'),
+        remote.app.getAppPath().replace('app.asar', 'app.asar.unpacked'),
         'node_modules',
         'obs-studio-node',
       ),
@@ -298,16 +299,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const apiResult = obs.NodeObs.OBS_API_initAPI(
       'en-US',
       appService.appDataDirectory,
-      electron.remote.process.env.SLOBS_VERSION,
+      remote.process.env.SLOBS_VERSION,
+      isPreview ? SLD_SENTRY_BACKEND_SERVER_PREVIEW_URL : SLD_SENTRY_BACKEND_SERVER_URL,
     );
 
     if (apiResult !== obs.EVideoCodes.Success) {
       const message = apiInitErrorResultToMessage(apiResult);
       showDialog(message);
 
-      crashHandler.unregisterProcess(process.pid);
+      ipcRenderer.send('unregister-in-crash-handler', { pid: process.pid });
 
-      obs.NodeObs.StopCrashHandler();
+      obs.NodeObs.InitShutdownSequence();
       obs.IPC.disconnect();
 
       electron.ipcRenderer.send('shutdownComplete');
@@ -326,29 +328,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // create a root Vue component
   const windowId = Utils.getCurrentUrlParams().windowId;
+
+  // // TODO: commented until we remove slap library
+  // if (windowId !== 'main') {
+  // create a root Vue component
   const vm = new Vue({
     i18n,
     store,
     el: '#app',
-    render: h => {
+    data: { isRefreshing: false },
+    methods: {
+      // refresh current window
+      startWindowRefresh() {
+        // set isRefreshing to true to unmount all components and destroy Displays
+        this.isRefreshing = true;
+
+        // unregister current window from the crash handler
+        ipcRenderer.send('unregister-in-crash-handler', { pid: process.pid });
+
+        // give the window some time to finish unmounting before reload
+        Utils.sleep(100).then(() => {
+          window.location.reload();
+        });
+      },
+    },
+    render(h) {
+      if (this.isRefreshing) return h(Blank);
       if (windowId === 'worker') return h(Blank);
+      if (windowId === 'main') return h(Main);
       if (windowId === 'child') {
         if (store.state.bulkLoadFinished && store.state.i18nReady) {
           return h(ChildWindow);
         }
 
-        return h(CustomLoader);
+        return h(Loader);
       }
-      if (windowId === 'main') return h(Main);
       return h(OneOffWindow);
     },
   });
 
+  // allow to refresh the window by pressing `F5` in the DevMode
+  if (Utils.isDevMode()) {
+    window.addEventListener('keyup', ev => {
+      if (ev.key === 'F5') vm.startWindowRefresh();
+    });
+  }
+  // // TODO: commented until we remove slap library
+  // } else {
+  //   // create a roote React component
+  //   ReactDOM.render(React.createElement(Main), document.getElementById('app'));
+  // }
+
   let mainWindowShowTime = 0;
   if (Utils.isMainWindow()) {
-    electron.remote.getCurrentWindow().show();
+    remote.getCurrentWindow().show();
     mainWindowShowTime = Date.now();
   }
 

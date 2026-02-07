@@ -5,12 +5,16 @@ import { UserService } from './user';
 import { HostsService } from './hosts';
 import fs from 'fs';
 import path from 'path';
-import electron from 'electron';
 import { authorizedHeaders, handleResponse } from 'util/requests';
 import throttle from 'lodash/throttle';
 import { Service } from './core/service';
 import Utils from './utils';
 import os from 'os';
+import * as remote from '@electron/remote';
+import { DiagnosticsService } from 'app-services';
+import { getOS, OS } from 'util/operating-systems';
+import { getWmiClass } from 'util/wmi';
+import { Subject } from 'rxjs';
 
 export type TUsageEvent = 'stream_start' | 'stream_end' | 'app_start' | 'app_close' | 'crash';
 
@@ -22,7 +26,7 @@ interface IUsageApiData {
   data: string;
 }
 
-type TAnalyticsEvent =
+export type TAnalyticsEvent =
   | 'PlatformLogin'
   | 'SocialShare'
   | 'Heartbeat'
@@ -32,7 +36,43 @@ type TAnalyticsEvent =
   | 'ReplayBufferStatus'
   | 'Click'
   | 'Session'
-  | 'Shown';
+  | 'Shown'
+  | 'AppStart'
+  | 'Highlighter'
+  | 'AIHighlighter'
+  | 'Hardware'
+  | 'WebcamUse'
+  | 'MicrophoneUse'
+  | 'GuestCam'
+  | 'RecordingHistory'
+  | 'DualOutput'
+  | 'StreamToTikTokSettings'
+  | 'StreamCustomDestinations'
+  | 'TikTokLiveAccess'
+  | 'TwitchCredentialsAlert'
+  | 'TikTokApplyPrompt'
+  | 'ScheduleStream'
+  | 'StreamShift'
+  | 'Ultra'
+  | 'Onboarding';
+
+// Refls are used as uuids for ultra components and should be updated for new ulta components.
+export type TUltraRefl =
+  | 'grow-community'
+  | 'slobs-dual-output'
+  | 'slobs-single-output'
+  | 'slobs-streamswitcher'
+  | 'slobs-side-nav'
+  | 'desktop-collab-cam'
+  | 'slobs-scene-collections'
+  | 'slobs-media-gallery'
+  | 'slobs-multistream-error'
+  | 'slobs-ui-themes'
+  | 'mobile-settings'
+  | 'slobs-multistream-settings'
+  | 'slobs-multistream'
+  | 'slobs-stream-settings'
+  | string;
 
 interface IAnalyticsEvent {
   product: string;
@@ -44,6 +84,7 @@ interface IAnalyticsEvent {
   uuid?: string;
   saveUser?: boolean;
   userId?: number;
+  testGroup: 'A' | 'B';
 }
 
 interface ISystemInfo {
@@ -79,11 +120,16 @@ export function track(event: TUsageEvent) {
 export class UsageStatisticsService extends Service {
   @Inject() userService: UserService;
   @Inject() hostsService: HostsService;
+  @Inject() diagnosticsService: DiagnosticsService;
 
   installerId: string;
   version = Utils.env.SLOBS_VERSION;
 
   private analyticsEvents: IAnalyticsEvent[] = [];
+  private refl: string = '';
+  private event: TAnalyticsEvent | null = null;
+
+  ultraSubscription = new Subject<boolean>();
 
   init() {
     this.loadInstallerId();
@@ -92,13 +138,21 @@ export class UsageStatisticsService extends Service {
     setInterval(() => {
       this.recordAnalyticsEvent('Heartbeat', { bundle: SLOBS_BUNDLE_ID });
     }, 10 * 60 * 1000);
+
+    this.ultraSubscription.subscribe(() => {
+      if (this.refl === '') {
+        console.warn('Ultra event recorded with empty refl.');
+      }
+
+      this.recordAnalyticsEvent(this.event, { refl: this.refl });
+    });
   }
 
   loadInstallerId() {
     let installerId = localStorage.getItem('installerId');
 
     if (!installerId) {
-      const exePath = electron.remote.app.getPath('exe');
+      const exePath = remote.app.getPath('exe');
       const installerNamePath = path.join(path.dirname(exePath), 'installername');
 
       if (fs.existsSync(installerNamePath)) {
@@ -112,7 +166,7 @@ export class UsageStatisticsService extends Service {
               localStorage.setItem('installerId', installerId);
             }
           }
-        } catch (e) {
+        } catch (e: unknown) {
           console.error('Error loading installer id', e);
         }
       }
@@ -138,9 +192,13 @@ export class UsageStatisticsService extends Service {
 
     // Don't check logged in because login may not be verified at this point
     if (this.userService.state.auth && this.userService.state.auth.primaryPlatform) {
+      // TODO: index
+      // @ts-ignore
       metadata['platform'] = this.userService.state.auth.primaryPlatform;
     }
 
+    // TODO: index
+    // @ts-ignore
     metadata['os'] = process.platform;
 
     const bodyData: IUsageApiData = {
@@ -181,6 +239,7 @@ export class UsageStatisticsService extends Service {
       count: 1,
       uuid: this.userService.getLocalUserId(),
       time: new Date(),
+      testGroup: this.userService.isAlphaGroup ? 'A' : 'B',
     };
 
     if (this.userService.state.userId) analyticsEvent.userId = this.userService.state.userId;
@@ -201,14 +260,24 @@ export class UsageStatisticsService extends Service {
     this.recordAnalyticsEvent('Click', { component, target });
   }
 
-  recordShown(component: string) {
-    this.recordAnalyticsEvent('Shown', { component });
+  recordShown(component: string, target?: string) {
+    this.recordAnalyticsEvent('Shown', { component, target });
+  }
+
+  recordUltra(target: TUltraRefl, event?: TAnalyticsEvent) {
+    const eventName = event || 'Ultra';
+    this.recordClick(eventName, target);
+    this.refl = target;
+    this.event = eventName;
   }
 
   /**
    * Should be called on shutdown to flush all events in the pipeline
    */
   async flushEvents() {
+    // Correctly handle unsubscribing to prevent memory leaks
+    this.ultraSubscription.unsubscribe();
+
     this.session.endTime = new Date();
 
     const session = {
@@ -224,10 +293,28 @@ export class UsageStatisticsService extends Service {
     await this.sendAnalytics();
   }
 
-  private session: ISessionInfo = {
-    startTime: new Date(),
-    features: {},
-    sysInfo: {
+  // We can't fetch this before app startup like the rest of sysInfo since it
+  // relies on another service
+  getGpuInfo() {
+    const gpuSection: Dictionary<any> = {};
+    if (getOS() === OS.Windows) {
+      const gpuInfo = getWmiClass('Win32_VideoController', ['Name', 'DriverVersion', 'DriverDate']);
+
+      // Ensures we are working with an array
+      [].concat(gpuInfo).forEach((gpu, index) => {
+        gpuSection[`GPU ${index + 1}`] = {
+          Name: gpu.Name,
+          'Driver Version': gpu.DriverVersion,
+          'Driver Date': gpu.DriverDate,
+        };
+      });
+    }
+
+    return gpuSection;
+  }
+
+  getSysInfo() {
+    return {
       os: {
         platform: os.platform(),
         release: os.release(),
@@ -236,7 +323,14 @@ export class UsageStatisticsService extends Service {
       cpu: os.cpus()[0].model,
       cores: os.cpus().length,
       mem: os.totalmem(),
-    },
+      gpu: this.getGpuInfo(),
+    };
+  }
+
+  private session: ISessionInfo = {
+    startTime: new Date(),
+    features: {},
+    sysInfo: this.getSysInfo(),
   };
 
   recordFeatureUsage(feature: string) {

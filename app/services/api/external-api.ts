@@ -16,7 +16,7 @@ const MAX_POINTS_PER_SECOND = 2;
  * A decorator to mark class as a singleton
  */
 export function Singleton(): ClassDecorator {
-  return function(Klass: any) {
+  return function (Klass: any) {
     Klass.isSingleton = true;
   };
 }
@@ -27,7 +27,7 @@ export function Singleton(): ClassDecorator {
  */
 
 export function InjectFromExternalApi(serviceName?: string): PropertyDecorator {
-  return function(target: Object, key: string) {
+  return function (target: Object, key: string) {
     Object.defineProperty(target, key, {
       get() {
         const name = serviceName || key.charAt(0).toUpperCase() + key.slice(1);
@@ -46,7 +46,7 @@ export function InjectFromExternalApi(serviceName?: string): PropertyDecorator {
  * This method will be called from the Fallback object
  */
 export function Fallback(): PropertyDecorator {
-  return function(target: Object, key: string) {
+  return function (target: Object, key: string) {
     Object.defineProperty(target, '_fallback', {
       get() {
         return this[key];
@@ -84,6 +84,8 @@ export class ExternalApiService extends RpcApi {
   init() {
     // initialize all singletons
     Object.keys(this.resources).forEach(resourceName => {
+      // TODO: index
+      // @ts-ignore
       const Resource = this.resources[resourceName];
       if (Resource && Resource.isSingleton) this.instances[resourceName] = new Resource();
     });
@@ -105,8 +107,10 @@ export class ExternalApiService extends RpcApi {
     // if resource is not singleton
     // take serialized constructor arguments from `resourceId` string and construct a new instance
     const helperName = resourceId.split('[')[0];
-    const constructorArgsStr = resourceId.substr(helperName.length);
+    const constructorArgsStr = resourceId.slice(helperName.length);
     const constructorArgs = constructorArgsStr ? JSON.parse(constructorArgsStr) : void 0;
+    // TODO: index
+    // @ts-ignore
     const Helper = this.resources[helperName];
     if (Helper) {
       return this.applyFallbackProxy(new (Helper as any)(...constructorArgs));
