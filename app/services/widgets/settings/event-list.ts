@@ -9,6 +9,7 @@ import { metadata } from 'components/widgets/inputs/index';
 import { WIDGET_INITIAL_STATE } from './widget-settings';
 import { InheritMutations } from 'services/core/stateful-service';
 import { $t } from 'services/i18n';
+import { TPlatform } from '../../platforms';
 
 export interface IEventListSettings extends IWidgetSettings {
   animation_speed: number;
@@ -20,8 +21,6 @@ export interface IEventListSettings extends IWidgetSettings {
   flip_y: boolean;
   font_family: string;
   hide_animation: string;
-  host_show_auto_hosts: boolean;
-  host_viewer_minimum: number;
   hue: number;
   keep_history: boolean;
   max_events: number;
@@ -34,7 +33,6 @@ export interface IEventListSettings extends IWidgetSettings {
   show_follows: boolean;
   show_gamewispresubscriptions: boolean;
   show_gamewispsubscriptions: boolean;
-  show_hosts: boolean;
   show_justgivingdonations: boolean;
   show_merch: boolean;
   show_pledges: boolean;
@@ -44,6 +42,7 @@ export interface IEventListSettings extends IWidgetSettings {
   show_smfredemptions: boolean;
   show_sub_tiers: boolean;
   show_subscriptions: boolean;
+  show_subscribers: boolean;
   show_tiltifydonations: boolean;
   show_treats: boolean;
   text_color: string;
@@ -62,16 +61,18 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
   static initialState = WIDGET_INITIAL_STATE;
 
   getApiSettings() {
+    const host = this.getHost();
     return {
       type: WidgetType.EventList,
-      url: WidgetDefinitions[WidgetType.EventList].url(this.getHost(), this.getWidgetToken()),
-      previewUrl: `https://${this.getHost()}/widgets/event-list/v1/${this.getWidgetToken()}?simulate=1`,
-      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/eventlist`,
-      settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/eventlist`,
+      url: WidgetDefinitions[WidgetType.EventList].url(host, this.getWidgetToken()),
+      previewUrl: `https://${host}/widgets/event-list/v1/${this.getWidgetToken()}?simulate=1`,
+      webSettingsUrl: `https://${host}/dashboard#/widgets/eventlist`,
+      dataFetchUrl: `https://${host}/api/v5/slobs/widget/eventlist`,
+      settingsSaveUrl: `https://${host}/api/v5/slobs/widget/eventlist`,
       settingsUpdateEvent: 'eventListSettingsUpdate',
       customCodeAllowed: true,
       customFieldsAllowed: true,
-      testers: ['Follow', 'Subscription', 'Donation', 'Bits', 'Host'],
+      testers: ['Follow', 'Subscription', 'Donation', 'Bits'],
     };
   }
 
@@ -94,14 +95,16 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
   }
 
   eventsByPlatform(): { key: string; title: string }[] {
-    const platform = this.userService.platform.type;
+    const platform = this.userService.platform.type as Exclude<
+      TPlatform,
+      'tiktok' | 'twitter' | 'instagram' | 'kick'
+    >;
     return {
       twitch: [
         { key: 'show_follows', title: $t('Follows') },
         { key: 'show_subscriptions', title: $t('Subscriptions') },
         { key: 'show_resubs', title: $t('Show Resubs') },
         { key: 'show_sub_tiers', title: $t('Show Sub Tiers') },
-        { key: 'show_hosts', title: $t('Hosts') },
         { key: 'show_bits', title: $t('Bits') },
         { key: 'show_raids', title: $t('Raids') },
       ],
@@ -113,9 +116,17 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
         { key: 'show_shares', title: $t('Shares') },
       ],
       youtube: [
-        { key: 'show_subscriptions', title: $t('Subscriptions') },
+        { key: 'show_subscribers', title: $t('Subscriptions') },
         { key: 'show_sponsors', title: $t('Members') },
         { key: 'show_fanfundings', title: $t('Super Chats') },
+      ],
+      trovo: [
+        { key: 'show_follows', title: $t('Follows') },
+        { key: 'show_raids', title: $t('Raids') },
+        { key: 'show_subscriptions', title: $t('Subscriptions') },
+        { key: 'show_resubs', title: $t('Show Resubs') },
+        { key: 'show_sub_gifts', title: $t('Show Gift Subs') },
+        { key: 'show_sub_tiers', title: $t('Show Sub Tiers') },
       ],
     }[platform];
   }
@@ -134,11 +145,7 @@ export class EventListService extends WidgetSettingsService<IEventListData> {
           ),
         },
       ],
-      mixer: [
-        { key: 'sparks_minimum', title: $t('Min. Sparks') },
-        { key: 'embers_minimum', title: $t('Min. Embers') },
-      ],
-    }[platform];
+    }[platform as 'twitch'];
   }
 
   protected patchBeforeSend(data: IEventListSettings): any {

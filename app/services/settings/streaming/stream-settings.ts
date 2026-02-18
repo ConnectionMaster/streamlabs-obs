@@ -8,17 +8,18 @@ import invert from 'lodash/invert';
 import cloneDeep from 'lodash/cloneDeep';
 import { TwitchService } from 'services/platforms/twitch';
 import { PlatformAppsService } from 'services/platform-apps';
-import { IGoLiveSettings, IPlatformFlags } from 'services/streaming';
+import { IGoLiveSettings, IPlatformFlags, StreamingService } from 'services/streaming';
+import { VideoSettingsService, TDisplayType } from 'services/settings-v2/video';
 import Vue from 'vue';
+import { IVideo } from 'obs-studio-node';
+import { DualOutputService } from 'services/dual-output';
+import { TOutputOrientation } from 'services/restream';
 
-interface ISavedGoLiveSettings {
-  platforms: {
-    twitch: IPlatformFlags;
-    facebook: IPlatformFlags;
-    youtube: IPlatformFlags;
-  };
+export interface ISavedGoLiveSettings {
+  platforms: Partial<Record<TPlatform, IPlatformFlags>>;
   customDestinations?: ICustomStreamDestination[];
   advancedMode: boolean;
+  streamShift?: boolean;
 }
 
 export interface ICustomStreamDestination {
@@ -26,6 +27,13 @@ export interface ICustomStreamDestination {
   url: string;
   streamKey?: string;
   enabled: boolean;
+  display?: TDisplayType;
+  video?: IVideo;
+  mode?: TOutputOrientation;
+  /**
+   * Indicates if this custom destination is the vertical dual stream
+   */
+  dualStream?: boolean;
 }
 
 /**
@@ -57,7 +65,7 @@ interface IStreamSettingsState {
    */
   warnNoVideoSources: boolean;
 
-  goLiveSettings?: ISavedGoLiveSettings;
+  goLiveSettings?: ISavedGoLiveSettings | null;
 }
 
 /**
@@ -67,7 +75,8 @@ interface IStreamSettings extends IStreamSettingsState {
   platform: TPlatform;
   key: string;
   server: string;
-  streamType: 'rtmp_common' | 'rtmp_custom';
+  service: string;
+  streamType: 'rtmp_common' | 'rtmp_custom' | 'whip_custom';
   warnBeforeStartingStream: boolean;
   recordWhenStreaming: boolean;
   replayBufferWhileStreaming: boolean;
@@ -78,10 +87,16 @@ interface IStreamSettings extends IStreamSettingsState {
   delaySec: number;
 }
 
+// TikTok, X (Twitter), and Instagram all map to Custom because they require entering in stream keys
 const platformToServiceNameMap: { [key in TPlatform]: string } = {
   twitch: 'Twitch',
   youtube: 'YouTube / YouTube Gaming',
   facebook: 'Facebook Live',
+  trovo: 'Trovo',
+  tiktok: 'Custom',
+  twitter: 'Custom',
+  instagram: 'Custom',
+  kick: 'Custom',
 };
 
 /**
@@ -93,6 +108,9 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
   @Inject() private userService: UserService;
   @Inject() private platformAppsService: PlatformAppsService;
   @Inject() private streamSettingsService: StreamSettingsService;
+  @Inject() private dualOutputService: DualOutputService;
+  @Inject() private streamingService: StreamingService;
+  @Inject() private videoSettingsService: VideoSettingsService;
 
   static defaultState: IStreamSettingsState = {
     protectedModeEnabled: true,
@@ -120,7 +138,9 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
   /**
    * setup all stream-settings via single object
    */
-  setSettings(patch: Partial<IStreamSettings>) {
+  setSettings(patch: Partial<IStreamSettings>, context?: TDisplayType) {
+    const streamName = !context || context === 'horizontal' ? 'Stream' : 'StreamSecond';
+
     // save settings to localStorage
     const localStorageSettings: (keyof IStreamSettingsState)[] = [
       'protectedModeEnabled',
@@ -137,25 +157,35 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
     });
 
     // save settings related to "Settings->Stream" window
-    let streamFormData = cloneDeep(this.views.obsStreamSettings);
+    // each context has their own settings
+    let streamFormData =
+      streamName === 'StreamSecond'
+        ? cloneDeep(this.views.obsStreamSecondSettings)
+        : cloneDeep(this.views.obsStreamSettings);
 
     streamFormData.forEach(subCategory => {
       subCategory.parameters.forEach(parameter => {
         if (parameter.name === 'streamType' && patch.streamType !== void 0) {
           parameter.value = patch.streamType;
+
           // we should immediately save the streamType in OBS if it's changed
           // otherwise OBS will not save 'key' and 'server' values
-          this.settingsService.setSettings('Stream', streamFormData);
+
+          this.settingsService.setSettings(streamName, streamFormData);
         }
       });
     });
 
     // We need to refresh the data in case there are additional fields
     const mustUpdateObsSettings = Object.keys(patch).find(key =>
-      ['platform', 'key', 'server'].includes(key),
+      ['platform', 'key', 'server', 'bearer_token'].includes(key),
     );
+
     if (!mustUpdateObsSettings) return;
-    streamFormData = cloneDeep(this.views.obsStreamSettings);
+    streamFormData =
+      streamName === 'StreamSecond'
+        ? cloneDeep(this.views.obsStreamSecondSettings)
+        : cloneDeep(this.views.obsStreamSettings);
 
     streamFormData.forEach(subCategory => {
       subCategory.parameters.forEach(parameter => {
@@ -172,20 +202,31 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
         }
       });
     });
-    this.settingsService.setSettings('Stream', streamFormData);
+
+    this.settingsService.setSettings(streamName, streamFormData);
   }
 
   setGoLiveSettings(settingsPatch: Partial<IGoLiveSettings>) {
     // transform IGoLiveSettings to ISavedGoLiveSettings
     const patch: Partial<ISavedGoLiveSettings> = settingsPatch;
     if (settingsPatch.platforms) {
-      const pickedFields: (keyof IPlatformFlags)[] = ['enabled', 'useCustomFields'];
+      const pickedFields: (keyof IPlatformFlags)[] = ['enabled', 'useCustomFields', 'display'];
       const platforms: Dictionary<IPlatformFlags> = {};
-      Object.keys(settingsPatch.platforms).map(
-        platform => (platforms[platform] = pick(settingsPatch.platforms![platform], pickedFields)),
-      );
+      Object.keys(settingsPatch.platforms).map(platform => {
+        // TODO: index
+        // @ts-ignore
+        const platformSettings = pick(settingsPatch.platforms![platform], pickedFields);
+
+        if (this.streamingService.views.isDualOutputMode) {
+          this.videoSettingsService.validateVideoContext();
+          const display = this.streamingService.views.getPlatformDisplayType(platform as TPlatform);
+          platformSettings.video = this.videoSettingsService.contexts[display];
+        }
+        return (platforms[platform] = platformSettings);
+      });
       patch.platforms = platforms as ISavedGoLiveSettings['platforms'];
     }
+
     this.setSettings({
       goLiveSettings: { ...this.state.goLiveSettings, ...settingsPatch } as IGoLiveSettings,
     });
@@ -209,6 +250,7 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
       platform: invert(platformToServiceNameMap)[obsStreamSettings.service] as TPlatform,
       key: obsStreamSettings.key,
       server: obsStreamSettings.server,
+      service: obsStreamSettings.service,
       streamType: obsStreamSettings.streamType as IStreamSettings['streamType'],
       warnBeforeStartingStream: obsGeneralSettings.WarnBeforeStartingStream,
       recordWhenStreaming: obsGeneralSettings.RecordWhenStreaming,
@@ -221,8 +263,9 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
     };
   }
 
-  setObsStreamSettings(formData: ISettingsSubCategory[]) {
-    this.settingsService.setSettings('Stream', formData);
+  setObsStreamSettings(formData: ISettingsSubCategory[], context?: number) {
+    const streamName = !context || context === 0 ? 'Stream' : 'StreamSecond';
+    this.settingsService.setSettings(streamName, formData);
   }
 
   get protectedModeEnabled(): boolean {
@@ -259,7 +302,29 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
       protectedModeMigrationRequired: false,
       key: '',
       streamType: 'rtmp_common',
-      goLiveSettings: undefined,
+      /*
+       * If we pass `undefined` to `goLiveSettings`, for some reason the worker process gets
+       * the update correctly, but the main process receives a sequence of updates like this:
+       *
+       * ```
+       * {protectedModeEnabled: true}
+       * {protectedModeMigrationRequired: false}
+       * {}
+       * ```
+       *
+       * When set to `null` we can see the following output instead:
+       *
+       * ```
+       * {protectedModeEnabled: true}
+       * {protectedModeMigrationRequired: false}
+       * {goLiveSettings: null}
+       * ```
+       *
+       * I've only suspicions about why this happens, but as a result of failing to update on main,
+       * a user logging out of one account and logging back in to a different account (or the same account)
+       * will have the Go Live settings from the old account until the app restarts.
+       */
+      goLiveSettings: null,
     });
   }
 
@@ -317,13 +382,54 @@ export class StreamSettingsService extends PersistentStatefulService<IStreamSett
   @mutation()
   private SET_LOCAL_STORAGE_SETTINGS(settings: Partial<IStreamSettingsState>) {
     Object.keys(settings).forEach(prop => {
+      // TODO: index
+      // @ts-ignore
       Vue.set(this.state, prop, settings[prop]);
     });
   }
 }
 
 class StreamSettingsView extends ViewHandler<IStreamSettingsState> {
+  private get settingsViews() {
+    return this.getServiceViews(SettingsService);
+  }
+
   get obsStreamSettings(): ISettingsSubCategory[] {
     return this.getServiceViews(SettingsService).state.Stream.formData;
+  }
+
+  get obsStreamSecondSettings(): ISettingsSubCategory[] {
+    return this.getServiceViews(SettingsService).state.StreamSecond.formData;
+  }
+
+  /**
+   * obtain stream settings in a single object
+   */
+  get settings(): IStreamSettings {
+    const obsStreamSettings = this.settingsViews.values.Stream;
+    const obsGeneralSettings = this.settingsViews.values.General;
+    const obsAdvancedSettings = this.settingsViews.values.Advanced;
+
+    return {
+      protectedModeEnabled: this.state.protectedModeEnabled,
+      title: this.state.title,
+      description: this.state.description,
+      warnNoVideoSources: this.state.warnNoVideoSources,
+      protectedModeMigrationRequired: this.state.protectedModeMigrationRequired,
+      goLiveSettings: this.state.goLiveSettings,
+      platform: invert(platformToServiceNameMap)[obsStreamSettings.service] as TPlatform,
+      key: obsStreamSettings.key,
+      server: obsStreamSettings.server,
+      service: obsStreamSettings.service,
+      streamType: obsStreamSettings.streamType as IStreamSettings['streamType'],
+      warnBeforeStartingStream: obsGeneralSettings.WarnBeforeStartingStream,
+      recordWhenStreaming: obsGeneralSettings.RecordWhenStreaming,
+      replayBufferWhileStreaming: obsGeneralSettings.ReplayBufferWhileStreaming,
+      warnBeforeStoppingStream: obsGeneralSettings.WarnBeforeStoppingStream,
+      keepRecordingWhenStreamStops: obsGeneralSettings.KeepRecordingWhenStreamStops,
+      keepReplayBufferStreamStops: obsGeneralSettings.KeepReplayBufferStreamStops,
+      delayEnable: obsAdvancedSettings.DelayEnable,
+      delaySec: obsAdvancedSettings.DelaySec,
+    };
   }
 }

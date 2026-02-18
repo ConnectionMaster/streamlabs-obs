@@ -1,17 +1,30 @@
-import { Checkbox } from 'antd';
-import React from 'react';
+import React, { CSSProperties } from 'react';
+import { Checkbox, Tooltip } from 'antd';
 import { InputComponent, TSlobsInputProps, useInput } from './inputs';
 import { CheckboxProps } from 'antd/lib/checkbox';
+import { QuestionCircleOutlined } from '@ant-design/icons';
 
-export type TCheckboxInputProps = TSlobsInputProps<{}, boolean, CheckboxProps>;
+export type TCheckboxInputProps = TSlobsInputProps<
+  { nolabel?: boolean; className?: string; style?: CSSProperties },
+  boolean,
+  CheckboxProps
+>;
 
 export const CheckboxInput = InputComponent((p: TCheckboxInputProps) => {
-  const { inputAttrs, stateRef } = useInput('checkbox', p);
-  const value = stateRef.current.value;
+  const { inputAttrs, wrapperAttrs } = useInput('checkbox', p);
   return (
-    <div>
-      <Checkbox checked={value} {...inputAttrs} onChange={() => inputAttrs.onChange(!value)}>
+    <div style={wrapperAttrs.style} className={wrapperAttrs.className}>
+      <Checkbox
+        {...inputAttrs}
+        checked={inputAttrs.value}
+        onChange={() => inputAttrs.onChange(!inputAttrs.value)}
+      >
         {p.label}
+        {p.tooltip && (
+          <Tooltip title={p.tooltip}>
+            <QuestionCircleOutlined style={{ marginLeft: '7px' }} />
+          </Tooltip>
+        )}
       </Checkbox>
     </div>
   );
