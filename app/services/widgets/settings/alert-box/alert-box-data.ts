@@ -17,28 +17,73 @@ export const API_NAME_MAP = {
   tiltifydonation: 'tiltify',
   treat: 'treat',
   follow: 'follows',
-  host: 'hosts',
-  raid: 'raids',
   superheart: 'superhearts',
   fanfunding: 'fanfunding',
+  raid: 'raids',
   subscriber: 'subscribers', // YouTube
   sponsor: 'sponsors',
+  facebook_support_gifter: 'giftSupport',
   facebook_support: 'support',
   facebook_like: 'likes',
   facebook_stars: 'stars',
   facebook_share: 'shares',
   facebook_follow: 'fbfollows',
   loyalty_store_redemption: 'loyaltystore',
-  effect: 'effects',
-  sticker: 'stickers',
+  trovo_follow: 'trovo_follow',
+  trovo_sub: 'trovo_sub',
+  trovo_raid: 'trovo_raid',
+};
+
+export const alertNameMap = () => ({
+  bits: $t('Bits'),
+  donations: $t('Donations'),
+  donordrive: $t('Charity Streaming Donations'),
+  patreon: $t('Patreon Pledges'),
+  extraLife: $t('Extra Life Donations'),
+  justGiving: $t('JustGiving Donations'),
+  merch: $t('Merch'),
+  resubs: $t('Resubs'),
+  gamewisp: $t('Gamewisp Subscriptions'),
+  subs: $t('Subscriptions'),
+  tiltify: $t('Tiltify Donations'),
+  treat: $t('TreatStream'),
+  follows: $t('Follows'),
+  superhearts: $t('Super Hearts'),
+  fanfunding: $t('Super Chat'),
+  sponsors: $t('Members'),
+  raids: $t('Raids'),
+  subscribers: $t('Subscribers'), // YouTube
+  stars: $t('Stars'),
+  support: $t('Support'),
+  giftSupport: $t('Gifted Support'),
+  likes: $t('Likes'),
+  shares: $t('Shares'),
+  fbfollows: $t('Follows'),
+  loyaltystore: $t('Cloudbot Store'),
+  stickers: $t('Stickers'),
+  effects: $t('Effects/Rallies'),
+  trovo_follow: $t('Trovo Follow'),
+  trovo_sub: $t('Trovo Subscription'),
+  trovo_raid: $t('Trovo Raid'),
+});
+
+// different tests are required due to api idiosyncracies
+const determineTester = (key: string) => {
+  switch (key) {
+    case 'facebook_stars':
+      return new RegExp(`^${key}_|facebook_show_stars_`);
+    case 'facebook_support':
+      return new RegExp(`^${key}s?_(?!gifter)|show_${key}_(?!gifter)`);
+    default:
+      return new RegExp(`^${key}s?_|show_${key}_`);
+  }
 };
 
 export const REGEX_TESTERS = Object.keys(API_NAME_MAP).map(key => ({
+  // TODO: index
+  // @ts-ignore
   name: API_NAME_MAP[key],
-  tester:
-    key === 'facebook_stars'
-      ? new RegExp(`^${key}_|facebook_show_stars_`)
-      : new RegExp(`^${key}s?_|show_${key}_`),
+  tester: determineTester(key),
 }));
 
 export const conditions = () => ({
@@ -47,7 +92,7 @@ export const conditions = () => ({
     { value: 'MIN_DONATION_AMOUNT', title: $t('Donation amount is at least <amount>') },
     { value: 'EXACT_DONATION_AMOUNT', title: $t('Donation amount is exactly <amount>') },
     { value: 'LARGEST_OF_STREAM', title: $t('Donation is the largest this stream') },
-    { value: 'CRYPTO_CURRENCY_DONATION', title: $t('Donation is in Crypto currency') },
+    { value: 'RECURRING_DONATION', title: $t('Donation is recurring') },
   ],
   subs: [
     { value: 'MIN_MONTHS_SUBSCRIBED', title: $t('Months subscribed is at least <months>') },
@@ -61,8 +106,11 @@ export const conditions = () => ({
       value: 'MIN_SUBSCRIPTION_STREAK',
       title: $t('Streak shared with chat, and months subscribed in a streak is at least <months>'),
     },
+    {
+      value: 'SUBSCRIPTION_PRIME_UPGRADE',
+      title: $t('When a Prime Gaming sub is upgraded to a recurring <tier> sub'),
+    },
   ],
-  hosts: [{ value: 'MIN_VIEWERS_ACQUIRED', title: $t('Viewers gained is at least <viewers>') }],
   bits: [
     { value: 'MIN_BITS_USED', title: $t('Bits used is at least <amount>') },
     { value: 'EXACT_BITS_USED', title: $t('Bits used is exactly <amount>') },
@@ -118,22 +166,34 @@ export const conditions = () => ({
     { value: 'LOYALTY_STORE_REDEMPTION_ITEM_TYPE', title: $t('Item type is <type>') },
     { value: 'LOYALTY_STORE_REDEMPTION_ITEM_NAME', title: $t('Item name is <name>') },
   ],
-  effects: [
-    { value: 'MIN_SPARKS_USED', title: $t('Sparks sent are at least <amount>') },
-    { value: 'EXACT_SPARKS_AMOUNT', title: $t('Sparks sent are exactly <amount>') },
-    { value: 'MIN_EMBERS_USED', title: $t('Ember amount is at least <amount>') },
-    { value: 'EXACT_EMBERS_AMOUNT', title: $t('Ember amount is exactly <amopunt>') },
+  support: [
+    { value: 'SUPPORT_GIFT_REDEEMED', title: $t('Viewer redeemed a gifted Support') },
+    { value: 'MIN_MONTHS_SUPPORTED', title: $t('Months supported is at least <months>') },
+    { value: 'EXACT_MONTHS_SUPPORTED', title: $t('Months supported is exactly <months>') },
   ],
-  stickers: [
-    { value: 'MIN_SPARKS_USED', title: $t('Sparks sent are at least <amount>') },
-    { value: 'EXACT_SPARKS_AMOUNT', title: $t('Sparks sent are exactly <amount>') },
-    { value: 'MIN_EMBERS_USED', title: $t('Ember amount is at least <amount>') },
-    { value: 'EXACT_EMBERS_AMOUNT', title: $t('Ember amount is exactly <amopunt>') },
+  giftSupport: [
+    { value: 'MIN_SUPPORT_GIFTS', title: $t('Gifted at least <amount> Supports') },
+    { value: 'EXACT_SUPPORT_GIFTS', title: $t('Gifted exactly <amount> Supports') },
+  ],
+  stars: [
+    { value: 'MIN_STARS_USED', title: $t('Stars used is at least <amount>') },
+    { value: 'EXACT_STARS_USED', title: $t('Stars used is exactly <amount>') },
   ],
 });
 
 export const conditionData = () => ({
   RANDOM: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUBSCRIPTION_GIFT: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUBSCRIPTION_PRIME: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUBTEMBER: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUBSCRIPTION_PRIME_UPGRADE: metadata.frequency({ title: $t('Variation Frequency') }),
+  ANON_SUBSCRIPTION_GIFT: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUB_EXTENDED: metadata.frequency({ title: $t('Variation Frequency') }),
+  SUPPORT_GIFT_REDEEMED: metadata.frequency({ title: $t('Variation Frequency') }),
+  LARGEST_OF_STREAM: {},
+  MERCH_PRODUCT: {},
+  MERCH_PREORDER: {},
+  RECURRING_DONATION: {},
   LOYALTY_STORE_REDEMPTION_ITEM_TYPE: metadata.list({
     title: $t('Item Type'),
     options: [
@@ -174,6 +234,8 @@ export const newVariation = (type: string): IAlertBoxVariation => ({
       color: '#FFFFFF',
       color2: '#32C3A6',
       font: 'Open Sans',
+      // TODO: index
+      // @ts-ignore
       format: DEFAULT_ALERT_FORMATS[type] || '',
       resubFormat: null,
       tierUpgradeFormat: null,
@@ -181,6 +243,8 @@ export const newVariation = (type: string): IAlertBoxVariation => ({
       thickness: 400,
     },
     textDelay: 0,
+    // TODO: index
+    // @ts-ignore
     type: Object.keys(API_NAME_MAP).find(key => API_NAME_MAP[key] === type),
     useCustomImage: null,
     moderation: null,
@@ -201,11 +265,10 @@ const DEFAULT_ALERT_FORMATS = {
   tiltify: '{name} has just donated {amount} via Tiltify!',
   treat: '{name} bought you a {title} treat via Treatstream!',
   follows: '{name} is now following!',
-  hosts: '{name} just hosted for {count} viewers!',
-  raids: '{name} is raiding with a party of {count}!',
   superhearts: '{name} gifted {style} worth {amount} coins!',
   fanfunding: '{name} has just donated {amount} through Super Chat!',
   subscribers: '{name} just subscribed!', // YouTube
+  raids: '{name} is raiding with a party of {count}!',
   sponsors: '{name} has sponsored you {months} months in a row!',
   support: '{name} has supported for {months} months!',
   likes: '{name} has liked!',
@@ -213,6 +276,4 @@ const DEFAULT_ALERT_FORMATS = {
   shares: '{name} has shared!',
   fbfollows: '{name} has followed!',
   loyaltystore: '{name} redeemed {product}',
-  effects: '{name} sent {skill} worth {currency_image} {amount}!',
-  stickers: '{name} sent {skill} worth {currency_image} {amount}!',
 };

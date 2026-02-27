@@ -1,5 +1,5 @@
-import Vue from 'vue';
-import { Component, Prop, Watch } from 'vue-property-decorator';
+import * as remote from '@electron/remote';
+import { Component, Watch } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import { $t } from 'services/i18n';
 import { TObsFormData } from 'components/obs/inputs/ObsInput';
@@ -7,10 +7,9 @@ import GenericForm from 'components/obs/inputs/GenericForm';
 import { ProjectorService } from 'services/projector';
 import ModalLayout from 'components/ModalLayout.vue';
 import Tabs from 'components/Tabs.vue';
-import Display from 'components/shared/Display.vue';
+import { Display, TestWidgets } from 'components/shared/ReactComponentList';
 import VFormGroup from 'components/shared/inputs/VFormGroup.vue';
-import TestWidgets from 'components/TestWidgets.vue';
-import { ToggleInput, NumberInput } from 'components/shared/inputs/inputs';
+import { NumberInput, ToggleInput } from 'components/shared/inputs/inputs';
 import { IWidgetData, IWidgetsServiceApi } from 'services/widgets';
 import cloneDeep from 'lodash/cloneDeep';
 import { IWidgetNavItem } from 'components/widgets/WidgetSettings.vue';
@@ -21,6 +20,10 @@ import { IAlertBoxVariation } from 'services/widgets/settings/alert-box/alert-bo
 import { ERenderingMode } from '../../../obs-api';
 import TsxComponent, { createProps } from 'components/tsx-component';
 import Scrollable from 'components/shared/Scrollable';
+import { CustomizationService } from '../../services/customization';
+import { SourcesService } from '../../services/sources';
+import { EAvailableFeatures, IncrementalRolloutService } from '../../services/incremental-rollout';
+import { onUnload } from 'util/unload';
 
 class WidgetEditorProps {
   isAlertBox?: boolean = false;
@@ -54,11 +57,14 @@ class WidgetEditorProps {
   props: createProps(WidgetEditorProps),
 })
 export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
-  @Inject() private widgetsService: IWidgetsServiceApi;
-  @Inject() private windowsService: WindowsService;
+  @Inject() private widgetsService!: IWidgetsServiceApi;
+  @Inject() private windowsService!: WindowsService;
+  @Inject() private customizationService!: CustomizationService;
+  @Inject() private sourcesService!: SourcesService;
   @Inject() private projectorService: ProjectorService;
+  @Inject() private incrementalRolloutService: IncrementalRolloutService;
 
-  $refs: { content: HTMLElement; sidebar: HTMLElement; code: HTMLElement };
+  $refs: { modal: ModalLayout; content: HTMLElement; sidebar: HTMLElement; code: HTMLElement };
 
   sourceId = this.windowsService.getChildWindowOptions().queryParams.sourceId;
   widget = this.widgetsService.getWidgetSource(this.sourceId);
@@ -75,10 +81,6 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
   readonly settingsState = this.widget.getSettingsService().state;
   animating = false;
   canShowEditor = false;
-
-  get hideStyleBlockers() {
-    return this.windowsService.state.child.hideStyleBlockers;
-  }
 
   get loaded() {
     return !!this.settingsState.data;
@@ -101,6 +103,9 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
     ) {
       return;
     }
+    // TODO: index
+    // WONTFIX till AlertBox replacement
+    // @ts-ignore
     return this.wData.settings[this.props.selectedAlert].variations.find(
       (variation: IAlertBoxVariation) => variation.id === this.props.selectedId,
     );
@@ -117,6 +122,8 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
     return this.settingsState.pendingRequests > 0;
   }
 
+  cancelUnload: () => void;
+
   mounted() {
     const source = this.widget.getSource();
     this.currentSetting = this.props.navItems[0].value;
@@ -124,6 +131,8 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
 
     // create a temporary previewSource while current window is shown
     this.widget.createPreviewSource();
+
+    this.cancelUnload = onUnload(() => this.widget.destroyPreviewSource());
 
     // some widgets have CustomFieldsEditor
     if (this.apiSettings.customFieldsAllowed) {
@@ -133,6 +142,7 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
 
   destroyed() {
     this.widget.destroyPreviewSource();
+    this.cancelUnload();
   }
 
   get windowTitle() {
@@ -146,6 +156,11 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
 
   get topProperties() {
     return this.properties.slice(1, 4);
+  }
+
+  openWebSettings() {
+    remote.shell.openExternal(this.apiSettings.webSettingsUrl);
+    this.windowsService.actions.closeChildWindow();
   }
 
   createProjector() {
@@ -176,6 +191,13 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
       : firstTab;
   }
 
+  get shouldShowAlertboxSwitcher() {
+    return (
+      this.props.isAlertBox &&
+      this.incrementalRolloutService.views.featureIsEnabled(EAvailableFeatures.reactWidgets)
+    );
+  }
+
   updateTopTab(value: string) {
     if (value === this.currentTopTab) return;
     this.animating = true;
@@ -204,5 +226,10 @@ export default class WidgetEditor extends TsxComponent<WidgetEditorProps> {
     this.widget
       .getSettingsService()
       .toggleCustomCode(enabled, this.wData.settings, this.selectedVariation);
+  }
+
+  switchToNewAlertboxUI() {
+    this.customizationService.actions.setSettings({ legacyAlertbox: false });
+    this.sourcesService.actions.showSourceProperties(this.widget.sourceId);
   }
 }

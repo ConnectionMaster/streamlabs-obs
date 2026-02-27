@@ -14,6 +14,7 @@ import {
 } from './notifications-api';
 import { $t } from 'services/i18n';
 import { InternalApiService } from 'services/api/internal-api';
+import { metadata } from 'components/shared/inputs';
 
 interface INotificationsState {
   settings: INotificationsSettings;
@@ -21,13 +22,18 @@ interface INotificationsState {
 }
 
 class NotificationsViews extends ViewHandler<INotificationsState> {
+  get lastNotification(): INotification | null {
+    return this.state.notifications ? this.state.notifications[0] : null;
+  }
+
   getNotification(id: number): INotification {
     return this.state.notifications.find(notify => notify.id === id);
   }
 
   getAll(type?: ENotificationType): INotification[] {
+    if (!type) return this.state.notifications;
     return this.state.notifications.filter(notify => {
-      return !type || notify.type === type;
+      return notify.type === type;
     });
   }
 
@@ -43,31 +49,29 @@ class NotificationsViews extends ViewHandler<INotificationsState> {
     return this.state.settings;
   }
 
-  getSettingsFormData(): TObsFormData {
-    const settings = this.state.settings;
-    return [
-      <IObsInput<boolean>>{
-        value: settings.enabled,
-        name: 'enabled',
-        description: $t('Enable notifications'),
-        type: 'OBS_PROPERTY_BOOL',
-        visible: true,
-        enabled: true,
-      },
+  get settings() {
+    return this.state.settings;
+  }
 
-      <IObsInput<boolean>>{
-        value: settings.playSound,
-        name: 'playSound',
-        description: $t('Enable sound'),
-        type: 'OBS_PROPERTY_BOOL',
-        visible: true,
-        enabled: settings.enabled,
+  get metadata() {
+    return {
+      enabled: {
+        type: 'checkbox',
+        label: $t('Enable notifications'),
+        children: {
+          playSound: {
+            type: 'checkbox',
+            label: $t('Enable sound'),
+            displayed: this.state.settings.enabled,
+          },
+        },
       },
-    ];
+    };
   }
 }
 
-export class NotificationsService extends PersistentStatefulService<INotificationsState>
+export class NotificationsService
+  extends PersistentStatefulService<INotificationsState>
   implements INotificationsServiceApi {
   static defaultState: INotificationsState = {
     notifications: [],
@@ -93,11 +97,15 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
     return new NotificationsViews(this.state);
   }
 
-  filter(state: INotificationsState) {
+  static filter(state: INotificationsState) {
     return { ...state, notifications: [] as INotification[] };
   }
 
   push(notifyInfo: INotificationOptions): INotification {
+    if (notifyInfo.singleton) {
+      const existingNotif = this.views.getAll().find(notif => notif.message === notifyInfo.message);
+      if (existingNotif) return;
+    }
     const notify = {
       id: this.nextId++,
       unread: true,
@@ -145,8 +153,8 @@ export class NotificationsService extends PersistentStatefulService<INotificatio
 
   showNotifications() {
     this.windowsService.showWindow({
-      componentName: 'Notifications',
-      title: $t('Notifications'),
+      componentName: 'NotificationsAndNews',
+      title: $t('Notifications & News'),
       size: {
         width: 600,
         height: 600,

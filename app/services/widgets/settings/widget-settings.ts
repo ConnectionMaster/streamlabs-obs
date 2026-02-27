@@ -11,6 +11,7 @@ import {
   IWidgetSettingsServiceApi,
   IWidgetSettingsState,
   TWIdgetLoadingState,
+  WidgetDefinitions,
   WidgetsService,
 } from 'services/widgets';
 import { Subject } from 'rxjs';
@@ -23,9 +24,10 @@ export const WIDGET_INITIAL_STATE: IWidgetSettingsGenericState = {
   data: null,
   rawData: null,
   pendingRequests: 0,
+  staticConfig: null,
 };
 
-export type THttpMethod = 'GET' | 'POST' | 'DELETE';
+export type THttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface ISocketEvent {
   type: string;
@@ -34,6 +36,7 @@ interface ISocketEvent {
 
 /**
  * base class for widget settings
+ * @deprecated
  */
 export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
   extends StatefulService<IWidgetSettingsState<TWidgetData>>
@@ -71,6 +74,8 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
     const rawData = cloneDeep(this.state.rawData);
     rawData.settings = event.message;
     const data = this.handleDataAfterFetch(rawData);
+    this.SET_PENDING_REQUESTS(this.state.pendingRequests - 1);
+    if (this.state.pendingRequests !== 0) return;
     this.SET_WIDGET_DATA(data, rawData);
     this.dataUpdated.next(this.state.data);
   }
@@ -95,13 +100,27 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
     const isFirstLoading = !this.state.data;
     if (isFirstLoading) this.SET_LOADING_STATE('pending');
     const apiSettings = this.getApiSettings();
+    // TODO: this is bad
     let rawData: any;
     try {
-      rawData = await this.request({
-        url: apiSettings.dataFetchUrl,
-        method: 'GET',
-      });
-    } catch (e) {
+      const widgetType = WidgetDefinitions[apiSettings.type].humanType;
+      const [widgetData, staticConfig] = await Promise.all([
+        this.request({
+          url: apiSettings.dataFetchUrl,
+          method: 'GET',
+        }),
+        // Only fetch this once
+        this.state.staticConfig
+          ? Promise.resolve(this.state.staticConfig)
+          : this.request({
+              url: `https://${this.hostsService.streamlabs}/api/v5/widgets/static/config/${widgetType}`,
+              method: 'GET',
+            }),
+      ]);
+      // TODO: see above
+      rawData = widgetData;
+      this.SET_WIDGET_STATIC_CONFIG(staticConfig);
+    } catch (e: unknown) {
       if (isFirstLoading) this.SET_LOADING_STATE('fail');
       throw e;
     }
@@ -119,8 +138,21 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
   protected handleDataAfterFetch(rawData: any): TWidgetData {
     const data = cloneDeep(rawData);
 
-    // patch fetched data to have the same data format
-    if (data.custom) data.custom_defaults = data.custom;
+    // TODO: type
+    const { staticConfig }: any = this.state;
+    if (staticConfig?.data?.custom_code) {
+      // These seem only used to restore defaults
+      data.custom_defaults = staticConfig.data?.custom_code;
+      // If we have a default for custom code and the fields are empty in the
+      // response, prefill that with the default, this is what backend should
+      // also do
+      ['html', 'css', 'js'].forEach(customType => {
+        const prop = `custom_${customType}`;
+        if (staticConfig.data.custom_code[customType] && !data.settings[prop]) {
+          data.settings[prop] = staticConfig.data.custom_code[customType];
+        }
+      });
+    }
 
     data.type = this.getApiSettings().type;
 
@@ -149,6 +181,7 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
   async saveSettings(settings: IWidgetSettings) {
     const body = this.patchBeforeSend(settings);
     const apiSettings = this.getApiSettings();
+    this.SET_PENDING_REQUESTS(this.state.pendingRequests + 1);
     return await this.request({
       body,
       url: apiSettings.settingsSaveUrl,
@@ -167,10 +200,8 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
       body: req.body ? JSON.stringify(req.body) : void 0,
     });
 
-    this.SET_PENDING_REQUESTS(this.state.pendingRequests + 1);
     return fetch(request)
       .then(res => {
-        this.SET_PENDING_REQUESTS(this.state.pendingRequests - 1);
         return Promise.resolve(res);
       })
       .then(handleResponse);
@@ -202,6 +233,13 @@ export abstract class WidgetSettingsService<TWidgetData extends IWidgetData>
   protected SET_WIDGET_DATA(data: TWidgetData, rawData: any) {
     this.state.data = data;
     this.state.rawData = rawData;
+  }
+
+  @mutation()
+  // TODO: `unknown` because this needs to be generic and I don't wanna mess with that
+  // while custom code is broken
+  protected SET_WIDGET_STATIC_CONFIG(data: unknown) {
+    this.state.staticConfig = data;
   }
 
   @mutation()

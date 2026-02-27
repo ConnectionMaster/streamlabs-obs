@@ -16,5 +16,18 @@
   "Click to read your unread Notifications": "Kliknutím si přečtete nepřečtená oznámení",
   "New Notifications": "Nová oznámení",
   "Log": "Protokol",
-  "Streamlabs OBS has updated! Click here to see what changed.": "Software Streamlabs OBS byl aktualizován! Kliknutím sem zobrazíte všechny změny."
+  "Streamlabs Desktop has updated! Click here to see what changed.": "Aplikace Streamlabs Desktop byla aktualizována! Kliknutím sem zobrazíte přehled změn.",
+  "Notifications & News": "Oznámení a novinky",
+  "News": "Novinky",
+  "Notifications": "Upozornění",
+  "A new Recording has been completed. Click for more info": "Byla dokončena nová Nahrávka. Klikněte pro bližší informace",
+  "horizontalRecordingMessage": " Byla dokončena nová nahrávka v horizontálním formátu. Klikněte pro bližší informace",
+  "verticalRecordingMessage": "Byla dokončena nová nahrávka ve vertikálním formátu. Klikněte pro bližší informace",
+  "Recording History": "Historie nahrávek",
+  "Show in folder": "Zobrazit ve složce",
+  "Recordings": "Nahrávky",
+  "Marker %{label} added at %{timestamp}": "Značka %{label} přidána %{timestamp}",
+  "File is too large to upload": "Soubor je příliš velký na nahrání",
+  "File type %{extension} is not supported": "Typ souboru %{extension} není podporován",
+  "Upload already in progress": "Nahrávání již probíhá"
 }

@@ -1,11 +1,18 @@
 import { ITwitchStartStreamOptions, TwitchService } from './twitch';
 import { IYoutubeStartStreamOptions, YoutubeService } from './youtube';
 import { FacebookService, IFacebookStartStreamOptions } from './facebook';
-import { TTwitchTag } from './twitch/tags';
-import { TTwitchOAuthScope } from './twitch/scopes';
+import { ITikTokStartStreamOptions, TikTokService } from './tiktok';
+import { InstagramService, IInstagramStartStreamOptions } from './instagram';
+import { TwitterPlatformService } from './twitter';
+import { TTwitchOAuthScope } from './twitch/index';
 import { IGoLiveSettings } from 'services/streaming';
+import { WidgetType } from '../widgets';
+import { ITrovoStartStreamOptions, TrovoService } from './trovo';
+import { TDisplayType } from 'services/settings-v2';
+import { $t } from 'services/i18n';
+import { KickService, IKickStartStreamOptions } from './kick';
 
-export type Tag = TTwitchTag;
+export type Tag = string;
 export interface IGame {
   id: string;
   name: string;
@@ -17,6 +24,8 @@ type TOAuthScope = TTwitchOAuthScope;
 
 /** Supported capabilities of the streaming platform **/
 export type TPlatformCapabilityMap = {
+  /** Display and interact with stream title **/
+  title: IPlatformCapabilityTitle;
   /** Display and interact with chat **/
   chat: IPlatformCapabilityChat;
   /** Ability to set the stream description **/
@@ -33,6 +42,16 @@ export type TPlatformCapabilityMap = {
   'scope-validation': IPlatformCapabilityScopeValidation;
   /** This service supports Streamlabs account merging within SLOBS **/
   'account-merging': IPlatformCapabilityAccountMerging;
+  /** This service supports streamlabels **/
+  streamlabels: true;
+  /** This service supports themes **/
+  themes: true;
+  /** This service should preset a custom resolution for every new scene-collection **/
+  resolutionPreset: IPlatformCapabilityResolutionPreset;
+  /** This service supports fetching viewersCount **/
+  viewerCount: IPlatformCapabilityViewerCount;
+  /** This service may simultaneously stream both the horizontal and vertical displays in dual output mode*/
+  dualStream: true;
 };
 
 export type TPlatformCapability = keyof TPlatformCapabilityMap;
@@ -43,7 +62,19 @@ interface IPlatformCapabilityChat {
 
 export interface IPlatformCapabilityGame {
   searchGames: (searchString: string) => Promise<IGame[]>;
+  fetchGame: (id: string) => Promise<IGame>;
+  gameImageSize: { width: number; height: number };
   state: { settings: { game: string } };
+}
+
+export interface IPlatformCapabilityViewerCount {
+  averageViewers: number;
+  peakViewers: number;
+  fetchViewerCount(): Promise<number>;
+}
+
+interface IPlatformCapabilityTitle {
+  state: { settings: { title: string } };
 }
 
 interface IPlatformCapabilityDescription {
@@ -51,7 +82,6 @@ interface IPlatformCapabilityDescription {
 }
 
 interface IPlatformCapabilityTags {
-  getAllTags: () => Promise<Tag[]>;
   getStreamTags: () => Promise<Tag[]>;
   setStreamTags: () => Promise<any>;
 }
@@ -70,6 +100,11 @@ interface IPlatformCapabilityScopeValidation {
 
 interface IPlatformCapabilityAccountMerging {
   mergeUrl: string;
+}
+
+export interface IPlatformCapabilityResolutionPreset {
+  inputResolution: string;
+  outputResolution: string;
 }
 
 /**
@@ -101,12 +136,36 @@ export enum EPlatformCallResult {
    * The user is missing an essential Twitch scope.
    */
   TwitchScopeMissing,
+
+  /**
+   * The user is not authorized for livestreaming by TikTok.
+   */
+  TikTokStreamScopeMissing,
+
+  /**
+   * The user needs to re-merge their to update Live Access status.
+   */
+  TikTokScopeOutdated,
+
+  /**
+   * The user needs to re-login to update Kick scope.
+   */
+  KickScopeOutdated,
+
+  /**
+   * Token expired
+   */
+  TokenExpired,
 }
 
 export type TStartStreamOptions =
   | ITwitchStartStreamOptions
   | IYoutubeStartStreamOptions
-  | Partial<IFacebookStartStreamOptions>;
+  | Partial<IFacebookStartStreamOptions>
+  | Partial<ITikTokStartStreamOptions>
+  | Partial<ITrovoStartStreamOptions>
+  | Partial<IInstagramStartStreamOptions>
+  | Partial<IKickStartStreamOptions>;
 
 // state applicable for all platforms
 export interface IPlatformState {
@@ -119,6 +178,8 @@ export interface IPlatformState {
 // All platform services should implement this interface.
 export interface IPlatformService {
   capabilities: Set<TPlatformCapability>;
+  hasCapability<T extends TPlatformCapability>(capability: T): this is TPlatformCapabilityMap[T];
+  hasLiveDockFeature(feature: TLiveDockFeature): boolean;
 
   authWindowOptions: Electron.BrowserWindowConstructorOptions;
 
@@ -138,7 +199,7 @@ export interface IPlatformService {
   /**
    * Sets up the stream key and live broadcast info required to go live.
    */
-  beforeGoLive: (options?: IGoLiveSettings) => Promise<void>;
+  beforeGoLive: (options?: IGoLiveSettings, context?: TDisplayType) => Promise<void>;
 
   afterGoLive: () => Promise<void>;
 
@@ -146,7 +207,13 @@ export interface IPlatformService {
 
   prepopulateInfo: () => Promise<unknown>;
 
-  scheduleStream?: (startTime: string, info: TStartStreamOptions) => Promise<any>;
+  scheduleStream?: (startTime: number, info: TStartStreamOptions) => Promise<any>;
+
+  setupDualStream?: (options: IGoLiveSettings) => Promise<any>;
+
+  setupStreamShiftStream?: (options: IGoLiveSettings) => Promise<void>;
+
+  postNotification?: (message: string) => void;
 
   fetchNewToken: () => Promise<void>;
 
@@ -155,48 +222,26 @@ export interface IPlatformService {
     useToken?: boolean | string,
   ) => Dictionary<string | undefined>;
 
+  setPlatformContext?: (platform: TPlatform) => void;
+
   liveDockEnabled: boolean;
 
+  readonly apiBase: string;
   readonly platform: TPlatform;
   readonly displayName: string;
   readonly mergeUrl: string;
   readonly streamPageUrl: string;
   readonly chatUrl: string;
+  readonly dashboardUrl?: string;
+
+  /**
+   * the list of widgets supported by the platform
+   * if not provided then support all widgets
+   */
+  readonly widgetsWhitelist?: WidgetType[];
   unlink: () => void;
 
   state: IPlatformState;
-}
-
-export interface IUserAuth {
-  widgetToken: string;
-  apiToken: string; // Streamlabs API Token
-
-  /**
-   * Old key from when SLOBS only supported a single platform account
-   * @deprecated Use `platforms` instead
-   */
-  platform?: IPlatformAuth;
-
-  /**
-   * The primary platform used for chat, go live window, etc
-   */
-  primaryPlatform: TPlatform;
-
-  /**
-   * New key that supports multiple logged in platforms
-   */
-  platforms: { [platform in TPlatform]?: IPlatformAuth };
-
-  /**
-   * Session partition used to separate cookies associated
-   * with this user login.
-   */
-  partition?: string;
-
-  /**
-   * Whether re-login has been forced
-   */
-  hasRelogged: boolean;
 }
 
 export interface IPlatformAuth {
@@ -211,16 +256,78 @@ export interface IUserInfo {
   username?: string;
 }
 
-export type TPlatform = 'twitch' | 'youtube' | 'facebook';
+export type TLiveDockFeature =
+  | 'chat-offline'
+  | 'chat-streaming'
+  | 'dashboard'
+  | 'view-stream'
+  | 'refresh-chat'
+  | 'refresh-chat-streaming'
+  | 'refresh-chat-restreaming';
+
+export enum EPlatform {
+  Twitch = 'twitch',
+  YouTube = 'youtube',
+  Facebook = 'facebook',
+  TikTok = 'tiktok',
+  Trovo = 'trovo',
+  Twitter = 'twitter',
+  Instagram = 'instagram',
+  Kick = 'kick',
+}
+
+export type TPlatform =
+  | 'twitch'
+  | 'youtube'
+  | 'facebook'
+  | 'tiktok'
+  | 'trovo'
+  | 'twitter'
+  | 'instagram'
+  | 'kick';
+
+export const platformList = [
+  EPlatform.Twitch,
+  EPlatform.YouTube,
+  EPlatform.TikTok,
+  EPlatform.Kick,
+  EPlatform.Facebook,
+  EPlatform.Twitter,
+  EPlatform.Trovo,
+  EPlatform.Instagram,
+];
+
+export const platformLabels = (platform: TPlatform | string) =>
+  ({
+    [EPlatform.Twitch]: $t('Twitch'),
+    [EPlatform.YouTube]: $t('YouTube'),
+    [EPlatform.Facebook]: $t('Facebook'),
+    [EPlatform.TikTok]: $t('TikTok'),
+    [EPlatform.Trovo]: $t('Trovo'),
+    [EPlatform.Twitter]: 'X',
+    [EPlatform.Instagram]: $t('Instagram'),
+    [EPlatform.Kick]: $t('Kick'),
+    dlive: 'dlive',
+    nimotv: 'NimoTV',
+  }[platform] || '');
 
 export function getPlatformService(platform: TPlatform): IPlatformService {
   return {
     twitch: TwitchService.instance,
     youtube: YoutubeService.instance,
     facebook: FacebookService.instance,
+    tiktok: TikTokService.instance,
+    trovo: TrovoService.instance,
+    kick: KickService.instance,
+    twitter: TwitterPlatformService.instance,
+    instagram: InstagramService.instance,
   }[platform];
 }
 
 export interface IPlatformRequest extends RequestInit {
   url: string;
 }
+
+export const externalAuthPlatforms = ['twitch', 'youtube', 'tiktok', 'kick', 'twitter'];
+
+export const maxNumPlatforms = platformList.length;

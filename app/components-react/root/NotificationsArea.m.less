@@ -1,0 +1,113 @@
+@import '../../styles/index';
+
+.notifications-area {
+  overflow: hidden;
+  min-width: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.notification-icon {
+  &:hover {
+    cursor: pointer;
+    color: var(--title) !important;
+  }
+}
+
+.notifications__container {
+  position: relative;
+  height: 30px;
+
+  :global(.ant-message) {
+    position: relative;
+    height: 30px;
+    top: 0;
+  }
+}
+
+.hide_notifs .notification {
+  display: none;
+
+  &.yt-error {
+    display: block;
+  }
+}
+
+.alert-button {
+  min-height: 30px !important;
+  height: 30px;
+  background-color: rgba(251, 72, 76, 0.36) !important;
+  margin: 0 4px !important;
+  font-size: 12px;
+}
+
+:global(.ant-message-notice).notification {
+  .padding-left();
+  .padding-right();
+  .radius();
+
+  padding-top: 0;
+  padding-bottom: 0;
+  height: 30px;
+  max-width: 100%;
+  line-height: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: absolute;
+
+  :global(.ant-message-notice-content) {
+    padding: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  &.info {
+    background-color: var(--icon-semi);
+    color: var(--icon);
+  }
+
+  &.warning {
+    background-color: var(--warning-bg);
+    color: var(--warning);
+  }
+
+  &.success {
+    background-color: var(--new-badge);
+    color: var(--new-badge-text);
+  }
+
+  &.has-action {
+    cursor: pointer;
+  }
+
+  span[role='img'] {
+    display: none;
+  }
+}
+
+.notifications__counter {
+  cursor: pointer;
+  white-space: nowrap;
+  margin-right: 10px;
+
+  &::before {
+    content: '|';
+    padding-right: 12px;
+    opacity: 0.5;
+    color: var(--icon);
+  }
+
+  .fa {
+    font-size: 15px;
+  }
+}
+
+.notifications__counter--warning {
+  color: var(--warning);
+
+  .fa {
+    color: var(--warning);
+  }
+}

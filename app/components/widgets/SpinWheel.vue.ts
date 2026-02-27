@@ -26,16 +26,18 @@ export default class SpinWheel extends WidgetSettings<ISpinWheelData, SpinWheelS
     return this.service.getMetadata(this.sectionOptions);
   }
 
-  navItems = [
-    { value: 'manage-wheel', label: $t('Manage Spin Wheel') },
-    { value: 'categories', label: $t('Categories') },
-    { value: 'section', label: $t('Section Weights') },
-    { value: 'font', label: $t('Font Settings') },
-    { value: 'border', label: $t('Border') },
-    { value: 'ticker', label: $t('Ticker') },
-    { value: 'image', label: $t('Center Image') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-wheel', label: $t('Manage Spin Wheel') },
+      { value: 'categories', label: $t('Categories') },
+      { value: 'section', label: $t('Section Weights') },
+      { value: 'font', label: $t('Font Settings') },
+      { value: 'border', label: $t('Border') },
+      { value: 'ticker', label: $t('Ticker') },
+      { value: 'image', label: $t('Center Image') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 
   clearCategories() {
     this.wData.settings.categories = [];
@@ -69,6 +71,16 @@ export default class SpinWheel extends WidgetSettings<ISpinWheelData, SpinWheelS
 
   get sectionOptions() {
     return this.wData.settings.categories.map((cat, i) => ({ title: cat.prize, value: i }));
+  }
+
+  clearSections() {
+    this.wData.settings.sections = [];
+    this.save();
+  }
+
+  addSection() {
+    this.wData.settings.sections.push({ category: 0, weight: 1, key: uuid() });
+    this.save();
   }
 
   editSection(key: string, patch: Partial<ISpinWheelSettings['sections']>) {

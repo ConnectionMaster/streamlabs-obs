@@ -1,0 +1,21 @@
+{
+  "Poll": "Poll",
+  "Let your viewers vote on a result": "Laat uw kijkers stemmen over een resultaat",
+  "Bar Settings": "Balkinstellingen",
+  "Manage Poll": "Poll beheren",
+  "Poll Type": "Polltype",
+  "Show Closed Poll": "Gesloten poll weergeven",
+  "Show/hide poll widget on closed poll": "Poll-widget op gesloten poll weergeven/verbergen",
+  "Primary Background Color": "Primaire achtergrondkleur",
+  "Secondary Background Color": "Secundaire achtergrondkleur",
+  "Hide wigdet after X seconds of event": "Widget verbergen na X seconden van de gebeurtenis",
+  "Header Text Color": "Kleur koptekst",
+  "Option Text Color": "Tekstkleur optie",
+  "Title Font Size": "Lettergrootte titel",
+  "Option Font Size": "Lettergrootte optie",
+  "Title Font Weight": "Lettergewicht titel",
+  "Option Font Weight": "Lettergewicht optie",
+  "Thin Bar": "Dunne balk",
+  "Display thin/thick Bar": "Dunne/dikke balk weergeven",
+  "You need to re-login to access Twitch chat polls": "Voor toegang tot de Twitch-chatpolls moet u opnieuw inloggen"
+}

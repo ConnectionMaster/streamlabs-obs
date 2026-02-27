@@ -6,17 +6,26 @@
   --black: #000;
 
   // Day Theme Colors
+  --primary: @teal-light;
   --teal: @teal-light;
   --teal-semi: fade(@teal-light, 8%);
   --teal-hover: lighten(@teal-light, 4%);
   --accent: @purple-light;
   --blue: @blue-light;
+  --callout: @blue-dark;
+  --callout-semi: fade(@blue-light, 8%);
+  --callout-border: fade(@blue-light, 20%);
+  --callout-hover: lighten(@blue-light, 4%);
+  --callout-button-bg: fade(@blue-light, 36%);
   --warning: @red-light;
+  --warning-semi: fade(@red-light, 8%);
+  --warning-border: fade(@red-light, 20%);
   --warning-hover: lighten(@red-light, 4%);
   --warning-bg: fade(@red-light, 28%);
   --warning-button-bg: fade(@red-light, 36%);
   --info: @yellow-light;
   --info-semi: fade(@yellow-light, 8%);
+  --info-border: fade(@yellow-light, 20%);
   --red: @red-light;
   --red-semi: fade(@red-light, 8%);
   --icon: @light-5;
@@ -27,10 +36,24 @@
   --prime-hover: darken(@prime-light, 8%);
   --new-badge: fade(@purple-light, 15%);
   --new-badge-text: @purple-light;
+  --info-badge: @dark-navy;
+  --info-badge-text: @blue-dark;
+  --beta-text: @purple-light;
+  --badge: @purple-dark;
+  --highlighter-icon: @light-4;
+  --ultra: @ultra;
+
+  --videoeditor: @video-editor;
+  --typestudio: @podcast-editor;
+  --linkspace: @link-space;
+  --talkstudio: @talk-studio;
+  --crossclip: @cross-clip;
 
   --background: @light-2;
+  --dark-background: @light-2;
   --section: @light-3;
   --section-alt: @light-3;
+  --section-wrapper: @dark-1;
   --titlebar: @dark-4;
   --title: @dark-2;
   --titlebar-title: @light-5;
@@ -47,31 +70,64 @@
   --solid-input: @light-2;
   --dropdown-bg: @light-1;
   --dropdown-alt-bg: darken(@light-1, 4%);
+  --checkbox: @dark-1;
   --midtone: @light-5;
   --nav-icon-inactive: @dark-4;
+  --nav-divider: @dark-2;
+  --nav-active: @teal-light;
   --slider-progress: @dark-5;
   --shadow: rgba(55, 71, 79, 0.12);
   --modal-overlay: rgba(0, 0, 0, 0.3);
   --studio-tabs: @light-2;
+  --logged-in: @lavender-light;
+  --prime-button: @dark-2;
+  --tooltip-hover: @light-4;
+  --modal-footer: @dark-2;
+  --icon-toggle: @light-5;
+  --icon-toggle-active: @dark-2;
+  --switch-active: @teal-light;
+  --secondary-bg: @light-3;
+  --secondary-checkbox: @dark-2;
+  --bg-column: @light-2;
+  --card: @light-3;
+  --card-active: @light-1;
+  --card-disabled: @light-3;
 
   // 3rd Party Colors
   --twitch: @twitch;
   --twitch-hover: lighten(@twitch, 4%);
   --facebook: @facebook;
+  --facebook-transparent: fade(@facebook, 50%);
   --facebook-hover: lighten(@facebook, 4%);
   --youtube: @youtube;
+  --youtube-transparent: fade(@youtube, 50%);
   --youtube-hover: lighten(@youtube, 4%);
+  --tiktok: @white;
+  --tiktok-inverse: @black;
+  --tiktok-hover: lighten(@black, 4%);
+  --tiktok-btn: @cyan;
   --twitter: @twitter;
   --twitter-hover: lighten(@twitter, 4%);
+  --instagram: @instagram;
+  --instagram-hover: lighten(@instagram, 4%);
+  --trovo: @trovo;
+  --trovo-hover: lighten(@trovo, 4%);
+  --kick: @kick;
+  --kick-hover: lighten(@black, 4%);
 }
 
 .night-theme {
-
+  --primary: @teal-dark;
   --teal: @teal-dark;
   --teal-semi: fade(@teal-dark, 8%);
   --teal-hover: darken(@teal-dark, 4%);
   --accent: @purple-dark;
   --blue: @blue-dark;
+  --callout: @blue-2-dark;
+  --callout-semi: fade(@blue-2-dark, 20%);
+  --callout-hover: lighten(@blue-2-dark, 4%);
+  --callout-bg: fade(@blue-2-dark, 8%);
+  --callout-button-bg: fade(@blue-2-dark, 36%);
   --warning: @red-dark;
   --warning-hover: darken(@red-dark, 4%);
   --warning-bg: fade(@red-dark, 28%);
@@ -88,10 +144,16 @@
   --prime-hover: lighten(@prime-dark, 8%);
   --new-badge: fade(@purple-dark, 15%);
   --new-badge-text: @purple-dark;
+  --info-badge: @dark-navy;
+  --info-badge-text: @blue-dark;
+  --beta-text: @purple-dark;
+  --badge: @purple-dark;
 
   --background: @dark-3;
+  --dark-background: @dark-2;
   --section: @dark-2;
   --section-alt: @dark-4;
+  --section-wrapper: @dark-1;
   --titlebar: @dark-1;
   --titlebar-title: @light-5;
   --title: @light-1;
@@ -99,7 +161,7 @@
   --border: @dark-4;
   --button: @dark-5;
   --slider-bg: @dark-5;
-  --action-button-text: @light-1;
+  --action-button-text: @dark-2;
   --button-hover: lighten(@dark-5, 8%);
   --link: @light-4;
   --link-active: @light-1;
@@ -108,19 +170,47 @@
   --solid-input: @dark-4;
   --dropdown-bg: @dark-4;
   --dropdown-alt-bg: darken(@dark-4, 4%);
+  --checkbox: @light-1;
   --midtone: @dark-5;
   --nav-icon-inactive: @light-5;
+  --nav-divider: @dark-2;
+  --nav-active: @teal-dark;
   --shadow: rgba(1, 2, 2, 0.16);
   --modal-overlay: rgba(0, 0, 0, 0.5);
   --studio-tabs: @dark-2;
+  --logged-in: @lavender-dark;
+  --prime-button: @dark-2;
+  --tooltip-hover: @dark-5;
+  --modal-footer: @dark-2;
+  --icon-toggle: @light-5;
+  --icon-toggle-active: @light-1;
+  --switch-active: @light-1;
+  --secondary-bg: @dark-2;
+  --secondary-checkbox: @light-1;
+  --bg-column: @dark-2;
+  --card: @dark-4;
+  --card-active: @dark-3;
+  --card-disabled: @dark-4;
+
+  // 3rd Party Colors
+  --tiktok: @black;
+  --tiktok-inverse: @white;
+  --tiktok-hover: darken(@white, 4%);
+  --tiktok-btn: @cyan;
 }
 
 .prime-dark {
+  --primary: @prime-dark;
   --teal: @prime-dark;
   --teal-semi: fade(@prime-dark, 8%);
   --teal-hover: darken(@prime-dark, 4%);
   --accent: @prime-dark;
   --blue: @blue-dark;
+  --callout: @blue-2-dark;
+  --callout-semi: fade(@blue-2-dark, 20%);
+  --callout-hover: lighten(@blue-2-dark, 4%);
+  --callout-bg: fade(@blue-2-dark, 8%);
+  --callout-button-bg: fade(@blue-2-dark, 36%);
   --warning: @red-dark;
   --warning-hover: darken(@red-dark, 4%);
   --warning-bg: fade(@red-dark, 28%);
@@ -137,16 +227,22 @@
   --prime-hover: lighten(@prime-dark, 8%);
   --new-badge: @prime-dark;
   --new-badge-text: @primelight-1;
+  --info-badge: @dark-navy;
+  --info-badge-text: @blue-dark;
+  --beta-text: @prime-dark;
+  --badge: @purple-dark;
 
   --background: @primedark-3;
+  --dark-background: @primedark-2;
   --section: @primedark-2;
   --section-alt: @primedark-4;
+  --section-wrapper: @dark-1;
   --titlebar: @primedark-1;
   --titlebar-title: @primelight-1;
   --title: @primelight-1;
-  --paragraph: @primelight-4;
+  --paragraph: @primelight-3;
   --border: @primedark-4;
-  --button: @primedark-5;
+  --button: @primelight-5;
   --slider-bg: @prime-dark;
   --action-button-text: @primedark-1;
   --button-hover: lighten(@primedark-5, 8%);
@@ -157,19 +253,47 @@
   --solid-input: @primedark-4;
   --dropdown-bg: @primedark-4;
   --dropdown-alt-bg: darken(@primedark-4, 4%);
+  --checkbox: @light-1;
   --midtone: @primedark-5;
   --nav-icon-inactive: @primelight-5;
+  --nav-divider: @primedark-1;
+  --nav-active: @prime-dark;
   --shadow: rgba(1, 2, 2, 0.16);
   --modal-overlay: rgba(0, 0, 0, 0.5);
   --studio-tabs: @primedark-2;
+  --logged-in: @lavender-dark;
+  --prime-button: @dark-2;
+  --tooltip-hover: @primedark-4;
+  --modal-footer: @primedark-2;
+  --icon-toggle: @light-5;
+  --icon-toggle-active: @primelight-3;
+  --switch-active: @prime-dark;
+  --secondary-bg: @black;
+  --secondary-checkbox: @light-1;
+  --bg-column: @primedark-2;
+  --card: @primedark-1;
+  --card-active: @primedark-4;
+  --card-disabled: @primedark-1;
+
+  // 3rd Party Colors
+  --tiktok: @black;
+  --tiktok-inverse: @white;
+  --tiktok-hover: darken(@white, 4%);
+  --tiktok-btn: @cyan;
 }
 
 .prime-light {
+  --primary: @prime-light;
   --teal: @prime-light;
   --teal-semi: fade(@prime-light, 8%);
   --teal-hover: lighten(@prime-light, 4%);
   --accent: @prime-light;
   --blue: @blue-light;
+  --callout: @blue-dark;
+  --callout-semi: fade(@blue-light, 8%);
+  --callout-border: fade(@blue-light, 20%);
+  --callout-hover: lighten(@blue-light, 4%);
+  --callout-button-bg: fade(@blue-light, 36%);
   --warning: @red-light;
   --warning-hover: lighten(@red-light, 4%);
   --warning-bg: fade(@red-light, 28%);
@@ -186,10 +310,16 @@
   --prime-hover: darken(@prime-light, 8%);
   --new-badge: @prime-light;
   --new-badge-text: @primelight-1;
+  --info-badge: @dark-navy;
+  --info-badge-text: @blue-dark;
+  --beta-text: @prime-light;
+  --badge: @purple-dark;
 
   --background: @primelight-1;
+  --dark-background: @primelight-2;
   --section: @primelight-2;
   --section-alt: @primelight-4;
+  --section-wrapper: @dark-1;
   --titlebar: @primedark-4;
   --title: @primedark-2;
   --titlebar-title: @primelight-1;
@@ -206,10 +336,30 @@
   --solid-input: @primelight-3;
   --dropdown-bg: @primelight-1;
   --dropdown-alt-bg: darken(@primelight-1, 4%);
+  --checkbox: @dark-1;
   --midtone: @primelight-5;
   --nav-icon-inactive: @primedark-4;
+  --nav-divider: @primelight-1;
+  --nav-active: @prime-light;
   --slider-progress: @primedark-5;
   --shadow: rgba(55, 71, 79, 0.12);
   --modal-overlay: rgba(0, 0, 0, 0.3);
   --studio-tabs: @primelight-2;
+  --logged-in: @lavender-light;
+  --prime-button: @dark-2;
+  --tooltip-hover: @primelight-4;
+  --modal-footer: @primedark-2;
+  --icon-toggle: @light-5;
+  --icon-toggle-active: @dark-2;
+  --switch-active: @prime-light;
+  --secondary-bg: @primelight-1;
+  --secondary-checkbox: @dark-2;
+  --bg-column: @primelight-1;
+  --card: @primelight-3;
+  --card-active: @primelight-2;
+  --card-disabled: @primelight-2;
+
+  // 3rd Party Colors
+  --tiktok-inverse: @black;
+  --tiktok-btn: @cyan;
 }

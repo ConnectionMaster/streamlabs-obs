@@ -1,71 +1,75 @@
-import { remote } from 'electron';
+import * as remote from '@electron/remote';
 import React, { useEffect, useRef } from 'react';
 import { Services } from '../service-provider';
 import styles from './Chat.m.less';
 import { OS, getOS } from '../../util/operating-systems';
+import { onUnload } from 'util/unload';
+import { debounce } from 'lodash';
 
-export default function Chat(props: { restream: boolean }) {
+export default function Chat(props: {
+  restream: boolean;
+  visibleChat: string;
+  setChat: (key: string) => void;
+}) {
   const { ChatService, RestreamService } = Services;
 
   const chatEl = useRef<HTMLDivElement>(null);
 
-  const service = props.restream ? RestreamService : ChatService;
-
   let currentPosition: IVec2 | null;
   let currentSize: IVec2 | null;
-  let resizeInterval: number;
 
   let leaveFullScreenTrigger: Function;
 
-  useEffect(lifecycle, []);
-  useEffect(changeChat, [props.restream]);
+  useEffect(() => {
+    const service = props.restream ? RestreamService : ChatService;
+    const cancelUnload = onUnload(() => service.actions.unmountChat(remote.getCurrentWindow().id));
 
-  function lifecycle() {
-    mounted();
-
-    return function cleanup() {
-      service.actions.unmountChat(remote.getCurrentWindow().id);
-      clearInterval(resizeInterval);
-
-      if (getOS() === OS.Mac) {
-        remote.getCurrentWindow().removeListener('leave-full-screen', leaveFullScreenTrigger);
-      }
-    };
-  }
-
-  function mounted() {
-    service.actions.mountChat(remote.getCurrentWindow().id);
-
-    resizeInterval = window.setInterval(() => {
-      checkResize();
-    }, 100);
+    window.addEventListener('resize', debounce(checkResize, 100));
 
     // Work around an electron bug on mac where chat is not interactable
     // after leaving fullscreen until chat is remounted.
     if (getOS() === OS.Mac) {
       leaveFullScreenTrigger = () => {
         setTimeout(() => {
-          changeChat();
+          setupChat();
+          checkResize();
         }, 1000);
       };
 
       remote.getCurrentWindow().on('leave-full-screen', leaveFullScreenTrigger);
     }
-  }
 
-  function changeChat() {
+    setupChat();
+    // Wait for livedock to expand to set chat resize
+    setTimeout(checkResize, 100);
+
+    return () => {
+      window.removeEventListener('resize', debounce(checkResize, 100));
+
+      if (getOS() === OS.Mac) {
+        remote.getCurrentWindow().removeListener('leave-full-screen', leaveFullScreenTrigger);
+      }
+
+      service.actions.unmountChat(remote.getCurrentWindow().id);
+      cancelUnload();
+    };
+  }, [props.restream]);
+
+  function setupChat() {
+    const service = props.restream ? RestreamService : ChatService;
     const windowId = remote.getCurrentWindow().id;
 
-    ChatService.unmountChat();
-    RestreamService.unmountChat(windowId);
+    ChatService.actions.unmountChat();
+    RestreamService.actions.unmountChat(windowId);
 
-    service.mountChat(windowId);
+    service.actions.mountChat(windowId);
     currentPosition = null;
     currentSize = null;
-    checkResize();
   }
 
   function checkResize() {
+    const service = props.restream ? RestreamService : ChatService;
+
     if (!chatEl.current) return;
 
     const rect = chatEl.current.getBoundingClientRect();

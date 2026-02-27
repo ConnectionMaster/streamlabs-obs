@@ -1,3 +1,7 @@
+button {
+  cursor: pointer;
+}
+
 .button {
   .radius();
   .weight(@medium);
@@ -9,6 +13,8 @@
   font-family: 'Roboto', sans-serif;
   min-height: 32px;
   line-height: 30px;
+  cursor: pointer;
+  background-color: var(--button);
 
   &:focus,
   &:visited {
@@ -112,6 +118,7 @@
 
 .button--warn {
   background-color: var(--warning-button-bg);
+  color: white;
 
   &:hover,
   &:focus,
@@ -132,8 +139,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 100%;
-  box-sizing: content-box;
+  box-sizing: border-box;
   letter-spacing: 0.2px;
+  border: none;
 
   &:hover {
     background-color: var(--button-hover);
@@ -231,12 +239,46 @@
   }
 }
 
+.square-button--tiktok,
+.button--tiktok {
+  background: var(--tiktok-btn);
+  color: black;
+
+  &:hover,
+  &:active {
+    background: var(--tiktok-btn) !important;
+    color: black !important;
+  }
+}
+
+.square-button--trovo,
+.button--trovo {
+  background: var(--trovo);
+  color: black;
+
+  &:hover,
+  &:active {
+    background: var(--trovo-hover) !important;
+  }
+}
+
 .square-button--twitter {
   background: var(--twitter);
 
   &:hover,
   &:active {
     background: var(--twitter-hover) !important;
+  }
+}
+
+.square-button--kick,
+.button--kick {
+  background: black;
+  color: var(--kick);
+
+  &:hover,
+  &:active {
+    background: var(--kick-hover) !important;
   }
 }
 
@@ -267,18 +309,18 @@
 }
 
 .button--soft-warning {
-  color: var(--warning);
-  background: rgba(251, 72, 76, 0.16);
-  border-color: transparent;
+  color: var(--warning) !important;
+  background: rgba(251, 72, 76, 0.16) !important;
+  border-color: transparent !important;
 
   &:focus {
-    color: var(--warning);
-    background: rgba(251, 72, 76, 0.16);
+    color: var(--warning) !important;
+    background: rgba(251, 72, 76, 0.16) !important;
   }
 
   &:hover {
-    background: rgba(251, 72, 76, 0.2);
-    color: var(--warning);
+    background: rgba(251, 72, 76, 0.2) !important;
+    color: var(--warning) !important;
   }
 }
 

@@ -1,34 +1,78 @@
-import throttle from 'lodash/throttle';
 import { Inject } from 'services/core/injector';
 import { UserService } from '../user';
 import { ScenesService, SceneItem, Scene } from '../scenes';
 import { SourcesService } from '../sources';
-import { VideoService } from '../video';
 import { HostsService } from '../hosts';
 import { ScalableRectangle } from 'util/ScalableRectangle';
 import namingHelpers from 'util/NamingHelpers';
 import fs from 'fs';
-import { WidgetSettingsService } from './settings/widget-settings';
 import { ServicesManager } from 'services-manager';
-import { authorizedHeaders } from 'util/requests';
+import { authorizedHeaders, handleResponse } from 'util/requests';
 import { ISerializableWidget, IWidgetSource, IWidgetsServiceApi } from './widgets-api';
-import { WidgetType, WidgetDefinitions, WidgetTesters } from './widgets-data';
-import { mutation, StatefulService } from '../core/stateful-service';
+import { WidgetType, WidgetDefinitions, makeWidgetTesters } from './widgets-data';
+import { mutation, StatefulService, ViewHandler } from '../core/stateful-service';
 import { WidgetSource } from './widget-source';
 import { InitAfter } from 'services/core/service-initialization-observer';
 import Vue from 'vue';
 import cloneDeep from 'lodash/cloneDeep';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { Throttle } from 'lodash-decorators';
 import { EditorCommandsService } from 'services/editor-commands';
 import { TWindowComponentName } from '../windows';
+import { THttpMethod } from './settings/widget-settings';
+import { TPlatform } from '../platforms';
+import { getAlertsConfig, TAlertType } from './alerts-config';
+import { getWidgetsConfig } from './widgets-config';
+import { WidgetDisplayData } from '.';
+import { DualOutputService } from 'services/dual-output';
+import { TDisplayType, VideoSettingsService } from 'services/settings-v2';
+import { IncrementalRolloutService } from 'app-services';
+import { EAvailableFeatures } from 'services/incremental-rollout';
 
 export interface IWidgetSourcesState {
   widgetSources: Dictionary<IWidgetSource>;
 }
 
+class WidgetsServiceViews extends ViewHandler<IWidgetSourcesState> {
+  get userService() {
+    return this.getServiceViews(UserService);
+  }
+
+  get widgetSources(): WidgetSource[] {
+    return Object.keys(this.state.widgetSources).map(id => this.getWidgetSource(id));
+  }
+
+  getWidgetSource(sourceId: string): WidgetSource {
+    return this.state.widgetSources[sourceId] ? new WidgetSource(sourceId) : null;
+  }
+
+  // hack since in the current iteration HostsService cannot have views be fetched
+  @Inject() hostsService: HostsService;
+
+  get testers(): { name: string; url: string }[] {
+    if (!this.userService.isLoggedIn) return;
+    const widgetTesters = makeWidgetTesters(this.hostsService.streamlabs);
+    return widgetTesters
+      .filter(tester => {
+        return tester.platforms.includes(this.userService.platform.type);
+      })
+      .map(tester => {
+        const url =
+          typeof tester.url === 'function'
+            ? tester.url(this.userService.platform.type)
+            : tester.url;
+
+        return {
+          url,
+          name: tester.name,
+        };
+      });
+  }
+}
+
 @InitAfter('SourcesService')
-export class WidgetsService extends StatefulService<IWidgetSourcesState>
+export class WidgetsService
+  extends StatefulService<IWidgetSourcesState>
   implements IWidgetsServiceApi {
   static initialState: IWidgetSourcesState = {
     widgetSources: {},
@@ -38,8 +82,12 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
   @Inject() scenesService: ScenesService;
   @Inject() sourcesService: SourcesService;
   @Inject() hostsService: HostsService;
-  @Inject() videoService: VideoService;
   @Inject() editorCommandsService: EditorCommandsService;
+  @Inject() dualOutputService: DualOutputService;
+  @Inject() videoSettingsService: VideoSettingsService;
+  @Inject() incrementalRolloutService: IncrementalRolloutService;
+
+  widgetDisplayData = WidgetDisplayData(); // cache widget display data
 
   protected init() {
     // sync widgetSources with sources
@@ -69,24 +117,47 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     });
   }
 
+  get views() {
+    return new WidgetsServiceViews(this.state);
+  }
+
+  // This is only here to get the obs-importer test working until I can figure out why.
+  get widgetSources(): WidgetSource[] {
+    return Object.keys(this.state.widgetSources).map(id => this.getWidgetSource(id));
+  }
+
+  getWidgetSource(sourceId: string): WidgetSource {
+    return this.state.widgetSources[sourceId] ? new WidgetSource(sourceId) : null;
+  }
+
   createWidget(type: WidgetType, name?: string): SceneItem {
     if (!this.userService.isLoggedIn) return;
 
-    const scene = this.scenesService.views.activeScene;
-    const widget = WidgetDefinitions[type];
+    // TODO: index
+    // DonationGoal is not defined in widgetsConfig, lots of them commented out
+    // @ts-ignore
+    const widget = this.widgetsConfig[type] || WidgetDefinitions[type];
+    // TODO: index
+    // @ts-ignore
+    const widgetTransform = this.widgetsConfig[type]?.defaultTransform || WidgetDefinitions[type];
 
     const suggestedName =
       name ||
-      namingHelpers.suggestName(name || widget.name, (name: string) => {
+      namingHelpers.suggestName(name || WidgetDisplayData()[type]?.name, (name: string) => {
         return this.sourcesService.views.getSourcesByName(name).length;
       });
 
     // Calculate initial position
-    const rect = new ScalableRectangle({ x: 0, y: 0, width: widget.width, height: widget.height });
+    const rect = new ScalableRectangle({
+      x: 0,
+      y: 0,
+      width: widgetTransform.width,
+      height: widgetTransform.height,
+    });
 
-    rect.withAnchor(widget.anchor, () => {
-      rect.x = widget.x * this.videoService.baseWidth;
-      rect.y = widget.y * this.videoService.baseHeight;
+    rect.withAnchor(widgetTransform.anchor, () => {
+      rect.x = widgetTransform.x * this.videoSettingsService.baseResolutions.horizontal.baseWidth;
+      rect.y = widgetTransform.y * this.videoSettingsService.baseResolutions.horizontal.baseHeight;
     });
 
     const item = this.editorCommandsService.executeCommand(
@@ -95,9 +166,13 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
       suggestedName,
       'browser_source',
       {
-        url: widget.url(this.hostsService.streamlabs, this.userService.widgetToken),
-        width: widget.width,
-        height: widget.height,
+        // TODO: index
+        // @ts-ignore
+        url: this.widgetsConfig[type]
+          ? widget.url
+          : widget.url(this.hostsService.streamlabs, this.userService.widgetToken),
+        width: widgetTransform.width,
+        height: widgetTransform.height,
       },
       {
         sourceAddOptions: {
@@ -112,18 +187,11 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
             y: rect.y,
           },
         },
+        display: 'horizontal',
       },
     );
 
     return item;
-  }
-
-  getWidgetSources(): WidgetSource[] {
-    return Object.keys(this.state.widgetSources).map(id => this.getWidgetSource(id));
-  }
-
-  getWidgetSource(sourceId: string): WidgetSource {
-    return this.state.widgetSources[sourceId] ? new WidgetSource(sourceId) : null;
   }
 
   getWidgetUrl(type: WidgetType) {
@@ -135,29 +203,34 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     return WidgetType[type] as TWindowComponentName;
   }
 
-  getWidgetSettingsService(type: WidgetType): WidgetSettingsService<any> {
-    const serviceName = `${this.getWidgetComponent(type)}Service`;
+  getWidgetSettingsService(type: WidgetType): any {
     const servicesManager: ServicesManager = ServicesManager.instance;
+    const serviceName = `${this.getWidgetComponent(type)}Service`;
     return servicesManager.getResource(serviceName);
   }
 
-  getTesters(): { name: string; url: string }[] {
-    if (!this.userService.isLoggedIn) return;
-    return WidgetTesters.filter(tester => {
-      return tester.platforms.includes(this.userService.platform.type);
-    }).map(tester => {
-      return {
-        name: tester.name,
-        url: tester.url(this.hostsService.streamlabs, this.userService.platform.type),
-      };
-    });
+  /**
+   * @deprecated use .playAlert() instead
+   */
+  @Throttle(1000)
+  test(testerName: string) {
+    const tester = this.views.testers.find(tester => tester.name === testerName);
+    const headers = authorizedHeaders(this.userService.apiToken);
+    return fetch(new Request(tester.url, { headers, method: 'POST' }));
   }
 
   @Throttle(1000)
-  test(testerName: string) {
-    const tester = this.getTesters().find(tester => tester.name === testerName);
+  playAlert(alertType: TAlertType) {
+    const config = this.alertsConfig[alertType];
+    const host = this.hostsService.streamlabs;
     const headers = authorizedHeaders(this.userService.apiToken);
-    fetch(new Request(tester.url, { headers }));
+
+    return fetch(
+      new Request(`https://${host}/api/v5/widgets/desktop/test/${alertType}`, {
+        headers,
+        method: 'POST',
+      }),
+    );
   }
 
   private previewSourceWatchers: Dictionary<Subscription> = {};
@@ -173,11 +246,15 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     this.previewSourceWatchers[previewSourceId] = this.sourcesService.sourceUpdated.subscribe(
       sourceModel => {
         if (sourceModel.sourceId !== sourceId) return;
-        const widget = this.getWidgetSource(sourceId);
+        const widget = this.views.getWidgetSource(sourceId);
         const source = widget.getSource();
         const newPreviewSettings = cloneDeep(source.getSettings());
         delete newPreviewSettings.shutdown;
-        newPreviewSettings.url = widget.getSettingsService().getApiSettings().previewUrl;
+        // TODO: index
+        // @ts-ignore
+        const config = this.widgetsConfig[widget.type];
+        newPreviewSettings.url =
+          config?.previewUrl || widget.getSettingsService().getApiSettings().previewUrl;
         const previewSource = widget.getPreviewSource();
         previewSource.updateSettings(newPreviewSettings);
         previewSource.refresh();
@@ -186,6 +263,14 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
   }
 
   stopSyncPreviewSource(previewSourceId: string) {
+    if (!this.previewSourceWatchers[previewSourceId]) {
+      console.warn(
+        'Trying to destroy preview source',
+        previewSourceId,
+        'which is not on the watcher list, perhaps called twice?',
+      );
+      return;
+    }
     this.previewSourceWatchers[previewSourceId].unsubscribe();
     delete this.previewSourceWatchers[previewSourceId];
   }
@@ -200,7 +285,7 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
     const data = this.exportWidgetJSON(widgetItem);
     const json = JSON.stringify(data, null, 2);
 
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       fs.writeFile(path, json, err => {
         if (err) {
           reject(err);
@@ -216,9 +301,13 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
    * Used for converting browser_source to streamlabs widgets when importing OBS scene collection
    * returns -1 if it's no type detected
    */
-  getWidgetTypeByUrl(url: string): WidgetType {
+  getWidgetTypeByUrl(url: string): WidgetType | -1 {
+    if (!this.userService.views.isLoggedIn) return -1;
+
     const type = Number(
       Object.keys(WidgetDefinitions).find(WidgetType => {
+        // TODO: index
+        // @ts-ignore
         let regExpStr = WidgetDefinitions[WidgetType].url(this.hostsService.streamlabs, '')
           .split('?')[0]
           .replace(/\//g, '\\/');
@@ -243,7 +332,7 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
 
   private unregister(sourceId: string) {
     if (!this.state.widgetSources[sourceId]) return;
-    const widgetSource = this.getWidgetSource(sourceId);
+    const widgetSource = this.views.getWidgetSource(sourceId);
     if (widgetSource.previewSourceId) widgetSource.destroyPreviewSource();
     this.REMOVE_WIDGET_SOURCE(sourceId);
   }
@@ -267,16 +356,24 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
       settings,
       name: source.name,
       type: source.getPropertiesManagerSettings().widgetType,
-      x: widgetItem.transform.position.x / this.videoService.baseWidth,
-      y: widgetItem.transform.position.y / this.videoService.baseHeight,
-      scaleX: widgetItem.transform.scale.x / this.videoService.baseWidth,
-      scaleY: widgetItem.transform.scale.y / this.videoService.baseHeight,
+      x:
+        widgetItem.transform.position.x /
+        this.videoSettingsService.baseResolutions.horizontal.baseWidth,
+      y:
+        widgetItem.transform.position.y /
+        this.videoSettingsService.baseResolutions.horizontal.baseHeight,
+      scaleX:
+        widgetItem.transform.scale.x /
+        this.videoSettingsService.baseResolutions.horizontal.baseWidth,
+      scaleY:
+        widgetItem.transform.scale.y /
+        this.videoSettingsService.baseResolutions.horizontal.baseHeight,
     };
   }
 
   /**
    * Load a widget file from the given path
-   * @param path the path to the widget file to laod
+   * @param path the path to the widget file to load
    * @param sceneId the id of the scene to load into
    */
   async loadWidgetFile(path: string, sceneId: string) {
@@ -312,24 +409,124 @@ export class WidgetsService extends StatefulService<IWidgetSourcesState>
 
     // Otherwise, create a new one
     if (!widgetItem) {
-      widgetItem = scene.createAndAddSource(scene.name, 'browser_source');
+      widgetItem = scene.createAndAddSource(scene.name, 'browser_source', {
+        display: 'horizontal',
+      });
     }
 
+    // create widget from horizontal scene item
+    this.createWidgetFromJSON(
+      widget,
+      widgetItem,
+      this.videoSettingsService.baseResolutions.horizontal.baseWidth,
+      this.videoSettingsService.baseResolutions.horizontal.baseHeight,
+      'horizontal',
+    );
+
+    // if this is a dual output scene, also create the vertical scene item
+    if (this.dualOutputService.views.hasNodeMap()) {
+      Promise.resolve(
+        this.dualOutputService.actions.return.createOrAssignOutputNode(
+          widgetItem,
+          'vertical',
+          false,
+          widgetItem.sceneId,
+        ),
+      ).then(verticalSceneItem => {
+        this.createWidgetFromJSON(
+          widget,
+          verticalSceneItem,
+          this.videoSettingsService.baseResolutions.horizontal.baseWidth,
+          this.videoSettingsService.baseResolutions.horizontal.baseHeight,
+          'vertical',
+        );
+      });
+    }
+  }
+
+  createWidgetFromJSON(
+    widget: ISerializableWidget,
+    widgetItem: SceneItem,
+    baseWidth: number,
+    baseHeight: number,
+    display: TDisplayType,
+  ) {
     const source = widgetItem.getSource();
 
     source.setName(widget.name);
     source.updateSettings(widget.settings);
     source.replacePropertiesManager('widget', { widgetType: widget.type });
+
     widgetItem.setTransform({
       position: {
-        x: widget.x * this.videoService.baseWidth,
-        y: widget.y * this.videoService.baseHeight,
+        x: display === 'vertical' ? 0 : widget.x * baseWidth,
+        y: display === 'vertical' ? 0 : widget.y * baseHeight,
       },
       scale: {
-        x: widget.scaleX * this.videoService.baseWidth,
-        y: widget.scaleY * this.videoService.baseHeight,
+        x: widget.scaleX * baseWidth,
+        y: widget.scaleY * baseHeight,
       },
     });
+  }
+
+  get widgetsConfig() {
+    // Widgets that have been ported to the new backend API at /api/v5/widgets/desktop
+    const widgetsWithNewAPI: WidgetType[] = [];
+
+    // The new chatbox requires the new widget API, add it here if the user is under incremental
+    if (this.incrementalRolloutService.views.featureIsEnabled(EAvailableFeatures.newChatBox)) {
+      widgetsWithNewAPI.push(WidgetType.ChatBox);
+    }
+
+    return getWidgetsConfig(
+      this.hostsService.streamlabs,
+      this.userService.widgetToken,
+      widgetsWithNewAPI,
+    );
+  }
+
+  get alertsConfig() {
+    const platforms = Object.keys(this.userService.views.platforms || []) as TPlatform[];
+    return getAlertsConfig(this.hostsService.streamlabs, platforms);
+  }
+
+  // make a request to widgets API
+  async request(req: {
+    url: string;
+    method?: THttpMethod;
+    body?: any;
+    headers?: Record<string, string>;
+  }): Promise<any> {
+    const method = req.method || 'GET';
+    const headers = authorizedHeaders(this.userService.apiToken);
+    headers.append('Content-Type', 'application/json');
+
+    if (req.headers) {
+      for (const [key, value] of Object.entries(req.headers)) {
+        headers.set(key, value);
+      }
+    }
+
+    const request = new Request(req.url, {
+      headers,
+      method,
+      body: req.body ? JSON.stringify(req.body) : void 0,
+    });
+
+    return fetch(request)
+      .then(res => {
+        return Promise.resolve(res);
+      })
+      .then(handleResponse);
+  }
+
+  settingsInvalidated = new Subject();
+
+  /**
+   * Ask the WidgetSetting window to re-load data
+   */
+  invalidateSettingsWindow() {
+    this.settingsInvalidated.next();
   }
 
   @mutation()

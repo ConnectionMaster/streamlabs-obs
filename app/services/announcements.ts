@@ -1,15 +1,24 @@
-import { StatefulService, mutation } from './core/stateful-service';
+import { PersistentStatefulService, mutation, InitAfter, ViewHandler } from 'services/core/index';
 import { UserService } from './user';
 import { HostsService } from './hosts';
+import { Inject, Service } from 'services';
 import { AppService } from 'services/app';
-import { Inject } from './core/injector';
 import { authorizedHeaders, jfetch } from '../util/requests';
 import path from 'path';
 import fs from 'fs';
-import { PatchNotesService } from 'services/patch-notes';
-import { I18nService } from 'services/i18n';
+import { I18nService, $t } from 'services/i18n';
+import {
+  NotificationsService,
+  ENotificationType,
+  ENotificationSubType,
+} from 'services/notifications';
+import { CustomizationService } from './customization';
+import { JsonrpcService } from 'services/api/jsonrpc/jsonrpc';
+import { WindowsService } from 'services/windows';
+import { RealmObject } from './realm';
+import { ObjectSchema } from 'realm';
 
-interface IAnnouncementsInfo {
+export interface IAnnouncementsInfo {
   id: number;
   header: string;
   subHeader: string;
@@ -17,40 +26,152 @@ interface IAnnouncementsInfo {
   thumbnail: string;
   link: string;
   linkTarget: 'external' | 'slobs';
+  type: 0 | 1;
   params?: { [key: string]: string };
   closeOnLink?: boolean;
 }
 
-export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
+class AnnouncementInfo extends RealmObject {
+  id: number;
+  header: string;
+  subHeader: string;
+  linkTitle: string;
+  thumbnail: string;
+  link: string;
+  linkTarget: 'external' | 'slobs';
+  type: 0 | 1;
+  params?: { [key: string]: string };
+  closeOnLink?: boolean;
+
+  static schema: ObjectSchema = {
+    name: 'AnnouncementInfo',
+    embedded: true,
+    properties: {
+      id: 'int',
+      header: 'string',
+      subHeader: 'string',
+      linkTitle: 'string',
+      thumbnail: 'string',
+      link: 'string',
+      linkTarget: 'string',
+      type: { type: 'int', default: 0 },
+      params: { type: 'dictionary', objectType: 'string' },
+      closeOnLink: { type: 'bool', default: false },
+    },
+  };
+}
+
+AnnouncementInfo.register();
+
+class AnnouncementsServiceEphemeralState extends RealmObject {
+  news: IAnnouncementsInfo[];
+  productUpdates: IAnnouncementsInfo[];
+  banner: IAnnouncementsInfo;
+
+  static schema: ObjectSchema = {
+    name: 'AnnouncementsServiceEphemeralState',
+    properties: {
+      news: {
+        type: 'list',
+        objectType: 'AnnouncementInfo',
+        default: [] as AnnouncementInfo[],
+      },
+      productUpdates: {
+        type: 'list',
+        objectType: 'AnnouncementInfo',
+        default: [] as AnnouncementInfo[],
+      },
+      banner: 'AnnouncementInfo',
+    },
+  };
+}
+
+AnnouncementsServiceEphemeralState.register();
+
+class AnnouncementsServicePersistedState extends RealmObject {
+  lastReadId: number;
+  lastReadProductUpdate: number;
+
+  static schema: ObjectSchema = {
+    name: 'AnnouncementsServicePersistedState',
+    properties: {
+      lastReadId: { type: 'int', default: 145 },
+      lastReadProductUpdate: { type: 'int', default: 0 },
+    },
+  };
+
+  protected onCreated(): void {
+    const data = localStorage.getItem('PersistentStatefulService-AnnouncementsService');
+
+    if (data) {
+      const parsed = JSON.parse(data);
+
+      this.db.write(() => {
+        Object.assign(this, parsed);
+      });
+    }
+  }
+}
+
+AnnouncementsServicePersistedState.register({ persist: true });
+
+@InitAfter('UserService')
+export class AnnouncementsService extends Service {
   @Inject() private hostsService: HostsService;
   @Inject() private userService: UserService;
   @Inject() private appService: AppService;
-  @Inject() private patchNotesService: PatchNotesService;
   @Inject() private i18nService: I18nService;
+  @Inject() private customizationService: CustomizationService;
+  @Inject() private notificationsService: NotificationsService;
+  @Inject() private jsonrpcService: JsonrpcService;
+  @Inject() private windowsService: WindowsService;
 
-  static initialState: IAnnouncementsInfo = {
-    id: null,
-    header: '',
-    subHeader: null,
-    link: null,
-    linkTitle: null,
-    thumbnail: null,
-    linkTarget: null,
-    params: null,
-    closeOnLink: false,
-  };
+  state = AnnouncementsServicePersistedState.inject();
+  currentAnnouncements = AnnouncementsServiceEphemeralState.inject();
 
-  async updateBanner() {
-    const newBanner = await this.fetchBanner();
-    this.SET_BANNER(newBanner);
+  init() {
+    super.init();
+    this.userService.userLogin.subscribe(() => {
+      this.fetchLatestNews();
+      this.getBanner();
+    });
+
+    // Open product updates modal once loading is finished
+    const sub = this.appService.loadingChanged.subscribe(() => {
+      if (this.appService.state.loading || !this.userService.isLoggedIn) return;
+      this.getProductUpdates();
+      // NOTE: this is generally not a good pattern for subscriptions but we don't have a better
+      // way to detect when the app first finishes loading
+      sub.unsubscribe();
+    });
   }
 
-  get bannerExists() {
-    return this.state.id !== null;
+  get newsExist() {
+    return this.currentAnnouncements.news.length > 0;
   }
 
-  async closeBanner(clickType: 'action' | 'dismissal') {
-    await this.postBannerClose(clickType);
+  async getNews() {
+    if (this.newsExist) return;
+    this.setNews(await this.fetchNews());
+  }
+
+  async getBanner() {
+    this.setBanner(await this.fetchBanner());
+  }
+
+  async getProductUpdates() {
+    const resp = await this.fetchProductUpdates();
+    if (!resp || !resp.lastUpdatedAt || resp.lastUpdatedAt <= this.state.lastReadProductUpdate) {
+      return;
+    }
+    this.setLastReadProductUpdate(resp.lastUpdatedAt);
+    this.setProductUpdates(resp.updates);
+    this.openProductUpdates();
+  }
+
+  seenNews() {
+    if (!this.newsExist) return;
+    this.setLatestRead(this.currentAnnouncements.news[0].id);
   }
 
   private get installDateProxyFilePath() {
@@ -88,69 +209,138 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
     return Date.now() - installationTimestamp < 1000 * 60 * 60 * 24 * 7;
   }
 
-  private get recentlyUpdatedTo017() {
-    const lastUpdatedVersion = this.patchNotesService.state.lastVersionSeen;
+  private async fetchLatestNews() {
+    const recentlyInstalled = await this.recentlyInstalled();
 
-    if (!lastUpdatedVersion) return false;
+    if (recentlyInstalled || !this.customizationService.state.enableAnnouncements) {
+      return;
+    }
 
-    const minorVersionRegex = /^(\d+\.\d+)\.\d+$/;
-    const minorVersion = lastUpdatedVersion.match(minorVersionRegex);
+    const req = this.formRequest(
+      `api/v5/slobs/announcements/status?clientId=${this.userService.getLocalUserId()}&lastAnnouncementId=${
+        this.state.lastReadId
+      }`,
+    );
+    const resp = await jfetch<{
+      newUnreadAnnouncements: boolean;
+      newUnreadAnnouncement?: IAnnouncementsInfo;
+    }>(req);
 
-    if (!minorVersion || !minorVersion[1]) return false;
-    if (minorVersion[1] !== '0.17') return false;
-    if (!this.patchNotesService.state.updateTimestamp) return false;
+    if (resp.newUnreadAnnouncements) {
+      this.notificationsService.push({
+        message: resp.newUnreadAnnouncement.header,
+        type: ENotificationType.SUCCESS,
+        subType: ENotificationSubType.NEWS,
+        playSound: false,
+        lifeTime: -1,
+        action: this.jsonrpcService.createRequest(Service.getResourceId(this), 'openNewsWindow'),
+      });
+    }
+  }
 
-    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  private async fetchNews() {
+    const endpoint = `api/v5/slobs/announcements/get?clientId=${this.userService.getLocalUserId()}&locale=${
+      this.i18nService.state.locale
+    }`;
+    const req = this.formRequest(endpoint);
+    try {
+      const newState = await jfetch<IAnnouncementsInfo[]>(req);
 
-    return Date.parse(this.patchNotesService.state.updateTimestamp) > twoDaysAgo;
+      console.log(newState);
+
+      // splits out params for local links eg PlatformAppStore?appId=<app-id>
+      newState.forEach(item => {
+        const queryString = item.link.split('?')[1];
+        if (item.linkTarget === 'slobs' && queryString) {
+          item.link = item.link.split('?')[0];
+          item.params = {};
+          queryString.split(',').forEach((query: string) => {
+            const [key, value] = query.split('=');
+            item.params[key] = value;
+          });
+        }
+      });
+
+      return newState[0].id ? newState : this.currentAnnouncements.news;
+    } catch (e: unknown) {
+      return this.currentAnnouncements.news;
+    }
   }
 
   private async fetchBanner() {
     const recentlyInstalled = await this.recentlyInstalled();
 
-    if (!this.userService.isLoggedIn || recentlyInstalled || this.recentlyUpdatedTo017) {
-      return this.state;
+    if (recentlyInstalled || !this.customizationService.state.enableAnnouncements) {
+      return null;
     }
+
     const endpoint = `api/v5/slobs/announcement/get?clientId=${this.userService.getLocalUserId()}&locale=${
       this.i18nService.state.locale
     }`;
     const req = this.formRequest(endpoint);
+
     try {
       const newState = await jfetch<IAnnouncementsInfo>(req);
-
-      // splits out params for local links eg PlatformAppStore?appId=<app-id>
-      const queryString = newState.link.split('?')[1];
-      if (newState.linkTarget === 'slobs' && queryString) {
-        newState.link = newState.link.split('?')[0];
-        newState.params = {};
-        queryString.split(',').forEach((query: string) => {
-          const [key, value] = query.split('=');
-          newState.params[key] = value;
-        });
-      }
-
-      return newState.id ? newState : this.state;
-    } catch (e) {
-      return this.state;
+      return newState.id ? newState : null;
+    } catch (e: unknown) {
+      return null;
     }
   }
 
-  private async postBannerClose(clickType: 'action' | 'dismissal') {
-    const endpoint = 'api/v5/slobs/announcement/close';
-    const postData = {
-      method: 'POST',
-      body: JSON.stringify({
-        clickType,
-        clientId: this.userService.getLocalUserId(),
-        announcementId: this.state.id,
-      }),
-      headers: new Headers({ 'Content-Type': 'application/json' }),
-    };
-    const req = this.formRequest(endpoint, postData);
+  async fetchProductUpdates(): Promise<{
+    updates?: IAnnouncementsInfo[];
+    lastUpdatedAt: number | null;
+  }> {
+    const recentlyInstalled = await this.recentlyInstalled();
+
+    if (recentlyInstalled || !this.customizationService.state.enableAnnouncements) {
+      return null;
+    }
+
+    const endpoint = `api/v5/slobs/product-updates/get?clientId=${this.userService.getLocalUserId()}&locale=${
+      this.i18nService.state.locale
+    }`;
+    const req = this.formRequest(endpoint);
     try {
-      await fetch(req);
-      this.CLEAR_BANNER();
-    } catch (e) {}
+      const resp = await jfetch<{ updates: IAnnouncementsInfo[]; lastUpdatedAt: number }>(req);
+      return resp;
+    } catch (e: unknown) {
+      return { lastUpdatedAt: null };
+    }
+  }
+
+  async closeNews(newsId: number) {
+    const endpoint = 'api/v5/slobs/announcement/close';
+    const req = this.formRequest(endpoint, {
+      method: 'POST',
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        clientId: this.userService.getLocalUserId(),
+        announcementId: newsId,
+        clickType: 'action',
+      }),
+    });
+
+    return jfetch(req);
+  }
+
+  async closeBanner(clickType: 'action' | 'dismissal') {
+    const endpoint = 'api/v5/slobs/announcement/close';
+    const req = this.formRequest(endpoint, {
+      method: 'POST',
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        clientId: this.userService.getLocalUserId(),
+        announcementId: this.currentAnnouncements.banner.id,
+        clickType,
+      }),
+    });
+
+    try {
+      await jfetch(req);
+    } finally {
+      this.setBanner(null);
+    }
   }
 
   private formRequest(endpoint: string, options: any = {}) {
@@ -160,13 +350,62 @@ export class AnnouncementsService extends StatefulService<IAnnouncementsInfo> {
     return new Request(url, { ...options, headers });
   }
 
-  @mutation()
-  SET_BANNER(banner: IAnnouncementsInfo) {
-    this.state = banner;
+  openNewsWindow() {
+    this.windowsService.showWindow({
+      componentName: 'NotificationsAndNews',
+      title: $t('Notifications & News'),
+      size: {
+        width: 500,
+        height: 600,
+      },
+    });
   }
 
-  @mutation()
-  CLEAR_BANNER() {
-    this.state = AnnouncementsService.initialState;
+  openProductUpdates() {
+    this.windowsService.showWindow({
+      componentName: 'MarketingModal',
+      title: $t("What's New"),
+      size: {
+        width: 650,
+        height: 700,
+      },
+    });
+  }
+
+  setNews(news: IAnnouncementsInfo[]) {
+    this.currentAnnouncements.db.write(() => {
+      this.currentAnnouncements.news = news;
+    });
+  }
+
+  clearNews() {
+    this.currentAnnouncements.db.write(() => {
+      this.currentAnnouncements.news = [];
+      this.currentAnnouncements.banner = null;
+    });
+  }
+
+  setProductUpdates(updates: IAnnouncementsInfo[]) {
+    this.currentAnnouncements.db.write(() => {
+      this.currentAnnouncements.productUpdates = updates;
+    });
+  }
+
+  setBanner(banner: IAnnouncementsInfo | null) {
+    this.currentAnnouncements.db.write(() => {
+      this.currentAnnouncements.banner = banner;
+    });
+  }
+
+  setLastReadProductUpdate(timestamp: number) {
+    this.state.db.write(() => {
+      this.state.lastReadProductUpdate = timestamp;
+    });
+  }
+
+  setLatestRead(id: number) {
+    this.state.db.write(() => {
+      this.state.lastReadId = id;
+    });
   }
 }

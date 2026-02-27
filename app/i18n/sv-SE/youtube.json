@@ -12,7 +12,7 @@
   "Go to YouTube Live Dashboard": "Go to YouTube Live Dashboard",
   "Create New Event": "Create New Event",
   "YouTube Chat": "YouTube Chat",
-  "This action cannot be performed inside Streamlabs OBS. To interact with chat, you can open this chat in a web browser.": "This action cannot be performed inside Streamlabs OBS. To interact with chat, you can open this chat in a web browser.",
+  "This action cannot be performed inside Streamlabs Desktop. To interact with chat, you can open this chat in a web browser.": "This action cannot be performed inside Streamlabs Desktop. To interact with chat, you can open this chat in a web browser.",
   "Open In Web Browser": "Open In Web Browser",
   "Privacy": "Sekretess",
   "Public": "Public",
@@ -31,6 +31,8 @@
   "Additional Settings": "Additional Settings",
   "Open Youtube Studio": "Open Youtube Studio",
   "360° video": "360° video",
+  "Enable Auto-start": "Enable Auto-start",
+  "Enable Auto-stop": "Enable Auto-stop",
   "latencyTooltip": "A low-latency stream can reduce the amount of time it takes for video to be visible to users watching a broadcast, though it can also affect the smoothness of playback.",
   "Enabling auto-start will automatically start the stream when you start sending data from your streaming software": "Enabling auto-start will automatically start the stream when you start sending data from your streaming software",
   "Enabling auto-stop will automatically stop the stream when you stop sending data from your streaming software": "Enabling auto-stop will automatically stop the stream when you stop sending data from your streaming software",
@@ -38,5 +40,13 @@
   "Auto-start is disabled for your broadcast. You should manually publish your stream from Youtube Studio": "Auto-start is disabled for your broadcast. You should manually publish your stream from Youtube Studio",
   "Made for kids": "Made for kids",
   "Features like personalized ads and live chat won't be available on live streams made for kids.": "Features like personalized ads and live chat won't be available on live streams made for kids.",
-  "Try our new thumbnail editor": "Try our new thumbnail editor"
+  "YouTube token has expired, re-login or re-merge YouTube account": "YouTube token has expired, re-login or re-merge YouTube account",
+  "Thumbnail image content is invalid.": "Thumbnail image content is invalid.",
+  "Thumbnail file does not include image content.": "Thumbnail file does not include image content.",
+  "Permission missing to upload thumbnails.": "Permission missing to upload thumbnails.",
+  "Video does not exist. Thumbnail upload failed.": "Video does not exist. Thumbnail upload failed.",
+  "Exceeded thumbnail upload quota. Please try again later.": "Exceeded thumbnail upload quota. Please try again later.",
+  "YouTube thumbnail image is too large. Maximum size is 2MB.": "YouTube thumbnail image is too large. Maximum size is 2MB.",
+  "Please upload thumbnail manually on YouTube.": "Please upload thumbnail manually on YouTube.",
+  "Stream Shift Error: YouTube is not live": "Stream Shift Error: YouTube is not live"
 }

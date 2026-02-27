@@ -1,4 +1,5 @@
 import { Component } from 'vue-property-decorator';
+import { UserService } from '../../services/user';
 import { Inject } from 'services/core/injector';
 import ModalLayout from 'components/ModalLayout.vue';
 import TsxComponent from 'components/tsx-component';
@@ -12,6 +13,7 @@ import styles from './EventFilterMenu.m.less';
 export default class EventFilterMenu extends TsxComponent<{}> {
   @Inject() windowsService: WindowsService;
   @Inject() recentEventsService: RecentEventsService;
+  @Inject() userService: UserService;
 
   cancel() {
     this.windowsService.closeChildWindow();
@@ -41,6 +43,14 @@ export default class EventFilterMenu extends TsxComponent<{}> {
     return this.resubFilters.hasOwnProperty('resub') && this.resubFilters['resub'].value;
   }
 
+  get isTwitch() {
+    return this.userService.platform.type === 'twitch';
+  }
+
+  get isTrovo() {
+    return this.userService.platform.type === 'trovo';
+  }
+
   updateFilter(filter: string, value: boolean | number) {
     this.recentEventsService.updateFilterPreference(filter, value);
   }
@@ -63,8 +73,8 @@ export default class EventFilterMenu extends TsxComponent<{}> {
   get renderGeneralFilters() {
     return (
       <div class={styles.generalFilters}>
-        {Object.keys(this.mainFilters).map(filter => (
-          <div>{this.renderBooleanInput(filter, this.mainFilters[filter])}</div>
+        {Object.entries(this.mainFilters).map(([name, filter]) => (
+          <div>{this.renderBooleanInput(name, filter)}</div>
         ))}
       </div>
     );
@@ -75,9 +85,9 @@ export default class EventFilterMenu extends TsxComponent<{}> {
       <div class={styles.halfWidth}>
         <div>{this.renderBooleanInput('subscription', this.subFilters['subscription'], true)}</div>
         {this.subsEnabled &&
-          Object.keys(this.subFilters)
-            .filter(filter => filter !== 'subscription')
-            .map(filter => <div>{this.renderBooleanInput(filter, this.subFilters[filter])}</div>)}
+          Object.entries(this.subFilters)
+            .filter(([name]) => name !== 'subscription')
+            .map(([name, filter]) => <div>{this.renderBooleanInput(name, filter)}</div>)}
       </div>
     );
   }
@@ -88,16 +98,14 @@ export default class EventFilterMenu extends TsxComponent<{}> {
         <div>{this.renderBooleanInput('resub', this.resubFilters['resub'], true)}</div>
         <div class={styles.resubOptions}>
           {this.resubsEnabled &&
-            Object.keys(this.resubFilters)
+            Object.entries(this.resubFilters)
               .filter(
-                key =>
-                  !/months/.test(key) &&
-                  key !== 'resub' &&
-                  key !== 'filter_subscription_minimum_enabled',
+                ([name]) =>
+                  !/months/.test(name) &&
+                  name !== 'resub' &&
+                  name !== 'filter_subscription_minimum_enabled',
               )
-              .map(filter => (
-                <div>{this.renderBooleanInput(filter, this.resubFilters[filter])}</div>
-              ))}
+              .map(([name, filter]) => <div>{this.renderBooleanInput(name, filter)}</div>)}
         </div>
         {this.renderResubMonthsFilter}
       </div>
@@ -105,6 +113,9 @@ export default class EventFilterMenu extends TsxComponent<{}> {
   }
 
   get renderResubMonthsFilter() {
+    if (!this.isTwitch) {
+      return;
+    }
     const minEnabledFilter = this.resubFilters['filter_subscription_minimum_enabled'];
     const minMonthsFilter = this.minMonthsFilter['filter_subscription_minimum_months'];
     return (
@@ -132,10 +143,12 @@ export default class EventFilterMenu extends TsxComponent<{}> {
       <ModalLayout customControls showControls={false}>
         <div slot="content" class={styles.flexColumn}>
           {this.renderGeneralFilters}
-          <div class={styles.subFilters}>
-            {this.renderSubFilters}
-            {this.renderResubFilters}
-          </div>
+          {(this.isTwitch || this.isTrovo) && (
+            <div class={styles.subFilters}>
+              {this.renderSubFilters}
+              {this.renderResubFilters}
+            </div>
+          )}
         </div>
         <div slot="controls">
           <button class="button button--action" onClick={this.cancel}>

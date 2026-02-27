@@ -4,43 +4,54 @@
 import cloneDeep from 'lodash/cloneDeep';
 import { mutation, StatefulService } from 'services/core/stateful-service';
 import electron from 'electron';
-import Vue, { Component } from 'vue';
+import Vue from 'vue';
 import Utils from 'services/utils';
 import { Subject } from 'rxjs';
 import { throttle } from 'lodash-decorators';
+import * as remote from '@electron/remote';
 
-import Main from 'components/windows/Main.vue';
-import Settings from 'components/windows/settings/Settings.vue';
 import FFZSettings from 'components/windows/FFZSettings.vue';
-import SourcesShowcase from 'components/windows/SourcesShowcase.vue';
 import SceneTransitions from 'components/windows/SceneTransitions.vue';
-import AddSource from 'components/windows/AddSource.vue';
-import RenameSource from 'components/windows/RenameSource.vue';
-import NameScene from 'components/windows/NameScene.vue';
-import NameFolder from 'components/windows/NameFolder.vue';
-import SourceProperties from 'components/windows/SourceProperties.vue';
-import SourceFilters from 'components/windows/SourceFilters.vue';
-import AddSourceFilter from 'components/windows/AddSourceFilter';
-import AdvancedAudio from 'components/windows/AdvancedAudio';
-import Notifications from 'components/windows/Notifications.vue';
-import Troubleshooter from 'components/windows/Troubleshooter.vue';
-import Blank from 'components/windows/Blank.vue';
-import ManageSceneCollections from 'components/windows/ManageSceneCollections.vue';
-import RecentEvents from 'components/windows/RecentEvents.vue';
+import {
+  NameFolder,
+  NameScene,
+  GoLiveWindow,
+  EditStreamWindow,
+  IconLibraryProperties,
+  ScreenCaptureProperties,
+  GuestCamProperties,
+  SharedComponentsLibrary,
+  SourceProperties,
+  RenameSource,
+  AdvancedStatistics,
+  ManageSceneCollections,
+  WidgetWindow,
+  CustomCodeWindow,
+  SafeMode,
+  AdvancedAudio,
+  SourceShowcase,
+  SourceFilters,
+  MediaGallery,
+  Projector,
+  AddSource,
+  WelcomeToPrime,
+  NotificationsAndNews,
+  PlatformAppPopOut,
+  RecentEventsWindow,
+  EditTransform,
+  Blank,
+  Main,
+  MultistreamChatInfo,
+  MarketingModal,
+  Settings,
+  Troubleshooter,
+} from 'components/shared/ReactComponentList';
+
+import SourcePropertiesDeprecated from 'components/windows/SourceProperties.vue';
 import GameOverlayEventFeed from 'components/windows/GameOverlayEventFeed';
-import Projector from 'components/windows/Projector.vue';
-import MediaGallery from 'components/windows/MediaGallery.vue';
-import PlatformAppPopOut from 'components/windows/PlatformAppPopOut.vue';
-import EditTransform from 'components/windows/EditTransform';
 import EventFilterMenu from 'components/windows/EventFilterMenu';
-import AdvancedStatistics from 'components/windows/AdvancedStatistics';
-import OverlayWindow from 'components/windows/OverlayWindow.vue';
 import OverlayPlaceholder from 'components/windows/OverlayPlaceholder';
 import BrowserSourceInteraction from 'components/windows/BrowserSourceInteraction';
-import WelcomeToPrime from 'components/windows/WelcomeToPrime';
-import GoLiveWindow from 'components/windows/go-live/GoLiveWindow';
-import EditStreamWindow from 'components/windows/go-live/EditStreamWindow';
-import ScheduleStreamWindow from 'components/windows/go-live/ScheduleStreamWindow';
 
 import BitGoal from 'components/widgets/goal/BitGoal';
 import DonationGoal from 'components/widgets/goal/DonationGoal';
@@ -50,26 +61,24 @@ import SupporterGoal from 'components/widgets/goal/SupporterGoal';
 import SubscriberGoal from 'components/widgets/goal/SubscriberGoal';
 import FollowerGoal from 'components/widgets/goal/FollowerGoal';
 import CharityGoal from 'components/widgets/goal/CharityGoal';
-import ChatBox from 'components/widgets/ChatBox.vue';
-import ViewerCount from 'components/widgets/ViewerCount.vue';
 import StreamBoss from 'components/widgets/StreamBoss.vue';
-import DonationTicker from 'components/widgets/DonationTicker.vue';
 import Credits from 'components/widgets/Credits.vue';
 import EventList from 'components/widgets/EventList.vue';
 import TipJar from 'components/widgets/TipJar.vue';
-import SponsorBanner from 'components/widgets/SponsorBanner.vue';
 import MediaShare from 'components/widgets/MediaShare';
 import AlertBox from 'components/widgets/AlertBox.vue';
 import SpinWheel from 'components/widgets/SpinWheel.vue';
+import Poll from 'components/widgets/Poll';
+import ChatHighlight from 'components/widgets/ChatHighlight';
+import SuperchatGoal from 'components/widgets/goal/SuperchatGoal';
 
-import PerformanceMetrics from 'components/PerformanceMetrics.vue';
 import { byOS, OS } from 'util/operating-systems';
 import { UsageStatisticsService } from './usage-statistics';
 import { Inject } from 'services/core';
 import MessageBoxModal from 'components/shared/modals/MessageBoxModal';
-import Modal from 'components/shared/modals/modal';
+import Modal from 'components/shared/modals/Modal';
 
-const { ipcRenderer, remote } = electron;
+const { ipcRenderer } = electron;
 const BrowserWindow = remote.BrowserWindow;
 const uuid = window['require']('uuid/v4');
 
@@ -81,27 +90,25 @@ export function getComponents() {
     Settings,
     FFZSettings,
     SceneTransitions,
-    SourcesShowcase,
     RenameSource,
     AddSource,
     NameScene,
     NameFolder,
+    SafeMode,
     SourceProperties,
+    SourcePropertiesDeprecated,
     SourceFilters,
-    AddSourceFilter,
     Blank,
     AdvancedAudio,
-    Notifications,
+    NotificationsAndNews,
     Troubleshooter,
     ManageSceneCollections,
     Projector,
-    RecentEvents,
+    RecentEvents: RecentEventsWindow,
     MediaGallery,
     PlatformAppPopOut,
     EditTransform,
-    OverlayWindow,
     OverlayPlaceholder,
-    PerformanceMetrics,
     BrowserSourceInteraction,
     EventFilterMenu,
     GameOverlayEventFeed,
@@ -112,23 +119,30 @@ export function getComponents() {
     StarsGoal,
     SupporterGoal,
     SubscriberGoal,
+    SuperchatGoal,
+    MultistreamChatInfo,
     CharityGoal,
-    ChatBox,
-    ViewerCount,
-    DonationTicker,
     Credits,
     EventList,
     TipJar,
-    SponsorBanner,
     StreamBoss,
     SubGoal,
     MediaShare,
     AlertBox,
     SpinWheel,
+    Poll,
+    ChatHighlight,
     WelcomeToPrime,
     GoLiveWindow,
     EditStreamWindow,
-    ScheduleStreamWindow,
+    IconLibraryProperties,
+    ScreenCaptureProperties,
+    GuestCamProperties,
+    SharedComponentsLibrary,
+    WidgetWindow,
+    CustomCodeWindow,
+    SourceShowcase,
+    MarketingModal,
   };
 }
 
@@ -147,8 +161,13 @@ export interface IWindowOptions extends Electron.BrowserWindowConstructorOptions
   isShown: boolean;
   title?: string;
   center?: boolean;
+  position?: {
+    x: number;
+    y: number;
+  };
   isPreserved?: boolean;
   preservePrevWindow?: boolean;
+  persistWebContents?: boolean;
   prevWindowOptions?: IWindowOptions;
   isFullScreen?: boolean;
 
@@ -156,6 +175,9 @@ export interface IWindowOptions extends Electron.BrowserWindowConstructorOptions
   // the display of elements we cannot draw over. During this time such elements, for example
   // BrowserViews and the OBS Display, will be hidden until the operation is complete.
   hideStyleBlockers: boolean;
+  // Occassionally a modal will be rendered over a window and need its own style blocker commands to
+  // display style blocking elements in the modal while hiding them in the window
+  modalOptions?: { hideStyleBlockers: boolean; visible: boolean };
 }
 
 interface IWindowsState {
@@ -187,7 +209,8 @@ export class WindowsService extends StatefulService<IWindowsState> {
       scaleFactor: 1,
       isShown: true,
       hideStyleBlockers: true,
-      title: `Streamlabs OBS - ${Utils.env.SLOBS_VERSION}`,
+      title: `Streamlabs Desktop - ${Utils.env.SLOBS_VERSION}`,
+      modalOptions: { hideStyleBlockers: false, visible: false },
     },
     child: {
       componentName: '',
@@ -241,12 +264,16 @@ export class WindowsService extends StatefulService<IWindowsState> {
     this.windows.main = BrowserWindow.fromId(windowIds.main);
     this.windows.child = BrowserWindow.fromId(windowIds.child);
 
+    // Background throttling can produce freezing on certain parts of the UI
+    this.windows.worker.webContents.setBackgroundThrottling(false);
+    this.windows.main.webContents.setBackgroundThrottling(false);
+
     this.updateScaleFactor('main');
     this.updateScaleFactor('child');
     this.windows.main.on('move', () => this.updateScaleFactor('main'));
     this.windows.child.on('move', () => this.updateScaleFactor('child'));
 
-    if (electron.remote.screen.getAllDisplays().length > 1) {
+    if (remote.screen.getAllDisplays().length > 1) {
       this.usageStatisticsService.recordFeatureUsage('MultipleDisplays');
     }
   }
@@ -255,14 +282,25 @@ export class WindowsService extends StatefulService<IWindowsState> {
   private updateScaleFactor(windowId: string) {
     const window = this.windows[windowId];
     if (window && !window.isDestroyed()) {
-      const bounds = window.getBounds();
-      const currentDisplay = electron.remote.screen.getDisplayMatching(bounds);
+      const bounds = byOS({
+        [OS.Windows]: () => remote.screen.dipToScreenRect(window, window.getBounds()),
+        [OS.Mac]: () => window.getBounds(),
+      });
+      const currentDisplay = remote.screen.getDisplayMatching(bounds);
       this.UPDATE_SCALE_FACTOR(windowId, currentDisplay.scaleFactor);
     }
   }
 
   getWindowIdFromElectronId(electronWindowId: number) {
     return Object.keys(this.windows).find(win => this.windows[win].id === electronWindowId);
+  }
+
+  getElectronWindowIdFromWindowId(windowId: string) {
+    return this.windows[windowId].id;
+  }
+
+  getIsChildWindowShown(componentName: string): boolean {
+    return this.state.child.isShown && this.state.child.componentName === componentName;
   }
 
   showWindow(options: Partial<IWindowOptions>) {
@@ -278,19 +316,12 @@ export class WindowsService extends StatefulService<IWindowsState> {
      * to workaround.
      */
     if (options.size && !Utils.env.CI) {
-      const {
-        width: screenWidth,
-        height: screenHeight,
-      } = electron.remote.screen.getDisplayMatching(this.windows.main.getBounds()).workAreaSize;
+      const { width: screenWidth, height: screenHeight } = remote.screen.getDisplayMatching(
+        this.windows.main.getBounds(),
+      ).workAreaSize;
 
-      const SCREEN_PERCENT = 0.75;
-
-      if (options.size.width > screenWidth || options.size.height > screenHeight) {
-        options.size = {
-          width: Math.round(screenWidth * SCREEN_PERCENT),
-          height: Math.round(screenHeight * SCREEN_PERCENT),
-        };
-      }
+      options.size.width = Math.min(options.size.width, screenWidth);
+      options.size.height = Math.min(options.size.height, screenHeight);
     }
 
     this.centerChildWindow(options);
@@ -320,7 +351,7 @@ export class WindowsService extends StatefulService<IWindowsState> {
           height: options.size.height,
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Recovering from error:', err);
 
       childWindow.setMinimumSize(options.size.width, options.size.height);
@@ -333,7 +364,31 @@ export class WindowsService extends StatefulService<IWindowsState> {
   getMainWindowDisplay() {
     const window = this.windows.main;
     const bounds = window.getBounds();
-    return electron.remote.screen.getDisplayMatching(bounds);
+    return remote.screen.getDisplayMatching(bounds);
+  }
+
+  /**
+   * A little hack to bring a window back to the front
+   * @remark copied from the external auth function
+   * @param child bring child window to front
+   */
+  setWindowOnTop(window: 'child' | 'main' | 'all' = 'main') {
+    const win = window === 'child' ? Utils.getChildWindow() : Utils.getMainWindow();
+    win.setAlwaysOnTop(true);
+    win.show();
+    win.focus();
+    win.setAlwaysOnTop(false);
+
+    // by default, we only bring the main window to the front
+    // so to bring them all to the front, the child window
+    // needs to go in front of the main window
+    if (window === 'all') {
+      const child = Utils.getChildWindow();
+      child.setAlwaysOnTop(true);
+      child.show();
+      child.focus();
+      child.setAlwaysOnTop(false);
+    }
   }
 
   async closeChildWindow() {
@@ -375,6 +430,28 @@ export class WindowsService extends StatefulService<IWindowsState> {
   /**
    * Creates a one-off window that will not impact or close
    * any existing windows, and will cease to exist when closed.
+   * @remark The `persistWebContents` window option property should **only** be used if the `BrowserView` or `WebContents`
+   * is shared with the main window and actions need to occur before the one-off window is destroyed.
+   *
+   * Electron's `close` event works similarly to the native `onbeforeunload` event in a web page, allowing actions to be run
+   * before the window is destroyed. It is distinct from the `closed` event, which is fired after the window has been destroyed.
+   * Destruction of the window will occur regardless of whether the `close` event is prevented or not.
+   *
+   * Preventing the default behavior of the `close` event allows for actions to be run before the window's destruction,
+   * but does not affect whether or not the window closes. To prevent the window from closing altogether, a value other than `undefined`
+   * must be returned from the `close` event handler. Currently, the only case where a value other than `undefined` is returned in the
+   * `close` event handler is when there is an error, so the return only exists to prevent a crash if an error occurs before the `close`
+   * event is emitted.
+   *
+   * To prevent memory leaks, Electron's native destruction of windows is very aggressive and will destroy instances of `BrowserView`
+   * and `WebContents` regardless of whether or not they are referenced elsewhere. This can have unintended consequences, such as the app crashing
+   * due to referencing an instance that no longer exists.
+   *
+   * For example, the platform app one-off window shares its `BrowserView` instance with the main window. In order to prevent the
+   * `BrowserView` instance from being destroyed when the one-off window is closed, the one-off window's reference to the `BrowserView` instance
+   * must be removed. This is done by preventing the default behavior of the `close` event, which allows the component to be unmounted
+   * and remove the `BrowserView` instance from the child window before it is destroyed.
+   *
    * @param options window options
    * @param windowId A unique window id.  If a window with that id
    * already exists, this function will focus the existing window instead.
@@ -400,12 +477,33 @@ export class WindowsService extends StatefulService<IWindowsState> {
       height: 400,
       title: 'New Window',
       backgroundColor: '#17242D',
-      webPreferences: { nodeIntegration: true, webviewTag: true, enableRemoteModule: true },
+      show: false,
+      webPreferences: {
+        nodeIntegration: true,
+        webviewTag: true,
+        contextIsolation: false,
+        backgroundThrottling: false,
+      },
       ...options,
       ...options.size,
+      ...(options.position || {}),
     }));
 
+    electron.ipcRenderer.sendSync('webContents-enableRemote', newWindow.webContents.id);
+
     newWindow.removeMenu();
+
+    // Destroying the BrowserView on window close is default behavior.
+    // To persist a BrowserView and its WebContents between the main and one off
+    // windows, prevent this default behavior. The `close` event is fired before the
+    // `closed` event, similar to the `beforeunload` event in a web page.
+    if (options.persistWebContents) {
+      newWindow.on('close', (e: Electron.Event) => {
+        e.preventDefault();
+        return e.defaultPrevented;
+      });
+    }
+
     newWindow.on('closed', () => {
       this.windowDestroyed.next(windowId);
       delete this.windows[windowId];
@@ -420,6 +518,8 @@ export class WindowsService extends StatefulService<IWindowsState> {
     const indexUrl = remote.getGlobal('indexUrl');
     newWindow.loadURL(`${indexUrl}?windowId=${windowId}`);
 
+    newWindow.show();
+
     return windowId;
   }
 
@@ -433,6 +533,8 @@ export class WindowsService extends StatefulService<IWindowsState> {
     this.CREATE_ONE_OFF_WINDOW(windowId, options);
 
     const newWindow = (this.windows[windowId] = new BrowserWindow(options));
+
+    electron.ipcRenderer.sendSync('webContents-enableRemote', newWindow.webContents.id);
 
     const indexUrl = remote.getGlobal('indexUrl');
     newWindow.loadURL(`${indexUrl}?windowId=${windowId}`);
@@ -487,8 +589,25 @@ export class WindowsService extends StatefulService<IWindowsState> {
   }
 
   updateStyleBlockers(windowId: string, hideStyleBlockers: boolean) {
-    this.UPDATE_HIDE_STYLE_BLOCKERS(windowId, hideStyleBlockers);
+    // While a modal is dispalyed in the window we only want to affect its styleBlockers
+    if (this.state[windowId].modalOptions?.visible) {
+      this.UPDATE_MODAL_SETTINGS(windowId, { hideStyleBlockers });
+    } else {
+      this.UPDATE_HIDE_STYLE_BLOCKERS(windowId, hideStyleBlockers);
+    }
     this.styleBlockersUpdated.next({ windowId, hideStyleBlockers });
+  }
+
+  showModalLayer(windowId: string) {
+    this.UPDATE_HIDE_STYLE_BLOCKERS(windowId, true);
+    this.UPDATE_MODAL_SETTINGS(windowId, { visible: true, hideStyleBlockers: false });
+    this.styleBlockersUpdated.next({ windowId, hideStyleBlockers: true });
+  }
+
+  hideModalLayer(windowId: string) {
+    this.UPDATE_HIDE_STYLE_BLOCKERS(windowId, false);
+    this.UPDATE_MODAL_SETTINGS(windowId, { visible: false, hideStyleBlockers: false });
+    this.styleBlockersUpdated.next({ windowId, hideStyleBlockers: false });
   }
 
   updateChildWindowOptions(optionsPatch: Partial<IWindowOptions>) {
@@ -538,6 +657,22 @@ export class WindowsService extends StatefulService<IWindowsState> {
   @mutation()
   private UPDATE_HIDE_STYLE_BLOCKERS(windowId: string, hideStyleBlockers: boolean) {
     this.state[windowId].hideStyleBlockers = hideStyleBlockers;
+  }
+
+  @mutation()
+  private UPDATE_MODAL_SETTINGS(
+    windowId: string,
+    modalOptions: Partial<IWindowOptions['modalOptions']>,
+  ) {
+    if (this.state[windowId].modalOptions) {
+      this.state[windowId].modalOptions = { ...this.state[windowId].modalOptions, ...modalOptions };
+    } else {
+      this.state[windowId].modalOptions = {
+        visible: false,
+        hideStyleBlockers: false,
+        ...modalOptions,
+      };
+    }
   }
 
   @mutation()

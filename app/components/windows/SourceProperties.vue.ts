@@ -5,32 +5,30 @@ import { TObsFormData } from 'components/obs/inputs/ObsInput';
 import { WindowsService } from 'services/windows';
 import { SourcesService } from 'services/sources';
 import ModalLayout from 'components/ModalLayout.vue';
-import Display from 'components/shared/Display.vue';
+import { Display } from 'components/shared/ReactComponentList';
 import GenericForm from 'components/obs/inputs/GenericForm';
-import WidgetProperties from 'components/custom-source-properties/WidgetProperties.vue';
 import StreamlabelProperties from 'components/custom-source-properties/StreamlabelProperties';
 import PlatformAppProperties from 'components/custom-source-properties/PlatformAppProperties.vue';
 import { $t } from 'services/i18n';
 import { Subscription } from 'rxjs';
-import electron from 'electron';
 import { ErrorField } from 'vee-validate';
 import { CustomizationService } from 'services/customization';
 import { EditorCommandsService } from 'services/editor-commands';
 import { UsageStatisticsService } from 'services/usage-statistics';
+import * as remote from '@electron/remote';
 
 @Component({
   components: {
     ModalLayout,
     Display,
     GenericForm,
-    WidgetProperties,
     StreamlabelProperties,
     PlatformAppProperties,
   },
 })
 export default class SourceProperties extends Vue {
-  @Inject() sourcesService: SourcesService;
-  @Inject() windowsService: WindowsService;
+  @Inject() sourcesService!: SourcesService;
+  @Inject() windowsService!: WindowsService;
   @Inject() customizationService: CustomizationService;
   @Inject() private editorCommandsService: EditorCommandsService;
   @Inject() private usageStatisticsService: UsageStatisticsService;
@@ -48,7 +46,7 @@ export default class SourceProperties extends Vue {
     this.sourceRemovedSub = this.sourcesService.sourceRemoved.subscribe(source => {
       if (source.sourceId === this.sourceId) {
         this.source = null;
-        electron.remote.getCurrentWindow().close();
+        remote.getCurrentWindow().close();
       }
     });
     this.sourceUpdatedSub = this.sourcesService.sourceUpdated.subscribe(source => {
@@ -61,10 +59,6 @@ export default class SourceProperties extends Vue {
   destroyed() {
     this.sourceRemovedSub.unsubscribe();
     this.sourceUpdatedSub.unsubscribe();
-  }
-
-  get hideStyleBlockers() {
-    return this.windowsService.state.child.hideStyleBlockers;
   }
 
   get propertiesManagerUI() {

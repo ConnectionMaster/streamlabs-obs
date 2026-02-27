@@ -1,16 +1,13 @@
 import URI from 'urijs';
 import { PersistentStatefulService } from 'services/core/persistent-stateful-service';
 import { Inject } from 'services/core/injector';
-import { handleResponse, authorizedHeaders, jfetch } from 'util/requests';
-import { mutation } from 'services/core/stateful-service';
-import { Service } from 'services/core';
-import electron from 'electron';
+import { authorizedHeaders, jfetch } from 'util/requests';
+import { mutation, ViewHandler } from 'services/core/stateful-service';
 import { HostsService } from 'services/hosts';
-import Util from 'services/utils';
 import { UserService } from 'services/user';
-import { $t, I18nService } from 'services/i18n';
+import { I18nService } from 'services/i18n';
 import uuid from 'uuid/v4';
-import { createStreamError, throwStreamError } from '../streaming/stream-error';
+import * as remote from '@electron/remote';
 
 interface ITwitterServiceState {
   linked: boolean;
@@ -42,7 +39,7 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
     creatorSiteOnboardingComplete: false,
     creatorSiteUrl: '',
     screenName: '',
-    tweetWhenGoingLive: true,
+    tweetWhenGoingLive: false,
   };
 
   init() {
@@ -50,11 +47,14 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
     this.userService.userLogout.subscribe(() => this.RESET_TWITTER_STATUS());
   }
 
+  get views() {
+    return new TwitterView(this.state);
+  }
+
   @mutation()
   SET_TWITTER_STATUS(status: ITwitterStatusResponse) {
     this.state.linked = status.linked;
     this.state.prime = status.prime;
-    this.state.creatorSiteOnboardingComplete = status.cs_onboarding_complete;
     this.state.creatorSiteUrl = status.cs_url;
     this.state.screenName = status.screen_name;
   }
@@ -65,13 +65,18 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
   }
 
   @mutation()
+  SET_STREAMLABS_URL(value: boolean) {
+    this.state.creatorSiteOnboardingComplete = value;
+  }
+
+  @mutation()
   RESET_TWITTER_STATUS() {
     this.state.linked = false;
     this.state.prime = false;
     this.state.creatorSiteOnboardingComplete = false;
     this.state.creatorSiteUrl = '';
     this.state.screenName = '';
-    this.state.tweetWhenGoingLive = true;
+    this.state.tweetWhenGoingLive = false;
   }
 
   setTweetPreference(preference: boolean) {
@@ -91,6 +96,7 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
   }
 
   async unlinkTwitter() {
+    this.RESET_TWITTER_STATUS();
     const host = this.hostsService.streamlabs;
     const url = `https://${host}/api/v5/slobs/twitter/unlink`;
     const headers = authorizedHeaders(this.userService.apiToken);
@@ -98,6 +104,10 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
     return jfetch(request).catch(() => {
       console.warn('Error unlinking Twitter');
     });
+  }
+
+  setStreamlabsUrl(value: boolean) {
+    this.SET_STREAMLABS_URL(value);
   }
 
   async fetchTwitterStatus() {
@@ -110,28 +120,13 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
     });
   }
 
-  async postTweet(tweet: string) {
-    const host = this.hostsService.streamlabs;
-    const url = `https://${host}/api/v5/slobs/twitter/tweet`;
-    const headers = authorizedHeaders(this.userService.apiToken);
-    headers.append('Content-Type', 'application/json');
-    const request = new Request(url, {
-      headers,
-      method: 'POST',
-      body: JSON.stringify({ tweet }),
-    });
-    return jfetch(request).catch(e =>
-      throwStreamError('TWEET_FAILED', e.error || $t('Could not connect to Twitter')),
-    );
-  }
-
   openLinkTwitterDialog() {
     if (this.authWindowOpen) return;
 
     this.authWindowOpen = true;
     const partition = `persist:${uuid()}`;
 
-    const twitterWindow = new electron.remote.BrowserWindow({
+    const twitterWindow = new remote.BrowserWindow({
       width: 600,
       height: 800,
       alwaysOnTop: false,
@@ -139,7 +134,6 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
       webPreferences: {
         partition,
         nodeIntegration: false,
-        nativeWindowOpen: true,
         sandbox: true,
       },
     });
@@ -175,5 +169,24 @@ export class TwitterService extends PersistentStatefulService<ITwitterServiceSta
     }
 
     return false;
+  }
+}
+
+export class TwitterView extends ViewHandler<ITwitterServiceState> {
+  get userView() {
+    return this.getServiceViews(UserService);
+  }
+
+  get url() {
+    let url = `${this.state.creatorSiteUrl}/home`;
+    if (!this.state.creatorSiteOnboardingComplete) {
+      if (this.userView.platform.type === 'twitch') {
+        url = `https://twitch.tv/${this.userView.platform.username}`;
+      }
+      if (this.userView.platform.type === 'trovo') {
+        url = `https://trovo.live/${this.userView.platform.username}`;
+      }
+    }
+    return url;
   }
 }

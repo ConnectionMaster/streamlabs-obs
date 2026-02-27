@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
     "outDir": "../test-dist",
-    "target": "es5",
+    "target": "es6",
     "lib": [
       "dom",
       "es7",
       "es2017"
     ],
     "module": "commonjs",
+    "moduleResolution": "node",
     "sourceMap": true,
     "allowJs": true,
     "noImplicitAny": true,
@@ -15,8 +16,9 @@
     "experimentalDecorators": true,
     "noImplicitThis": true,
     "removeComments": true,
-    "suppressImplicitAnyIndexErrors": true,
     "strictNullChecks": false,
+    // webdriverio bug in their type files
+    "skipLibCheck": true,
     "emitDecoratorMetadata": true,
     "baseUrl": "../app",
     "jsx": "preserve",
@@ -37,12 +39,14 @@
       "socket.io-client",
       "tapable",
       "uuid",
-      "vue-tsx-support"
+      "vue-tsx-support",
+      "webdriverio/async"
     ]
   },
   "exclude": [
     "node_modules",
     "screentest/runner.js",
+    "screentest",
     "performance/performance-test-runner.js"
   ]
 }

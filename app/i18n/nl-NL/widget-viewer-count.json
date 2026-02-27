@@ -1,4 +1,9 @@
 {
-  "Manage Viewer Count": "Manage Viewer Count",
-  "Font Settings": "Font Settings"
+  "Manage Viewer Count": "Kijkersteller beheren",
+  "Font Settings": "Lettertype-instellingen",
+  "Enabled Streams": "Ingeschakelde streams",
+  "Twitch Viewers": "Twitch-kijkers",
+  "YouTube Viewers": "YouTube-kijkers",
+  "Facebook Viewers": "Facebook-kijkers",
+  "Trovo Viewers": "Trovo-kijkers"
 }

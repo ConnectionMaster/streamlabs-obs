@@ -1,7 +1,7 @@
 import { Inject } from '../../services/core/injector';
 import { Menu } from './Menu';
 import { Source, SourcesService } from '../../services/sources';
-import { ScenesService, isItem } from '../../services/scenes';
+import { SceneItem, ScenesService, isItem } from '../../services/scenes';
 import { ClipboardService } from 'services/clipboard';
 import { SourceTransformMenu } from './SourceTransformMenu';
 import { GroupMenu } from './GroupMenu';
@@ -10,32 +10,44 @@ import { WidgetsService } from 'services/widgets';
 import { CustomizationService } from 'services/customization';
 import { SelectionService } from 'services/selection';
 import { ProjectorService } from 'services/projector';
-import { AudioService } from 'services/audio';
-import electron from 'electron';
 import { $t } from 'services/i18n';
 import { EditorCommandsService } from 'services/editor-commands';
-import { ERenderingMode } from '../../../obs-api';
+import { StreamingService } from 'services/streaming';
+import { TDisplayType } from 'services/settings-v2';
+import * as remote from '@electron/remote';
+import { ProjectorMenu } from './ProjectorMenu';
+import { FiltersMenu } from './FiltersMenu';
+import { AudioService } from 'services/audio';
+import { ScaleFilteringMenu } from './ScaleFilteringMenu';
+import { BlendingModeMenu } from './BlendingModeMenu';
+import { BlendingMethodMenu } from './BlendingMethodMenu';
+import { DeinterlacingModeMenu } from './DeinterlacingModeMenu';
+import { DualOutputService } from 'services/dual-output';
 
 interface IEditMenuOptions {
   selectedSourceId?: string;
   showSceneItemMenu?: boolean;
   selectedSceneId?: string;
   showAudioMixerMenu?: boolean;
+  display?: TDisplayType;
 }
 
 export class EditMenu extends Menu {
   @Inject() private sourcesService: SourcesService;
-  @Inject() private scenesService: ScenesService;
+  @Inject() private scenesService!: ScenesService;
   @Inject() private sourceFiltersService: SourceFiltersService;
   @Inject() private clipboardService: ClipboardService;
   @Inject() private widgetsService: WidgetsService;
   @Inject() private customizationService: CustomizationService;
   @Inject() private selectionService: SelectionService;
   @Inject() private projectorService: ProjectorService;
-  @Inject() private audioService: AudioService;
   @Inject() private editorCommandsService: EditorCommandsService;
+  @Inject() private streamingService: StreamingService;
+  @Inject() private audioService: AudioService;
+  @Inject() private dualOutputService: DualOutputService;
 
   private scene = this.scenesService.views.getScene(this.options.selectedSceneId);
+  private showProjectionMenuItem = true;
 
   private readonly source: Source;
 
@@ -50,6 +62,11 @@ export class EditMenu extends Menu {
     ) {
       this.source = this.selectionService.views.globalSelection.getItems()[0].getSource();
     }
+
+    // Selective recording can only be used with horizontal sources
+    this.showProjectionMenuItem =
+      this.options?.display !== 'vertical' &&
+      !this.selectionService.views.globalSelection.getItems('vertical').length;
 
     this.appendEditMenuItems();
   }
@@ -70,7 +87,42 @@ export class EditMenu extends Menu {
       });
     }
 
-    const isMultipleSelection = this.selectionService.views.globalSelection.getSize() > 1;
+    const isSelectionSameNodeAcrossDisplays = (selectionSize: number) => {
+      /*
+       * Check that selection is only two nodes (same node, one for each display), this only
+       * seems to happen when clicking a source from the source selector which selects the
+       * source across both displays.
+       *
+       * When selection size is not 2, we can assume we're either working with a single node or actual
+       * multiple nodes (i.e not the same node across two displays).
+       *
+       * TODO: do we need to be more specific to detect if we're working with the same node?
+       * We've found `source_id` to be stable, but that might change across different source types.
+       *
+       * TODO: It doesn't seem like we need to adjust selection to have Filters, Rename, and Properties
+       * work, we can only assume the commands use `lastSelectedId` or similar access method
+       * to determine which node to work with. Needs to be confirmed with testing.
+       */
+      if (selectionSize !== 2) {
+        return false;
+      }
+
+      const selectedItems = this.selectionService.views.globalSelection
+        .getItems()
+        .map(item => this.scenesService.views.getSceneItem(item.id));
+
+      const [first, second] = selectedItems;
+
+      const bothNodesHaveSameSourceId = first.sourceId === second.sourceId;
+
+      const bothNodesHaveDifferentDisplay = first.display !== second.display;
+
+      return bothNodesHaveSameSourceId && bothNodesHaveDifferentDisplay;
+    };
+
+    const selectionSize = this.selectionService.views.globalSelection.getSize();
+    const isMultipleSelection =
+      selectionSize > 1 && !isSelectionSameNodeAcrossDisplays(selectionSize);
 
     if (this.options.showSceneItemMenu) {
       const selectedItem = this.selectionService.views.globalSelection.getLastSelected();
@@ -95,7 +147,7 @@ export class EditMenu extends Menu {
 
       this.append({
         label: $t('Transform'),
-        submenu: this.transformSubmenu().menu,
+        submenu: this.transformSubmenu(this.options?.display).menu,
       });
 
       this.append({
@@ -103,7 +155,33 @@ export class EditMenu extends Menu {
         submenu: this.groupSubmenu().menu,
       });
 
+      this.append({ type: 'separator' });
+
+      this.append({
+        label: $t('Scale Filtering'),
+        submenu: this.scaleFilteringSubmenu().menu,
+      });
+
+      this.append({
+        label: $t('Blending Mode'),
+        submenu: this.blendingModeSubmenu().menu,
+      });
+
+      this.append({
+        label: $t('Blending Method'),
+        submenu: this.blendingMethodSubmenu().menu,
+      });
+
       if (selectedItem && isItem(selectedItem)) {
+        if (selectedItem.getSource().async) {
+          this.append({
+            label: $t('Deinterlacing'),
+            submenu: this.deinterlacingSubmenu().menu,
+          });
+
+          this.append({ type: 'separator' });
+        }
+
         const visibilityLabel = selectedItem.visible ? $t('Hide') : $t('Show');
         const streamVisLabel = selectedItem.streamVisible
           ? $t('Hide on Stream')
@@ -123,27 +201,21 @@ export class EditMenu extends Menu {
               );
             },
           });
-          this.append({
-            label: streamVisLabel,
-            click: () => {
-              selectedItem.setStreamVisible(!selectedItem.streamVisible);
-            },
-          });
-          this.append({
-            label: recordingVisLabel,
-            click: () => {
-              selectedItem.setRecordingVisible(!selectedItem.recordingVisible);
-            },
-          });
-          this.append({
-            label: $t('Create Source Projector'),
-            click: () => {
-              this.projectorService.createProjector(
-                ERenderingMode.OBS_MAIN_RENDERING,
-                selectedItem.sourceId,
-              );
-            },
-          });
+
+          if (this.streamingService.state.selectiveRecording) {
+            this.append({
+              label: streamVisLabel,
+              click: () => {
+                selectedItem.setStreamVisible(!selectedItem.streamVisible);
+              },
+            });
+            this.append({
+              label: recordingVisLabel,
+              click: () => {
+                selectedItem.setRecordingVisible(!selectedItem.recordingVisible);
+              },
+            });
+          }
         } else {
           this.append({
             label: $t('Show'),
@@ -171,14 +243,28 @@ export class EditMenu extends Menu {
           this.append({
             label: $t('Export Widget'),
             click: () => {
-              electron.remote.dialog
+              remote.dialog
                 .showSaveDialog({
                   filters: [{ name: 'Widget File', extensions: ['widget'] }],
                 })
                 .then(({ filePath }) => {
                   if (!filePath) return;
 
-                  this.widgetsService.saveWidgetFile(filePath, selectedItem.sceneItemId);
+                  /**
+                   * In dual output mode, the edit menu can be opened on either display
+                   * but for the purposes of persisting widget data, only the horizontal
+                   * scene item data should be persisted. Determine the correct sceneItemId
+                   * here.
+                   */
+
+                  const sceneItemId =
+                    this.options?.display === 'vertical'
+                      ? this.dualOutputService.views.getDualOutputNodeId(selectedItem.sceneItemId)
+                      : selectedItem.sceneItemId;
+
+                  console.log('sceneItemId ', sceneItemId);
+
+                  this.widgetsService.saveWidgetFile(filePath, sceneItemId);
                 });
             },
           });
@@ -191,7 +277,9 @@ export class EditMenu extends Menu {
         label: $t('Rename'),
         click: () =>
           this.scenesService.showNameFolder({
-            sceneId: this.scenesService.views.activeSceneId,
+            sceneId:
+              this.scenesService.views.activeSceneId ??
+              this.selectionService.views.globalSelection.sceneId,
             renameId: this.selectionService.views.globalSelection.getFolders()[0].id,
           }),
       });
@@ -213,7 +301,17 @@ export class EditMenu extends Menu {
               const itemsToRemoveIds = scene
                 .getItems()
                 .filter(item => item.sourceId === this.source.sourceId)
-                .map(item => item.id);
+                .reduce((itemIds: string[], item: SceneItem) => {
+                  itemIds.push(item.id);
+                  // for dual output scenes, also remove the partner node
+                  if (this.dualOutputService.views.hasSceneNodeMaps) {
+                    const dualOutputNodeId = this.dualOutputService.views.getDualOutputNodeId(
+                      item.id,
+                    );
+                    if (dualOutputNodeId) itemIds.push(dualOutputNodeId);
+                  }
+                  return itemIds;
+                }, []);
 
               this.editorCommandsService.executeCommand(
                 'RemoveNodesCommand',
@@ -221,8 +319,9 @@ export class EditMenu extends Menu {
               );
             } else {
               // remove a global source
-              electron.remote.dialog
-                .showMessageBox(electron.remote.getCurrentWindow(), {
+              remote.dialog
+                .showMessageBox(remote.getCurrentWindow(), {
+                  title: 'Streamlabs Desktop',
                   message: $t('This source will be removed from all of your scenes'),
                   type: 'warning',
                   buttons: [$t('Cancel'), $t('OK')],
@@ -250,44 +349,21 @@ export class EditMenu extends Menu {
     if (this.source && !isMultipleSelection) {
       this.append({
         label: $t('Rename'),
-        click: () => this.sourcesService.showRenameSource(this.source.sourceId),
+        click: () => {
+          if (this.source.type === 'scene') {
+            this.scenesService.actions.showNameScene({ rename: this.source.sourceId });
+          } else {
+            this.sourcesService.actions.showRenameSource(this.source.sourceId);
+          }
+        },
       });
-
-      this.append({ type: 'separator' });
-
-      this.append({
-        label: $t('Performance Mode'),
-        type: 'checkbox',
-        checked: this.customizationService.state.performanceMode,
-        click: () =>
-          this.customizationService.setSettings({
-            performanceMode: !this.customizationService.state.performanceMode,
-          }),
-      });
-
-      this.append({ type: 'separator' });
 
       const filtersCount = this.sourceFiltersService.getFilters(this.source.sourceId).length;
 
       this.append({
         label: $t('Filters') + (filtersCount > 0 ? ` (${filtersCount})` : ''),
-        click: () => {
-          this.showFilters();
-        },
+        submenu: new FiltersMenu(this.source.sourceId).menu,
       });
-
-      this.append({
-        label: $t('Copy Filters'),
-        click: () => this.clipboardService.copyFilters(this.source.sourceId),
-      });
-
-      this.append({
-        label: $t('Paste Filters'),
-        click: () => this.clipboardService.pasteFilters(this.source.sourceId),
-        enabled: this.clipboardService.views.hasFilters(),
-      });
-
-      this.append({ type: 'separator' });
 
       this.append({
         label: $t('Properties'),
@@ -310,33 +386,22 @@ export class EditMenu extends Menu {
         label: $t('Unlock Sources'),
         click: () => this.scenesService.setLockOnAllScenes(false),
       });
-
-      this.append({
-        label: $t('Performance Mode'),
-        type: 'checkbox',
-        checked: this.customizationService.state.performanceMode,
-        click: () =>
-          this.customizationService.setSettings({
-            performanceMode: !this.customizationService.state.performanceMode,
-          }),
-      });
     }
 
     this.append({ type: 'separator' });
 
-    this.append({
-      label: $t('Create Output Projector'),
-      click: () => this.projectorService.createProjector(ERenderingMode.OBS_MAIN_RENDERING),
-    });
+    if (this.showProjectionMenuItem) {
+      this.append({ label: $t('Projector'), submenu: this.projectorSubmenu().menu });
+    }
 
     this.append({
-      label: $t('Create Stream Output Projector'),
-      click: () => this.projectorService.createProjector(ERenderingMode.OBS_STREAMING_RENDERING),
-    });
-
-    this.append({
-      label: $t('Create Recording Output Projector'),
-      click: () => this.projectorService.createProjector(ERenderingMode.OBS_RECORDING_RENDERING),
+      label: $t('Performance Mode'),
+      type: 'checkbox',
+      checked: this.customizationService.state.performanceMode,
+      click: () =>
+        this.customizationService.setSettings({
+          performanceMode: !this.customizationService.state.performanceMode,
+        }),
     });
 
     this.append({ type: 'separator' });
@@ -372,19 +437,39 @@ export class EditMenu extends Menu {
     }
   }
 
-  private showFilters() {
-    this.sourceFiltersService.showSourceFilters(this.source.sourceId);
-  }
-
   private showProperties() {
-    this.sourcesService.showSourceProperties(this.source.sourceId);
+    if (this.options.showAudioMixerMenu || !this.source.video) {
+      this.audioService.actions.showAdvancedSettings(this.source.sourceId);
+    } else {
+      this.sourcesService.actions.showSourceProperties(this.source.sourceId);
+    }
   }
 
-  private transformSubmenu() {
-    return new SourceTransformMenu();
+  private transformSubmenu(display?: TDisplayType) {
+    return new SourceTransformMenu(display);
   }
 
   private groupSubmenu() {
     return new GroupMenu();
+  }
+
+  private projectorSubmenu() {
+    return new ProjectorMenu();
+  }
+
+  private scaleFilteringSubmenu() {
+    return new ScaleFilteringMenu();
+  }
+
+  private blendingModeSubmenu() {
+    return new BlendingModeMenu();
+  }
+
+  private blendingMethodSubmenu() {
+    return new BlendingMethodMenu();
+  }
+
+  private deinterlacingSubmenu() {
+    return new DeinterlacingModeMenu();
   }
 }

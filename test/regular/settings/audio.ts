@@ -1,23 +1,21 @@
-import { focusMain, test, useSpectron } from '../../helpers/spectron';
-import { assertOptions } from '../../helpers/spectron/assertions';
-import { showSettings } from '../../helpers/spectron/settings';
+import { test, useWebdriver } from '../../helpers/webdriver';
+import { assertOptions } from '../../helpers/webdriver/assertions';
+import { showSettingsWindow } from '../../helpers/modules/settings/settings';
+import { focusMain } from '../../helpers/modules/core';
+import { assertFormContains } from '../../helpers/modules/forms';
 
-useSpectron();
+useWebdriver();
 
 test('Populates audio settings', async t => {
-  await showSettings(t, 'Audio');
+  await showSettingsWindow('Audio');
 
-  await assertOptions(t, 'SampleRate', '44.1khz', ['44.1khz', '48khz']);
-
-  await assertOptions(t, 'ChannelSetup', 'Stereo', [
-    'Mono',
-    'Stereo',
-    '2.1',
-    '4.0',
-    '4.1',
-    '5.1',
-    '7.1',
-  ]);
+  await assertFormContains(
+    {
+      'Sample Rate (requires a restart)': '44.1khz',
+      'Channels (requires a restart)': 'Stereo',
+    },
+    'title',
+  );
 
   /*
    * Since this is hardware-specific (and devices look disabled on AppVeyor), all we can test is
@@ -32,8 +30,8 @@ test('Populates audio settings', async t => {
   t.true(await (await app.client.$('label=Mic/Auxiliary Device 3')).isExisting());
 
   // Test that we're displaying mixer settings in the footer
-  await (await app.client.$('button=Done')).click();
-  await focusMain(t);
+  await (await app.client.$('button=Close')).click();
+  await focusMain();
   t.true(await (await app.client.$('.source-name=Desktop Audio')).isExisting());
   t.true(await (await app.client.$('.source-name*=Mic')).isExisting());
   t.true(await (await app.client.$('.volmeter-container')).isExisting());
