@@ -4,11 +4,18 @@ import { UserService, LoginLifecycle } from 'services/user';
 import { authorizedHeaders, handleResponse, jfetch } from 'util/requests';
 import { $t } from 'services/i18n';
 import { WindowsService } from 'services/windows';
-import { WebsocketService, TSocketEvent, IEventSocketEvent } from 'services/websocket';
-import { pick, cloneDeep } from 'lodash';
+import {
+  WebsocketService,
+  TSocketEvent,
+  IEventSocketEvent,
+  ISafeModeEnabledSocketEvent,
+} from 'services/websocket';
+import cloneDeep from 'lodash/cloneDeep';
+import pick from 'lodash/pick';
 import uuid from 'uuid/v4';
-import { Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import mapValues from 'lodash/mapValues';
+import { WidgetsService, WidgetType } from './widgets';
 
 export interface IRecentEvent {
   name?: string;
@@ -28,6 +35,7 @@ export interface IRecentEvent {
   formatted_amount?: string;
   formattedAmount?: string;
   sub_plan?: string;
+  sub_type?: string;
   months?: number;
   streak_months?: number;
   gifter?: string;
@@ -45,6 +53,7 @@ export interface IRecentEvent {
   read: boolean;
   hash: string;
   isTest?: boolean;
+  isPreview?: boolean;
   repeat?: boolean;
   // uuid is local and will NOT persist across app restarts/ fetches
   uuid: string;
@@ -52,6 +61,7 @@ export interface IRecentEvent {
   sender_name?: string;
   skill_currency?: string;
   skill_name?: string;
+  recurring_donation?: { id: string; months?: number };
 }
 
 interface IRecentEventsConfig {
@@ -101,12 +111,47 @@ interface IRecentEventFilterConfig {
   facebook_stars?: boolean;
 }
 
+interface ISafeModeSettings {
+  enabled: boolean;
+  loading: boolean;
+  clearChat: boolean;
+  clearQueuedAlerts: boolean;
+  clearRecentEvents: boolean;
+  disableChatAlerts: boolean;
+  disableFollowerAlerts: boolean;
+  emoteOnly: boolean;
+  followerOnly: boolean;
+  subOnly: boolean;
+  enableTimer: boolean;
+  timeInMinutes: number;
+}
+
 interface IRecentEventsState {
   recentEvents: IRecentEvent[];
   muted: boolean;
+  enableChatNotifs: boolean;
   mediaShareEnabled: boolean;
   filterConfig: IRecentEventFilterConfig;
   queuePaused: boolean;
+  safeMode: ISafeModeSettings;
+}
+
+export interface ISafeModeServerSettings {
+  clear_chat: boolean;
+  clear_queued_alerts: boolean;
+  clear_recent_events: boolean;
+  disable_chat_alerts: boolean;
+  disable_follower_alerts: boolean;
+  emote_only: boolean;
+  follower_only: boolean;
+  sub_only: boolean;
+  enable_timer: boolean;
+  time_in_minutes: number;
+}
+
+enum ESafeModeStatus {
+  Enabled = 'enabled',
+  Disabled = 'disabled',
 }
 
 const subscriptionMap = (subPlan: string) => {
@@ -140,7 +185,6 @@ const filterName = (key: string): string => {
     resub_tier_3: $t('Tier 3'),
     resub_prime: $t('Prime'),
     gifted_sub: $t('Gifted'),
-    host: $t('Hosts'),
     bits: $t('Bits'),
     raid: $t('Raids'),
     subscriber: $t('Subscribers'),
@@ -173,8 +217,6 @@ function getHashForRecentEvent(event: IRecentEvent) {
       return [event.type, event.name, event.message, parseInt(event.amount, 10)].join(':');
     case 'follow':
       return [event.type, event.name, event.message].join(':');
-    case 'host':
-      return [event.type, event.name, event.host_type].join(':');
     case 'justgivingdonation':
       return [event.type, event.name, event.message, parseInt(event.amount, 10)].join(':');
     case 'loyalty_store_redemption':
@@ -183,12 +225,12 @@ function getHashForRecentEvent(event: IRecentEvent) {
       return [event.type, event.name, parseInt(event.amount, 10), event.from].join(':');
     case 'prime_sub_gift':
       return [event.type, event.name, event.streamer, event.giftType].join(':');
-    case 'raid':
-      return [event.type, event.name, event.from].join(':');
     case 'redemption':
       return [event.type, event.name, event.message].join(':');
     case 'sticker':
       return [event.name, event.type, event.currency].join(':');
+    case 'raid':
+      return [event.type, event.name, event.from].join(':');
     case 'subscription':
       return [event.type, event.name.toLowerCase(), event.message].join(':');
     case 'superchat':
@@ -221,11 +263,10 @@ const SUPPORTED_EVENTS = [
   'follow',
   'subscription',
   'bits',
-  'host',
-  'raid',
   'sticker',
   'effect',
   'like',
+  'raid',
   'stars',
   'support',
   'share',
@@ -239,18 +280,16 @@ const SUPPORTED_EVENTS = [
 ];
 
 class RecentEventsViews extends ViewHandler<IRecentEventsState> {
+  @Inject() private widgetsService: WidgetsService;
   getEventString(event: IRecentEvent) {
     return {
-      donation:
-        $t('has donated') +
-        (event.crate_item ? $t(' with %{name}', { name: event.crate_item.name }) : ''),
+      donation: this.getDonoString(event),
       merch: $t('has purchased %{product} from the store', { product: event.product }),
       streamlabscharitydonation: $t('has donated via Streamlabs Charity'),
       follow: event.platform === 'youtube_account' ? $t('has subscribed') : $t('has followed'),
       subscription: this.getSubString(event),
       // Twitch
       bits: $t('has used'),
-      host: $t('has hosted you with %{viewers} viewers', { viewers: event.viewers }),
       raid: $t('has raided you with a party of %{viewers}', { viewers: event.raiders }),
       // Mixer
       sticker: $t('has used %{skill} for', { skill: event.skill }),
@@ -258,7 +297,7 @@ class RecentEventsViews extends ViewHandler<IRecentEventsState> {
       // Facebook
       like: $t('has liked'),
       stars: $t('has used'),
-      support: $t('has supported for %{mounths} months', { months: event.months }),
+      support: this.getSubString(event),
       share: $t('has shared'),
       // Youtube
       superchat: $t('has superchatted'),
@@ -272,10 +311,53 @@ class RecentEventsViews extends ViewHandler<IRecentEventsState> {
     }[event.type];
   }
 
-  getSubString(event: IRecentEvent) {
-    if (event.platform === 'youtube_account') {
-      return $t('has sponsored since %{date}', { date: event.since });
+  getDonoString(event: IRecentEvent) {
+    if (event.crate_item) {
+      return $t('has tipped with %{itemName}', { itemName: event.crate_item.name });
     }
+    if (event.recurring_donation?.months > 1) {
+      return $t('has tipped %{months} months in a row', {
+        months: event.recurring_donation.months,
+      });
+    }
+    if (event.recurring_donation) {
+      return $t('has set up a monthly tip');
+    }
+    return $t('has tipped');
+  }
+
+  getSubString(event: IRecentEvent) {
+    if (event.platform === 'facebook_account') {
+      if (event.months > 1) {
+        return $t('has been a supporter for %{months} months', { months: event.months });
+      }
+      return $t('has become a supporter');
+    }
+    if (event.platform === 'youtube_account') {
+      if (event.months > 1) {
+        return $t('has been a member for %{months} months', { months: event.months });
+      }
+      return $t('has become a member');
+    }
+
+    if (event.platform === 'trovo_account') {
+      if (event.gifter) {
+        return $t('has gifted a sub to');
+      }
+      if (event.months > 1 && event.streak_months && event.streak_months > 1) {
+        return $t('has resubscribed for %{streak} months in a row! (%{months} total)', {
+          streak: event.streak_months,
+          months: event.months,
+        });
+      }
+      if (event.months > 1) {
+        return $t('has resubscribed for %{months} months', {
+          months: event.months,
+        });
+      }
+      return $t('has subscribed');
+    }
+
     if (event.gifter) {
       return $t('has gifted a sub (%{tier}) to', {
         tier: subscriptionMap(event.sub_plan),
@@ -294,6 +376,11 @@ class RecentEventsViews extends ViewHandler<IRecentEventsState> {
         months: event.months,
       });
     }
+    if (event.sub_type === 'primepaidupgrade') {
+      return $t('has converted from a Prime Gaming sub to a %{tier} sub', {
+        tier: subscriptionMap(event.sub_plan),
+      });
+    }
     return $t('has subscribed (%{tier})', { tier: subscriptionMap(event.sub_plan) });
   }
 
@@ -301,6 +388,12 @@ class RecentEventsViews extends ViewHandler<IRecentEventsState> {
     return this.state.recentEvents.find(event => {
       return event.uuid === uuid;
     });
+  }
+
+  get spinWheelExists(): boolean {
+    return !!this.widgetsService.views.widgetSources.find(
+      source => source.type === WidgetType.SpinWheel,
+    );
   }
 }
 
@@ -311,15 +404,32 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   @Inject() private windowsService: WindowsService;
   @Inject() private websocketService: WebsocketService;
 
+  safeModeStatusChanged = new Subject<ESafeModeStatus>();
+
   static initialState: IRecentEventsState = {
     recentEvents: [],
     muted: false,
+    enableChatNotifs: false,
     mediaShareEnabled: false,
     filterConfig: {
       donation: false,
       merch: false,
     },
     queuePaused: false,
+    safeMode: {
+      enabled: false,
+      loading: false,
+      clearChat: true,
+      clearQueuedAlerts: true,
+      clearRecentEvents: true,
+      disableChatAlerts: true,
+      disableFollowerAlerts: true,
+      emoteOnly: true,
+      followerOnly: true,
+      subOnly: true,
+      enableTimer: false,
+      timeInMinutes: 60,
+    },
   };
 
   get views() {
@@ -343,6 +453,8 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     this.formEventsArray();
     this.fetchMediaShareState();
     this.subscribeToSocketConnection();
+    this.fetchSafeModeStatus();
+    this.fetchMuteChatNotifs();
   }
 
   subscribeToSocketConnection() {
@@ -363,9 +475,7 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   fetchRecentEvents() {
     const typeString = this.getEventTypesString();
     // eslint-disable-next-line
-    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/recentevents/${
-      this.userService.widgetToken
-    }?types=${typeString}`;
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/recentevents/${this.userService.widgetToken}?types=${typeString}`;
     const headers = authorizedHeaders(this.userService.apiToken);
     const request = new Request(url, { headers });
     return jfetch<{ data: Dictionary<IRecentEvent[]> }>(request).catch(() => {
@@ -375,9 +485,7 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
 
   async fetchConfig() {
     // eslint-disable-next-line
-    const url = `https://${
-      this.hostsService.streamlabs
-    }/api/v5/slobs/widget/config?widget=recent_events`;
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/widget/config?widget=recent_events`;
     const headers = authorizedHeaders(this.userService.apiToken);
     return jfetch<IRecentEventsConfig>(url, { headers }).catch(() => {
       console.warn('Error fetching recent events config');
@@ -386,9 +494,7 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
 
   fetchMediaShareState() {
     // eslint-disable-next-line
-    const url = `https://${
-      this.hostsService.streamlabs
-    }/api/v5/slobs/widget/config?widget=media-sharing`;
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/widget/config?widget=media-sharing`;
     const headers = authorizedHeaders(this.userService.apiToken);
     return jfetch<{ settings: { advanced_settings: { enabled: boolean } } }>(url, {
       headers,
@@ -402,7 +508,13 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   private async formEventsArray() {
     const events = await this.fetchRecentEvents();
     let eventArray: IRecentEvent[] = [];
-    if (!events || !events.data) return;
+    if (
+      !events ||
+      !events.data ||
+      (this.state.safeMode.enabled && this.state.safeMode.clearRecentEvents)
+    ) {
+      return;
+    }
     Object.keys(events.data).forEach(key => {
       const fortifiedEvents = events.data[key].map(event => {
         event.hash = getHashForRecentEvent(event);
@@ -430,6 +542,7 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
           'raiders',
           'formatted_amount',
           'sub_plan',
+          'sub_type',
           'months',
           'streak_months',
           'gifter',
@@ -454,6 +567,8 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     // Get read status for all events
     const readReceipts = await this.fetchReadReceipts(hashValues);
     eventArray.forEach(event => {
+      // TODO: index
+      // @ts-ignore
       event.read = readReceipts[event.hash] ? readReceipts[event.hash] : false;
 
       // Events older than 1 month are treated as read
@@ -465,6 +580,8 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     eventArray.sort((a: IRecentEvent, b: IRecentEvent) => {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
+
+    if (this.state.safeMode.enabled && this.state.safeMode.clearRecentEvents) return;
 
     this.SET_RECENT_EVENTS(eventArray);
   }
@@ -631,9 +748,13 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   }
 
   getEventTypesString() {
-    return Object.keys(this.state.filterConfig)
-      .filter((type: string) => this.state.filterConfig[type] === true)
-      .join(',');
+    return (
+      Object.keys(this.state.filterConfig)
+        // TODO: index
+        // @ts-ignore
+        .filter((type: string) => this.state.filterConfig[type] === true)
+        .join(',')
+    );
   }
 
   applyConfig(config: IRecentEventsConfig) {
@@ -663,6 +784,15 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
       }
     }
 
+    if (e.type === 'safeModeEnabled') {
+      this.updateSafeModeSettingsFromServer(e.message);
+      this.onSafeModeEnabled(e.message.ends_at);
+    }
+
+    if (e.type === 'safeModeDisabled') {
+      this.onSafeModeDisabled();
+    }
+
     if (SUPPORTED_EVENTS.includes(e.type)) {
       this.onEventSocket(e as IEventSocketEvent);
     }
@@ -672,6 +802,8 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     if (!this.state.filterConfig.subscription) {
       return false;
     }
+
+    if (this.userService.platform.type === 'trovo') return true;
 
     if (!this.state.filterConfig.subscription_tier_1 && event.sub_plan.toString() === '1000') {
       return false;
@@ -700,6 +832,8 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     if (!this.state.filterConfig.resub) {
       return false;
     }
+
+    if (this.userService.platform.type === 'trovo') return true;
 
     if (!this.state.filterConfig.resub_tier_1 && event.sub_plan.toString() === '1000') {
       return false;
@@ -732,29 +866,47 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   }
 
   isAllowed(event: IRecentEvent) {
-    if (event.type === 'subscription') {
+    if (this.state.safeMode.enabled) {
+      if (['follow', 'host'].includes(event.type)) return false;
+    }
+
+    if (event.type === 'subscription' && this.userService.platform.type !== 'youtube') {
       if (event.months > 1) {
         return this.shouldFilterResub(event);
       }
       return this.shouldFilterSubscription(event);
     }
-    return this.transformFilterForFB()[event.type];
+    // TODO: index
+    // @ts-ignore
+    return this.transformFilterForPlatform()[event.type];
   }
 
-  transformFilterForFB() {
+  transformFilterForPlatform() {
     const filterMap = cloneDeep(this.state.filterConfig);
-    if (this.userService.platform.type === 'facebook') {
-      filterMap['support'] = filterMap['facebook_support'];
-      filterMap['like'] = filterMap['facebook_like'];
-      filterMap['share'] = filterMap['facebook_share'];
-      filterMap['stars'] = filterMap['facebook_stars'];
+    // TODO: index
+    // @ts-ignore
+    filterMap['support'] = filterMap['facebook_support'];
+    // TODO: index
+    // @ts-ignore
+    filterMap['like'] = filterMap['facebook_like'];
+    // TODO: index
+    // @ts-ignore
+    filterMap['share'] = filterMap['facebook_share'];
+    // TODO: index
+    // @ts-ignore
+    filterMap['stars'] = filterMap['facebook_stars'];
+    if (this.userService.platform.type === 'youtube') {
+      // TODO: index
+      // @ts-ignore
+      filterMap['subscription'] = filterMap['membership_level_1'];
+      filterMap['follow'] = filterMap['subscriber'];
     }
     return filterMap;
   }
 
   onEventSocket(e: IEventSocketEvent) {
     const messages = e.message
-      .filter(msg => !msg.isTest && !msg.repeat)
+      .filter(msg => !msg.isTest && !msg.isPreview && !msg.repeat)
       .map(msg => {
         msg.platform = e.for;
         msg.type = e.type;
@@ -775,15 +927,43 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
     this.ADD_RECENT_EVENT(messages);
   }
 
+  async toggleMuteChatNotifs() {
+    const val = !this.state.enableChatNotifs;
+    const headers = authorizedHeaders(
+      this.userService.apiToken,
+      new Headers({ 'Content-Type': 'application/json' }),
+    );
+    const url = `https://${this.hostsService.streamlabs}/api/v5/widgets/desktop/chat-box/notifications`;
+    const body = JSON.stringify({ enable: val });
+    try {
+      await jfetch(new Request(url, { headers, body, method: 'POST' }));
+      this.SET_MUTE_CHAT_NOTIFS(val);
+    } catch (e: unknown) {
+      return;
+    }
+  }
+
+  async fetchMuteChatNotifs() {
+    const headers = authorizedHeaders(
+      this.userService.apiToken,
+      new Headers({ 'Content-Type': 'application/json' }),
+    );
+    const url = `https://${this.hostsService.streamlabs}/api/v5/widgets/desktop/chat-box`;
+    try {
+      const resp = await jfetch<any>(new Request(url, { headers, method: 'GET' }));
+      if (!resp?.data?.settings) return;
+      this.SET_MUTE_CHAT_NOTIFS(resp.settings.global?.alert_enabled);
+    } catch (e: unknown) {
+      return;
+    }
+  }
+
   async toggleMuteEvents() {
     const headers = authorizedHeaders(
       this.userService.apiToken,
       new Headers({ 'Content-Type': 'application/json' }),
     );
-    // eslint-disable-next-line
-    const url = `https://${
-      this.hostsService.streamlabs
-    }/api/v5/slobs/widget/recentevents/eventspanel`;
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/widget/recentevents/eventspanel`;
     const body = JSON.stringify({ muted: !this.state.muted });
     return await fetch(new Request(url, { headers, body, method: 'POST' })).then(handleResponse);
   }
@@ -791,7 +971,7 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
   async toggleQueue() {
     try {
       this.state.queuePaused ? await this.unpauseAlertQueue() : await this.pauseAlertQueue();
-    } catch (e) {}
+    } catch (e: unknown) {}
   }
 
   openRecentEventsWindow(isMediaShare?: boolean) {
@@ -816,6 +996,138 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
         height: 480,
       },
     });
+  }
+
+  showSafeModeWindow() {
+    this.windowsService.showWindow({
+      componentName: 'SafeMode',
+      title: $t('Safe Mode'),
+      queryParams: {},
+      size: {
+        width: 450,
+        height: 700,
+      },
+    });
+  }
+
+  async fetchSafeModeStatus() {
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/safemode`;
+    const headers = authorizedHeaders(this.userService.apiToken);
+    return jfetch<{
+      safe_mode_settings: { active: boolean; data: ISafeModeServerSettings; ends_at: number };
+    }>(url, {
+      headers,
+    })
+      .then(data => {
+        this.updateSafeModeSettingsFromServer(data.safe_mode_settings.data);
+
+        if (data.safe_mode_settings.active) {
+          this.onSafeModeEnabled(data.safe_mode_settings.ends_at);
+        } else {
+          this.onSafeModeDisabled();
+        }
+      })
+      .catch(error => {
+        console.warn('Error fetching safe mode settings', error);
+        this.onSafeModeDisabled();
+      });
+  }
+
+  updateSafeModeSettingsFromServer(data: ISafeModeServerSettings) {
+    this.SET_SAFE_MODE_SETTINGS({
+      clearChat: data.clear_chat,
+      clearQueuedAlerts: data.clear_queued_alerts,
+      clearRecentEvents: data.clear_recent_events,
+      disableChatAlerts: data.disable_chat_alerts,
+      disableFollowerAlerts: data.disable_follower_alerts,
+      emoteOnly: data.emote_only,
+      followerOnly: data.follower_only,
+      subOnly: data.sub_only,
+      enableTimer: data.enable_timer,
+      timeInMinutes: data.time_in_minutes,
+    });
+  }
+
+  safeModeTimeout: number = null;
+
+  setSafeModeTimeout(ms: number) {
+    if (this.safeModeTimeout) clearTimeout(this.safeModeTimeout);
+
+    this.safeModeTimeout = window.setTimeout(() => this.disableSafeMode(), ms);
+  }
+
+  setSafeModeSettings(patch: Partial<ISafeModeSettings>) {
+    this.SET_SAFE_MODE_SETTINGS(patch);
+  }
+
+  activateSafeMode() {
+    if (this.state.safeMode.enabled) return;
+
+    const headers = authorizedHeaders(
+      this.userService.apiToken,
+      new Headers({ 'Content-Type': 'application/json' }),
+    );
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/safemode`;
+    const sm = this.state.safeMode;
+    const body = JSON.stringify({
+      clear_chat: sm.clearChat,
+      clear_queued_alerts: sm.clearQueuedAlerts,
+      clear_recent_events: sm.clearRecentEvents,
+      disable_chat_alerts: sm.disableChatAlerts,
+      disable_follower_alerts: sm.disableFollowerAlerts,
+      emote_only: sm.emoteOnly,
+      follower_only: sm.followerOnly,
+      sub_only: sm.subOnly,
+      enable_timer: sm.enableTimer,
+      time_in_minutes: sm.timeInMinutes,
+    });
+    this.SET_SAFE_MODE_SETTINGS({ loading: true });
+    const promise = jfetch(new Request(url, { headers, body, method: 'POST' }));
+
+    promise.then(resp => {
+      this.safeModeStatusChanged.next(ESafeModeStatus.Enabled);
+      return resp;
+    });
+
+    promise.finally(() => this.SET_SAFE_MODE_SETTINGS({ loading: false }));
+
+    return promise;
+  }
+
+  disableSafeMode() {
+    if (!this.state.safeMode.enabled) return;
+
+    const headers = authorizedHeaders(this.userService.apiToken);
+    const url = `https://${this.hostsService.streamlabs}/api/v5/slobs/safemode`;
+    this.SET_SAFE_MODE_SETTINGS({ loading: true });
+    const promise = jfetch(new Request(url, { headers, method: 'DELETE' }));
+
+    promise.then(resp => {
+      this.safeModeStatusChanged.next(ESafeModeStatus.Disabled);
+    });
+
+    promise.finally(() => this.SET_SAFE_MODE_SETTINGS({ loading: false }));
+
+    return promise;
+  }
+
+  onSafeModeEnabled(endsAt?: number) {
+    this.SET_SAFE_MODE_SETTINGS({ enabled: true });
+    if (endsAt) this.setSafeModeTimeout(Math.max(endsAt - Date.now(), 0));
+    if (this.state.safeMode.clearRecentEvents) {
+      this.SET_RECENT_EVENTS([]);
+    }
+
+    this.safeModeStatusChanged.next(ESafeModeStatus.Enabled);
+  }
+
+  onSafeModeDisabled() {
+    this.SET_SAFE_MODE_SETTINGS({ enabled: false });
+    this.safeModeStatusChanged.next(ESafeModeStatus.Disabled);
+  }
+
+  setMuteChatNotifs(val: boolean) {
+    this.SET_MUTE_CHAT_NOTIFS(val);
   }
 
   @mutation()
@@ -854,11 +1166,23 @@ export class RecentEventsService extends StatefulService<IRecentEventsState> {
 
   @mutation()
   private SET_SINGLE_FILTER_CONFIG(key: string, value: boolean | number) {
+    // TODO: index
+    // @ts-ignore
     this.state.filterConfig[key] = value;
   }
 
   @mutation()
   private SET_PAUSED(queuePaused: boolean) {
     this.state.queuePaused = queuePaused;
+  }
+
+  @mutation()
+  private SET_SAFE_MODE_SETTINGS(patch: Partial<ISafeModeSettings>) {
+    this.state.safeMode = { ...this.state.safeMode, ...patch };
+  }
+
+  @mutation()
+  private SET_MUTE_CHAT_NOTIFS(val: boolean) {
+    this.state.enableChatNotifs = val;
   }
 }

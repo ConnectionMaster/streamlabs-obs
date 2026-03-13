@@ -1,4 +1,10 @@
-import { IWidgetData, IWidgetSettings, WidgetDefinitions, WidgetSettingsService } from '../index';
+import {
+  IWidgetData,
+  IWidgetSettings,
+  WidgetDefinitions,
+  WidgetSettingsService,
+  WIDGET_INITIAL_STATE,
+} from '../index';
 import { WidgetType } from 'services/widgets';
 import { InheritMutations } from 'services/core/stateful-service';
 import { $t } from 'services/i18n';
@@ -47,17 +53,21 @@ export interface IMediaShareBan {
 
 @InheritMutations()
 export class MediaShareService extends WidgetSettingsService<IMediaShareData> {
+  static initialState = WIDGET_INITIAL_STATE;
+
   getApiSettings() {
+    const host = this.getHost();
     return {
       type: WidgetType.MediaShare,
-      url: WidgetDefinitions[WidgetType.MediaShare].url(this.getHost(), this.getWidgetToken()),
-      previewUrl: `https://${this.getHost()}/widgets/media-share?token=${this.getWidgetToken()}`,
+      url: WidgetDefinitions[WidgetType.MediaShare].url(host, this.getWidgetToken()),
+      previewUrl: `https://${host}/widgets/media/v1/${this.getWidgetToken()}`,
+      webSettingsUrl: `https://${host}/dashboard#/widgets/mediashare`,
       settingsUpdateEvent: 'mediaSharingSettingsUpdate',
       goalCreateEvent: 'newmediaShare',
       goalResetEvent: 'mediaShareEnd',
-      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/media`,
-      settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/media`,
-      testers: ['Follow', 'Subscription', 'Donation', 'Bits', 'Host'],
+      dataFetchUrl: `https://${host}/api/v5/slobs/widget/media`,
+      settingsSaveUrl: `https://${host}/api/v5/slobs/widget/media`,
+      testers: ['Follow', 'Subscription', 'Donation', 'Bits'],
       customCodeAllowed: false,
       customFieldsAllowed: false,
     };
@@ -120,6 +130,9 @@ export class MediaShareService extends WidgetSettingsService<IMediaShareData> {
   protected patchAfterFetch(response: IMediaShareData): any {
     // we should be using settings.advanced settings values instead, similar to sl.com
     // so overwrite values for all keys in settings with settings.advance_settings
+    response.settings.advanced_settings.buffer_time = Math.round(
+      response.settings.advanced_settings.buffer_time / 1000,
+    );
     return {
       ...response,
       settings: {
@@ -133,6 +146,7 @@ export class MediaShareService extends WidgetSettingsService<IMediaShareData> {
     // backend makes settings into advanced.settings and store in json
     // without deleting, it will nest settings.advanced_settings.advanced_settings x infinity
     delete settings.advanced_settings;
+    settings.buffer_time = settings.buffer_time * 1000;
     return { settings };
   }
 }

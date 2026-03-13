@@ -1,10 +1,20 @@
 import { Module, EApiPermissions, apiMethod, apiEvent, IApiContext } from './module';
-import { SourcesService, TSourceType, Source, TPropertiesManager } from 'services/sources';
+import {
+  SourcesService,
+  TSourceType,
+  Source,
+  TPropertiesManager,
+  EDeinterlaceMode,
+  EDeinterlaceFieldOrder,
+} from 'services/sources';
 import { Inject } from 'services/core/injector';
 import { Subject } from 'rxjs';
 import { PlatformAppsService } from 'services/platform-apps';
 import { ScenesService } from 'services/scenes';
 import { AudioService } from 'services/audio';
+import { SourceFiltersService } from 'app-services';
+import { TSourceFilterType } from 'services/source-filters';
+import { TObsValue } from 'components/obs/inputs/ObsInput';
 
 interface ISourceFlags {
   audio: boolean;
@@ -17,6 +27,8 @@ interface ISourceSize {
   height: number;
 }
 
+type TMonitoringType = 'none' | 'monitor-only' | 'monitor-and-output';
+
 interface ISource {
   id: string;
   name: string;
@@ -28,6 +40,9 @@ interface ISource {
   appSourceId?: string;
   muted?: boolean;
   volume?: number;
+  monitoringType?: TMonitoringType;
+  deinterlaceMode: EDeinterlaceMode;
+  deinterlaceFieldOrder: EDeinterlaceFieldOrder;
 }
 
 export class SourcesModule extends Module {
@@ -38,6 +53,7 @@ export class SourcesModule extends Module {
   @Inject() private platformAppsService: PlatformAppsService;
   @Inject() private scenesService: ScenesService;
   @Inject() private audioService: AudioService;
+  @Inject() private sourceFiltersService: SourceFiltersService;
 
   constructor() {
     super();
@@ -162,6 +178,15 @@ export class SourcesModule extends Module {
     if (patch.volume != null) {
       this.audioService.views.getSource(patch.id).setDeflection(patch.volume);
     }
+
+    if (patch.monitoringType) {
+      const monitorTypes: TMonitoringType[] = ['none', 'monitor-only', 'monitor-and-output'];
+      const type = monitorTypes.findIndex(t => t === patch.monitoringType);
+
+      if (type != null) {
+        this.audioService.setSettings(patch.id, { monitoringType: type });
+      }
+    }
   }
 
   @apiMethod()
@@ -203,6 +228,8 @@ export class SourcesModule extends Module {
         width: source.width,
         height: source.height,
       },
+      deinterlaceMode: source.deinterlaceMode,
+      deinterlaceFieldOrder: source.deinterlaceFieldOrder,
     };
 
     if (source.getPropertiesManagerType() === 'platformApp') {
@@ -215,8 +242,43 @@ export class SourcesModule extends Module {
       const audioSource = this.audioService.views.getSource(source.sourceId);
       serialized.volume = audioSource.fader.deflection;
       serialized.muted = audioSource.muted;
+
+      const monitorTypes: TMonitoringType[] = ['none', 'monitor-only', 'monitor-and-output'];
+      serialized.monitoringType = monitorTypes[audioSource.monitoringType];
     }
 
     return serialized;
+  }
+
+  @apiMethod()
+  getFilterPresetOptions() {
+    return this.sourceFiltersService.views.presetFilterOptions;
+  }
+
+  @apiMethod()
+  setFilterPreset(ctx: IApiContext, sourceId: string, preset: string) {
+    this.sourceFiltersService.addPresetFilter(sourceId, preset);
+  }
+
+  @apiMethod()
+  getCurrentFilterPreset(ctx: IApiContext, sourceId: string) {
+    const preset = this.sourceFiltersService.views.presetFilterBySourceId(sourceId);
+
+    if (preset) {
+      return this.sourceFiltersService.views.parsePresetValue(preset.settings.image_path as string);
+    }
+
+    return '';
+  }
+
+  @apiMethod()
+  addFilter(
+    ctx: IApiContext,
+    sourceId: string,
+    filterType: TSourceFilterType,
+    filterName: string,
+    settings: Dictionary<TObsValue>,
+  ) {
+    this.sourceFiltersService.add(sourceId, filterType, filterName, settings);
   }
 }
