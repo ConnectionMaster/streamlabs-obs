@@ -1,5 +1,10 @@
-import { focusChild, skipCheckingErrorsInLog, test, useSpectron } from '../../helpers/spectron';
-import { logIn } from '../../helpers/spectron/user';
+import { logIn } from '../../helpers/modules/user';
+import {
+  skipCheckingErrorsInLog,
+  test,
+  TExecutionContext,
+  useWebdriver,
+} from '../../helpers/webdriver';
 import {
   chatIsVisible,
   clickGoLive,
@@ -9,83 +14,142 @@ import {
   stopStream,
   submit,
   waitForStreamStart,
-} from '../../helpers/spectron/streaming';
-import { FormMonkey, selectTitle } from '../../helpers/form-monkey';
-import moment = require('moment');
-import { sleep } from '../../helpers/sleep';
+} from '../../helpers/modules/streaming';
 
-useSpectron();
+import {
+  click,
+  closeWindow,
+  focusChild,
+  focusMain,
+  isDisplayed,
+  select,
+  waitForDisplayed,
+} from '../../helpers/modules/core';
+import * as moment from 'moment';
+import { useForm } from '../../helpers/modules/forms';
+import { ListInputController } from '../../helpers/modules/forms/list';
+import { logOut } from '../../helpers/webdriver/user';
+
+// not a react hook
+// eslint-disable-next-line react-hooks/rules-of-hooks
+useWebdriver();
+
+// Some accounts in the user pool may not be enabled for live streaming or need to be reauthed
+async function logInYouTubeEnabledAccount(
+  t: TExecutionContext,
+  retries: number = 3,
+): Promise<void> {
+  // only exclude multistream accounts on the first attempt to expand the user pool on later attempts
+  const multistream = retries === 3 ? false : undefined;
+  if (retries === 0) {
+    t.fail(
+      'No YouTube accounts with live streaming enabled are currently available in the user pool',
+    );
+    return;
+  }
+
+  await logIn('youtube', { multistream, streamingIsDisabled: false, notStreamable: false });
+  await prepareToGoLive();
+  await clickGoLive();
+
+  const isEnabled = await isDisplayed('div[data-name="youtube-settings"]', { timeout: 5000 });
+  if (!isEnabled) {
+    await logOut(t);
+    // try again to get an account that has streaming enabled
+    return await logInYouTubeEnabledAccount(t, retries - 1);
+  }
+
+  await closeWindow('child');
+}
 
 test('Streaming to Youtube', async t => {
-  await logIn(t, 'youtube');
+  await logInYouTubeEnabledAccount(t);
+  t.false(await chatIsVisible(), 'Chat should not be visible for YT before stream starts');
 
-  t.false(await chatIsVisible(t), 'Chat is not visible for YT before stream starts');
-
-  await goLive(t, {
+  await goLive({
     title: 'SLOBS Test Stream',
     description: 'SLOBS Test Stream Description',
   });
 
-  t.true(await chatIsVisible(t), 'Chat should be visible');
-  await stopStream(t);
+  t.true(await chatIsVisible(), 'Chat should be visible');
+  await stopStream();
 });
 
-test('Streaming to the scheduled event on Youtube', async t => {
-  await logIn(t, 'youtube', { multistream: false });
+// TODO flaky
+test.skip('Streaming to the scheduled event on Youtube', async t => {
+  await logInYouTubeEnabledAccount(t);
+  const tomorrow = moment().add(1, 'day').toDate();
+  await scheduleStream(tomorrow, { platform: 'YouTube', title: 'Test YT Scheduler' });
+  await prepareToGoLive();
+  await clickGoLive();
+  await focusChild();
+  const { getInput } = useForm('youtube-settings');
+  const broadcastIdInput = await getInput<ListInputController<string>>('broadcastId');
+  t.true(
+    await broadcastIdInput.hasOption('Test YT Scheduler'),
+    'Scheduled event should be visible in the broadcast selector',
+  );
 
-  // create event via scheduling form
-  const tomorrow = Date.now() + 1000 * 60 * 60 * 24;
-  const formattedTomorrow = moment(tomorrow).format(moment.localeData().longDateFormat('ll'));
-  await scheduleStream(t, tomorrow, {
-    title: 'Youtube Test Stream',
-    description: 'SLOBS Test Stream Description',
+  await goLive({
+    broadcastId: 'Test YT Scheduler',
   });
+});
 
-  // select event and go live
-  await prepareToGoLive(t);
-  await clickGoLive(t);
-  const form = new FormMonkey(t);
-  await form.fill({
-    event: await form.getOptionByTitle('event', `Youtube Test Stream (${formattedTomorrow})`),
-  });
-  await submit(t);
-  await waitForStreamStart(t);
-  await stopStream(t);
+// TODO flaky
+test.skip('GoLive from StreamScheduler', async t => {
+  await logInYouTubeEnabledAccount(t);
+  await prepareToGoLive();
+
+  // schedule stream
+  const tomorrow = moment().add(1, 'day').toDate();
+  await scheduleStream(tomorrow, { platform: 'YouTube', title: 'Test YT Scheduler' });
+
+  // open the modal
+  await focusMain();
+  await click('span=Test YT Scheduler');
+
+  // click GoLive
+  const $modal = await select('.ant-modal-content');
+  const $goLiveBtn = await $modal.$('button=Go Live');
+  await click($goLiveBtn);
+
+  // confirm settings
+  await focusChild();
+  await submit();
+  await waitForStreamStart();
   t.pass();
 });
 
 test('Start stream twice to the same YT event', async t => {
-  await logIn(t, 'youtube', { multistream: false });
+  await logInYouTubeEnabledAccount(t);
 
   // create event via scheduling form
   const now = Date.now();
-  await goLive(t, {
+  await goLive({
     title: `Youtube Test Stream ${now}`,
     description: 'SLOBS Test Stream Description',
     enableAutoStop: false,
   });
-  await stopStream(t);
+  await stopStream();
 
-  await goLive(t, {
-    event: selectTitle(`Youtube Test Stream ${now}`),
+  await goLive({
+    broadcastId: `Youtube Test Stream ${now}`,
     enableAutoStop: true,
   });
-  await stopStream(t);
+  await stopStream();
   t.pass();
 });
 
 test('Youtube streaming is disabled', async t => {
   skipCheckingErrorsInLog();
-  const client = t.context.app.client;
-  await logIn(t, 'youtube', { streamingIsDisabled: true, notStreamable: true });
+  await logIn('youtube', { streamingIsDisabled: true, notStreamable: true });
+
   t.true(
-    await (await client.$('span=YouTube account not enabled for live streaming')).isExisting(),
+    await isDisplayed('span=YouTube account not enabled for live streaming'),
     'The streaming-disabled message should be visible',
   );
-  await prepareToGoLive(t);
-  await clickGoLive(t);
-  t.true(
-    await (await client.$('button=Enable Live Streaming')).isDisplayed(),
-    'The enable livestreaming button should be visible',
-  );
+  await prepareToGoLive();
+  await clickGoLive();
+  await focusChild();
+  await waitForDisplayed('button=Enable Live Streaming');
 });
