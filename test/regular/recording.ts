@@ -99,7 +99,13 @@ async function validateRecordingFiles(
   waitForDisplayed('h1=Recordings');
 
   const numRecordings = await getNumElements('[data-test=filename]');
-  t.is(numRecordings, numFiles, 'All recordings show in history matches number of files recorded');
+  t.is(
+    numRecordings,
+    numFiles,
+    `All recordings from ${
+      advanced ? 'Advanced' : 'Simple'
+    } mode in history matches number of files recorded`,
+  );
 }
 
 /**
@@ -158,12 +164,13 @@ test('Recording with two contexts active', async t => {
 
 test('Recording from Go Live window', async t => {
   const user = await logIn(t);
-  await setOutputResolution('100x100');
-  const tmpDir = await setTemporaryRecordingPath();
   await prepareToGoLive();
+  const tmpDir = await setTemporaryRecordingPath();
 
   await clickGoLive();
   await waitForSettingsWindowLoaded();
+
+  await clickToggle('recording-toggle');
 
   if (user.type === 'twitch') {
     await fillForm({
@@ -171,7 +178,12 @@ test('Recording from Go Live window', async t => {
     });
   }
 
-  await clickToggle('recording-toggle');
+  if (user.type === 'youtube') {
+    await fillForm({
+      title: 'Test Stream',
+      description: 'Test Stream Description',
+    });
+  }
 
   await submit();
   await waitForStreamStart();
@@ -180,6 +192,7 @@ test('Recording from Go Live window', async t => {
   await stopRecording();
   await stopStream();
 
-  const files = await readdir(tmpDir);
-  t.is(files.length, 1, `Files that were created:\n${files.join('\n')}`);
+  await validateRecordingFiles(t, tmpDir, 1);
+
+  await logOut(t, true);
 });

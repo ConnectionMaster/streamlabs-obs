@@ -147,14 +147,12 @@ interface IAdvancedRecordingOutputSettings extends IRecordingOutputSettings {
 
 interface IStreamingOutputSettings {
   enforceServiceBitrate: boolean;
-  enableTwitchVOD: boolean;
 }
 
 interface ISimpleStreamingOutputSettings extends IStreamingOutputSettings {
-  enforceServiceBitrate: boolean;
   useAdvanced: boolean;
   customEncSettings: string;
-  videoEncoder: EObsAdvancedEncoder; // TODO: should this be `EObsSimpleEncoder`?
+  videoEncoder: EObsAdvancedEncoder;
 }
 
 interface IAdvancedStreamingOutputSettings extends IStreamingOutputSettings {
@@ -163,6 +161,7 @@ interface IAdvancedStreamingOutputSettings extends IStreamingOutputSettings {
   outputWidth: number;
   outputHeight: number;
   videoEncoder: EObsAdvancedEncoder;
+  enableTwitchVOD: boolean;
   twitchTrack?: number;
 }
 
@@ -666,18 +665,17 @@ export class OutputSettingsService extends Service {
           'VodTrackIndex',
         );
 
-        return { ...advancedStreamSettings, twitchTrack };
+        return { ...advancedStreamSettings, twitchTrack } as IAdvancedStreamingOutputSettings;
       }
 
-      return advancedStreamSettings;
+      return advancedStreamSettings as IAdvancedStreamingOutputSettings;
     } else {
       return {
         videoEncoder,
         enforceServiceBitrate,
         useAdvanced,
         customEncSettings,
-        enableTwitchVOD,
-      };
+      } as ISimpleStreamingOutputSettings;
     }
   }
 
@@ -825,14 +823,19 @@ export class OutputSettingsService extends Service {
     return this.settingsService.findSettingValue(output, 'Recording', 'RecAAudio') ?? 'ffmpeg_aac';
   }
 
-  getStreamingVideoEncoderSettings(): ISettings {
+  getStreamingVideoEncoderSettings(mode: TOutputSettingsMode): ISettings {
     const output = this.settingsService.state.Output.formData;
 
-    const bitrate = this.settingsService.findSettingValue(output, 'Streaming', 'VBitrate');
+    const bitrate =
+      this.settingsService.findSettingValue(output, 'Streaming', 'bitrate') ??
+      this.settingsService.findSettingValue(output, 'Streaming', 'VBitrate');
+
+    if (mode === 'Simple') {
+      return { bitrate };
+    }
 
     // TODO: these are only being fetched in advanced mode
     const rateControl = this.settingsService.findSettingValue(output, 'Streaming', 'rate_control');
-    // const bitrate = this.settingsService.findSettingValue(output, 'Streaming', 'bitrate');
     const keyintSec = this.settingsService.findSettingValue(output, 'Streaming', 'keyint_sec');
     const x264opts = this.settingsService.findSettingValue(output, 'Streaming', 'x264opts');
 

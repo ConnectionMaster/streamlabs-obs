@@ -13,13 +13,22 @@ import {
 import { showSettingsWindow } from '../../helpers/modules/settings/settings';
 import { clickButton, focusChild, isDisplayed, waitForDisplayed } from '../../helpers/modules/core';
 import { restartApp, skipCheckingErrorsInLog, test, useWebdriver } from '../../helpers/webdriver';
-import { reserveUserFromPool } from '../../helpers/webdriver/user';
+import { reserveUserFromPool, withUser } from '../../helpers/webdriver/user';
 import { getApiClient } from '../../helpers/api-client';
 import { StreamSettingsService } from '../../../app/services/settings/streaming';
 import { assertFormContains, fillForm } from '../../helpers/modules/forms';
 import { setInputValue } from '../../helpers/modules/forms/base';
 import { logIn } from '../../helpers/modules/user';
 import { dismissModal } from '../../helpers/webdriver/modals';
+import { sleep } from '../../helpers/sleep';
+
+async function enableTwitchVOD(status: boolean = true) {
+  await showSettingsWindow('Output', async () => {
+    await fillForm({ Mode: 'Advanced' });
+    await fillForm('Streaming', { VodTrackEnabled: status, VodTrackIndex: 3 });
+    await clickButton('Close');
+  });
+}
 
 // not a react hook
 // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -27,6 +36,7 @@ useWebdriver();
 
 test('Streaming to Twitch', async t => {
   await logIn('twitch', { multistream: false });
+
   await goLive({
     title: 'SLOBS Test Stream',
     twitchGame: 'Warcraft III',
@@ -37,6 +47,15 @@ test('Streaming to Twitch', async t => {
   await showSettingsWindow('Stream');
   await waitForDisplayed("div=You can not change these settings when you're live");
   await stopStream();
+
+  // Twitch VOD Track
+  await enableTwitchVOD();
+  await clickGoLive();
+  await waitForSettingsWindowLoaded();
+  await submit();
+  await waitForStreamStart();
+  await stopStream();
+
   t.pass();
 });
 
@@ -142,3 +161,51 @@ test('Streaming to Twitch unlisted category', async t => {
   });
   t.pass();
 });
+
+// This test has been skipped because of an error likely caused by Selenium and Chromium version mismatch
+test.skip(
+  'Twitch Enhanced Broadcasting',
+  withUser('twitch', { multistream: true, prime: true }),
+  async t => {
+    await prepareToGoLive();
+
+    // Single Output Single Stream
+    await clickGoLive();
+    await waitForSettingsWindowLoaded();
+
+    await fillForm({
+      title: 'Test Stream',
+      twitchGame: 'Fortnite',
+      isEnhancedBroadcasting: true,
+    });
+
+    await submit();
+    await waitForStreamStart();
+    await stopStream();
+
+    // Single Output Single Stream with Twitch VOD enabled
+    await enableTwitchVOD();
+    await clickGoLive();
+    await waitForSettingsWindowLoaded();
+    await submit();
+    await waitForStreamStart();
+    await stopStream();
+
+    // Single Output Multistream
+    await clickGoLive();
+    await waitForSettingsWindowLoaded();
+
+    await fillForm({
+      trovo: true,
+    });
+
+    await waitForSettingsWindowLoaded();
+    await submit();
+    await waitForStreamStart();
+    await stopStream();
+
+    await sleep(4000);
+
+    t.pass();
+  },
+);
