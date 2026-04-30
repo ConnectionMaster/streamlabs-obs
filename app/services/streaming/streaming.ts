@@ -3259,6 +3259,47 @@ export class StreamingService
     return `${hours}:${minutes}:${seconds}`;
   }
 
+  /**
+   * PERFORMANCE STATISTICS
+   */
+  get streamingPerformanceStats() {
+    let droppedFrames = 0;
+    let totalFrames = 0;
+    let kbitsPerSec = 0;
+    let dataOutput = 0;
+
+    for (const contextName of Object.keys(this.contexts) as TOutputContext[]) {
+      const instance = this.contexts[contextName].streaming;
+      if (!instance) continue;
+
+      droppedFrames += instance.droppedFrames;
+      totalFrames += instance.totalFrames;
+      kbitsPerSec += instance.kbitsPerSec;
+      dataOutput += instance.dataOutput;
+    }
+
+    return { droppedFrames, totalFrames, kbitsPerSec, dataOutput };
+  }
+
+  get recordingPerformanceStats() {
+    let kbitsPerSec = 0;
+    let dataOutput = 0;
+
+    for (const contextName of Object.keys(this.contexts) as TOutputContext[]) {
+      const instance = this.contexts[contextName].recording;
+      if (!instance) continue;
+
+      kbitsPerSec += instance.streaming.kbitsPerSec;
+      dataOutput += instance.streaming.dataOutput;
+    }
+
+    return { kbitsPerSec, dataOutput };
+  }
+
+  /**
+   * AUTO-RETRY
+   */
+
   private async handleRetryStartStreaming(info: IOBSOutputSignalInfo) {
     // Toggle off recording and replay buffer when starting the stream
     const recordWhenStreaming = this.streamSettingsService.settings.recordWhenStreaming;
