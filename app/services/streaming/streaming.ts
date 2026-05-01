@@ -27,6 +27,7 @@ import {
   SimpleRecordingFactory,
   AdvancedReplayBufferFactory,
   SimpleReplayBufferFactory,
+  ISettings,
 } from '../../../obs-api';
 import { Inject } from 'services/core/injector';
 import moment from 'moment';
@@ -2375,10 +2376,15 @@ export class StreamingService
         key === 'videoEncoder' &&
         (contextName !== 'enhancedBroadcasting' || isEnhancedBroadcastingContext)
       ) {
-        const encoderSettings =
-          type === 'streaming'
-            ? this.outputSettingsService.getStreamingVideoEncoderSettings(mode)
-            : undefined;
+        let encoderSettings: ISettings | undefined;
+        switch (type) {
+          case 'streaming':
+            encoderSettings = this.outputSettingsService.getStreamingVideoEncoderSettings(mode);
+            break;
+          case 'recording':
+            encoderSettings = this.outputSettingsService.getRecordingVideoEncoderSettings(mode);
+            break;
+        }
 
         if (encoderSettings) {
           instance.videoEncoder = VideoEncoderFactory.create(

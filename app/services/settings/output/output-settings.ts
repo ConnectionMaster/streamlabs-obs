@@ -417,10 +417,6 @@ export class OutputSettingsService extends Service {
         ? EObsAdvancedEncoder.obs_x264
         : convertedEncoderName;
 
-    console.log(
-      `MLH getRecordingSettings encoder name to convert: ${encoder} converted name: ${convertedEncoderName} final value to use: ${videoEncoder}`,
-    );
-
     const lowCPU: boolean = convertedEncoderName === EObsSimpleEncoder.x264_lowcpu;
 
     const overwrite: boolean = this.settingsService.findSettingValue(
@@ -884,6 +880,23 @@ export class OutputSettingsService extends Service {
       keyint_sec: keyintSec,
       x264opts,
     };
+  }
+
+  getRecordingVideoEncoderSettings(mode: TOutputSettingsMode): ISettings {
+    const output = this.settingsService.state.Output.formData;
+    const video = this.settingsService.state.Video.formData;
+    const streaming = this.getStreamingEncoderSettings(output, video);
+    const recording = this.getRecordingEncoderSettings(output, video, mode, streaming);
+
+    const encoderSettings: ISettings = {
+      bitrate: recording.bitrate,
+    };
+
+    if (recording.rateControl != null) {
+      encoderSettings.rate_control = recording.rateControl;
+    }
+
+    return encoderSettings;
   }
 
   /**
