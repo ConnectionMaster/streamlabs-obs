@@ -1,0 +1,379 @@
+import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
+import cx from 'classnames';
+import { EStreamingState } from 'services/streaming';
+import { EGlobalSyncStatus } from 'services/media-backup';
+import { $t } from 'services/i18n';
+import { useVuex } from '../hooks';
+import { Services } from '../service-provider';
+import * as remote from '@electron/remote';
+import { TStreamShiftStatus } from 'services/restream';
+import { promptAction } from 'components-react/modals';
+import { TSocketEvent } from 'services/websocket';
+import { useRealmObject } from 'components-react/hooks/realm';
+import debounce from 'lodash/debounce';
+
+function StartStreamingButton(p: { disabled?: boolean }) {
+  const {
+    StreamingService,
+    StreamSettingsService,
+    UserService,
+    CustomizationService,
+    MediaBackupService,
+    SourcesService,
+    RestreamService,
+    UsageStatisticsService,
+  } = Services;
+
+  const {
+    streamingStatus,
+    delayEnabled,
+    delaySeconds,
+    streamShiftStatus,
+    isDualOutputMode,
+    isLoggedIn,
+    isPrime,
+    primaryPlatform,
+    isMultiplatformMode,
+  } = useVuex(
+    () => ({
+      streamingStatus: StreamingService.views.streamingStatus,
+      delayEnabled: StreamingService.views.delayEnabled,
+      delaySeconds: StreamingService.views.delaySeconds,
+      streamShiftStatus: RestreamService.state.streamShiftStatus,
+      isDualOutputMode: StreamingService.views.isDualOutputMode,
+      isLoggedIn: UserService.isLoggedIn,
+      isPrime: UserService.state.isPrime,
+      primaryPlatform: UserService.state.auth?.primaryPlatform,
+      isMultiplatformMode: StreamingService.views.isMultiplatformMode,
+    }),
+    false,
+  );
+
+  const updateStreamInfoOnLive = useRealmObject(CustomizationService.state).updateStreamInfoOnLive;
+
+  const [delaySecondsRemaining, setDelayTick] = useState(delaySeconds);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setDelayTick(delaySeconds);
+  }, [streamingStatus]);
+
+  useEffect(() => {
+    if (
+      delayEnabled &&
+      delaySecondsRemaining > 0 &&
+      (streamingStatus === EStreamingState.Starting || streamingStatus === EStreamingState.Ending)
+    ) {
+      const interval = window.setTimeout(() => {
+        setDelayTick(delaySecondsRemaining - 1);
+      }, 1000);
+      return () => {
+        clearTimeout(interval);
+      };
+    }
+  }, [delaySecondsRemaining, streamingStatus, delayEnabled]);
+
+  useEffect(() => {
+    if (!isDualOutputMode && isPrime && streamingStatus === EStreamingState.Offline) {
+      fetchStreamShiftStatus().catch((e: unknown) => {
+        console.error('Error fetching stream shift status:', e);
+      });
+    }
+
+    const streamShiftEvent = StreamingService.streamShiftEvent.subscribe((event: TSocketEvent) => {
+      if (event.type !== 'streamSwitchRequest' && event.type !== 'switchActionComplete') {
+        return;
+      }
+
+      const { streamShiftStreamId } = RestreamService.state;
+      console.debug('Event ID: ' + event.data.identifier, '\n Stream ID: ' + streamShiftStreamId);
+      const isIncomingStream: boolean =
+        (streamShiftStreamId && event.data.identifier === streamShiftStreamId) || false;
+
+      if (event.type === 'streamSwitchRequest') {
+        if (isIncomingStream) {
+          // Don't record the request from this device because the other device will record it
+          RestreamService.actions.confirmStreamShift('approved');
+        } else {
+          recordStreamShiftAnalytics('request', event.data.identifier);
+        }
+      }
+
+      if (event.type === 'switchActionComplete') {
+        // End the stream on this device if switching the stream to another device
+        // Only record analytics if the stream was switched from this device to a different one
+        if (!isIncomingStream) {
+          Services.RestreamService.actions.endStreamShiftStream(event.data.identifier);
+          recordStreamShiftAnalytics('complete', event.data.identifier);
+        }
+
+        // Notify the user
+        const message = formatStreamShiftMessage(isIncomingStream, event.data.identifier);
+
+        promptAction({
+          title: $t('Stream successfully switched'),
+          message,
+          btnText: $t('Close'),
+          btnType: 'default',
+          cancelBtnPosition: 'none',
+        });
+      }
+    });
+
+    return () => {
+      toggleStreaming.cancel();
+      streamShiftEvent.unsubscribe();
+    };
+  }, []);
+
+  const recordStreamShiftAnalytics = useCallback((action: 'request' | 'complete', id: string) => {
+    // Note: because the event's stream id is from the device that requested the switch,
+    // it is not possible to know what type of device the stream will be switching from.
+    // We can only identify the type of device the stream is switching to.
+    const remoteDeviceType = /[A-Z]/.test(id) ? 'mobile' : 'desktop';
+    const switchType = `desktop-${remoteDeviceType}`;
+
+    UsageStatisticsService.recordAnalyticsEvent('StreamShift', {
+      stream: switchType,
+      action,
+    });
+  }, []);
+
+  const formatStreamShiftMessage = useCallback((isFromOtherDevice: boolean, id: string) => {
+    if (isFromOtherDevice) {
+      return $t(
+        'Your stream has been switched to Streamlabs Desktop from another device. Enjoy your stream!',
+      );
+    }
+
+    const remoteDeviceType = /[A-Z]/.test(id) ? 'mobile' : 'desktop';
+    return remoteDeviceType === 'mobile'
+      ? $t('Your stream has been successfully switched to Streamlabs Mobile. Enjoy your stream!')
+      : $t('Your stream has been successfully switched to Streamlabs Desktop. Enjoy your stream!');
+  }, []);
+
+  const handleToggleStreaming = useCallback(async () => {
+    if (StreamingService.isStreaming) {
+      StreamingService.toggleStreaming();
+    } else {
+      // Check if the scene collection has completed loading and syncing
+      if (MediaBackupService.views.globalSyncStatus === EGlobalSyncStatus.Syncing) {
+        const goLive = await remote.dialog
+          .showMessageBox(remote.getCurrentWindow(), {
+            title: $t('Cloud Backup'),
+            type: 'warning',
+            message:
+              $t('Your media files are currently being synced with the cloud. ') +
+              $t('It is recommended that you wait until this finishes before going live.'),
+            buttons: [$t('Wait'), $t('Go Live Anyway')],
+          })
+          .then(({ response }) => !!response);
+
+        if (!goLive) return;
+      }
+
+      const needToShowNoSourcesWarning =
+        StreamSettingsService.settings.warnNoVideoSources &&
+        SourcesService.views.getSources().filter(source => source.type !== 'scene' && source.video)
+          .length === 0;
+
+      if (needToShowNoSourcesWarning) {
+        const goLive = await remote.dialog
+          .showMessageBox(remote.getCurrentWindow(), {
+            title: $t('No Sources'),
+            type: 'warning',
+            message:
+              // tslint:disable-next-line prefer-template
+              $t(
+                "It looks like you haven't added any video sources yet, so you will only be outputting a black screen.",
+              ) +
+              ' ' +
+              $t('Are you sure you want to do this?') +
+              '\n\n' +
+              $t('You can add sources by clicking the + icon near the Sources box at any time'),
+            buttons: [$t('Cancel'), $t('Go Live Anyway')],
+          })
+          .then(({ response }) => !!response);
+
+        if (!goLive) return;
+      }
+
+      // Only check for Stream Shift for ultra users
+      if (isLoggedIn && isPrime) {
+        try {
+          setIsLoading(true);
+          const isLive = await fetchStreamShiftStatus();
+          setIsLoading(false);
+
+          const message = isDualOutputMode
+            ? $t(
+                'A stream on another device has been detected. Would you like to switch your stream to Streamlabs Desktop? If you do not wish to continue this stream, please end it from the current streaming source. Dual Output will be disabled since not supported in this mode. If you\'re sure you\'re not live and it has been incorrectly detected, choose "Force Start" below.',
+              )
+            : $t(
+                'A stream on another device has been detected. Would you like to switch your stream to Streamlabs Desktop? If you do not wish to continue this stream, please end it from the current streaming source. If you\'re sure you\'re not live and it has been incorrectly detected, choose "Force Start" below.',
+              );
+
+          if (isLive) {
+            const { streamShiftForceGoLive } = RestreamService.state;
+            let shouldForceGoLive = streamShiftForceGoLive;
+
+            await promptAction({
+              title: $t('Another stream detected'),
+              message,
+              btnText: $t('Switch to Streamlabs Desktop'),
+              fn: startStreamShift,
+              cancelBtnText: $t('Cancel'),
+              cancelBtnPosition: 'left',
+              secondaryActionText: $t('Force Start'),
+              secondaryActionFn: async () => {
+                // FIXME: this should actually do something server-side
+                RestreamService.actions.return.forceStreamShiftGoLive(true);
+                shouldForceGoLive = true;
+              },
+            });
+
+            if (!shouldForceGoLive) {
+              return;
+            }
+          }
+        } catch (e: unknown) {
+          console.error('Error checking stream switcher status when toggle streaming:', e);
+          setIsLoading(false);
+
+          return;
+        }
+      }
+
+      if (shouldShowGoLiveWindow()) {
+        if (!StreamingService.views.hasPendingChecks()) {
+          StreamingService.actions.resetInfo();
+        }
+        StreamingService.actions.showGoLiveWindow();
+      } else {
+        StreamingService.actions.goLive();
+      }
+    }
+  }, [streamingStatus, streamShiftStatus, isDualOutputMode, isLoggedIn, isPrime]);
+
+  // Wrap the toggleStreaming function in a debounce to prevent multiple rapid clicks
+  // and also to cancel the action on unmount to prevent memory leaks and state updates on unmounted components
+  const toggleStreaming = useMemo(() => debounce(handleToggleStreaming, 500), [
+    handleToggleStreaming,
+  ]);
+
+  const getIsRedButton = useMemo(() => {
+    return streamingStatus !== EStreamingState.Offline && streamShiftStatus !== 'pending';
+  }, [streamingStatus, streamShiftStatus]);
+
+  const isDisabled = useMemo(() => {
+    return (
+      p.disabled ||
+      (streamingStatus === EStreamingState.Starting && delaySecondsRemaining === 0) ||
+      (streamingStatus === EStreamingState.Ending && delaySecondsRemaining === 0)
+    );
+  }, [p.disabled, streamingStatus, delaySecondsRemaining]);
+
+  const fetchStreamShiftStatus = useCallback(async () => {
+    try {
+      const isLive = await RestreamService.actions.return.checkIsLive();
+      return isLive;
+    } catch (e: unknown) {
+      console.log('Error checking stream shift status', e);
+      setIsLoading(false);
+      return false;
+    }
+  }, []);
+
+  const startStreamShift = useCallback(() => {
+    if (isDualOutputMode) {
+      Services.DualOutputService.actions.toggleDisplay(false, 'vertical');
+    }
+
+    StreamingService.actions.goLive();
+  }, [isDualOutputMode]);
+
+  const shouldShowGoLiveWindow = useCallback(() => {
+    if (!UserService.isLoggedIn) return false;
+    const primaryPlatform = UserService.state.auth?.primaryPlatform;
+    const updateStreamInfoOnLive = CustomizationService.state.updateStreamInfoOnLive;
+
+    if (!primaryPlatform) return false;
+
+    if (StreamingService.views.isDualOutputMode) {
+      return true;
+    }
+
+    if (
+      !!UserService.state.auth?.platforms &&
+      StreamingService.views.isMultiplatformMode &&
+      Object.keys(UserService.state.auth?.platforms).length > 1
+    ) {
+      return true;
+    }
+
+    if (primaryPlatform === 'twitch') {
+      // For Twitch, we can show the Go Live window even with protected mode off
+      // This is mainly for legacy reasons.
+      return StreamingService.views.isMultiplatformMode || updateStreamInfoOnLive;
+    } else {
+      return (
+        StreamSettingsService.state.protectedModeEnabled &&
+        StreamSettingsService.isSafeToModifyStreamKey()
+      );
+    }
+  }, [primaryPlatform, isMultiplatformMode, updateStreamInfoOnLive]);
+
+  return (
+    <button
+      style={{ minWidth: '130px' }}
+      className={cx('button button--action', { 'button--soft-warning': getIsRedButton })}
+      disabled={isDisabled}
+      onClick={toggleStreaming}
+      data-name="StartStreamingButton"
+    >
+      {isLoading ? (
+        <i className="fa fa-spinner fa-pulse" />
+      ) : (
+        <StreamButtonLabel
+          delaySecondsRemaining={delaySecondsRemaining}
+          streamingStatus={streamingStatus}
+          delayEnabled={delayEnabled}
+          streamShiftStatus={streamShiftStatus}
+        />
+      )}
+    </button>
+  );
+}
+
+type TStreamButtonLabelProps = {
+  delaySecondsRemaining: number;
+  streamingStatus: EStreamingState;
+  delayEnabled: boolean;
+  streamShiftStatus: TStreamShiftStatus;
+};
+
+const StreamButtonLabel = memo((p: TStreamButtonLabelProps) => {
+  const label = useMemo(() => {
+    if (p.streamShiftStatus === 'pending') {
+      return $t('Claim Stream');
+    }
+
+    switch (p.streamingStatus) {
+      case EStreamingState.Live:
+        return $t('End Stream');
+      case EStreamingState.Starting:
+        return p.delayEnabled ? `Starting ${p.delaySecondsRemaining}s` : $t('Starting');
+      case EStreamingState.Ending:
+        return p.delayEnabled ? `Discard ${p.delaySecondsRemaining}s` : $t('Ending');
+      case EStreamingState.Reconnecting:
+        return $t('Reconnecting');
+      case EStreamingState.Offline:
+      default:
+        return $t('Go Live');
+    }
+  }, [p.streamShiftStatus, p.streamingStatus, p.delayEnabled, p.delaySecondsRemaining]);
+
+  return <>{label}</>;
+});
+
+export default memo(StartStreamingButton);
