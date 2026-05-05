@@ -3,7 +3,7 @@ import { ISettingsSubCategory, SettingsService } from 'services/settings';
 import { TDisplayType, VideoSettingsService } from 'services/settings-v2/video';
 import { Inject } from 'services/core/injector';
 import { Dictionary } from 'vuex';
-import { ERecordingQuality, ERecordingFormat, ISettings } from 'obs-studio-node';
+import { ERecordingQuality, ERecordingFormat, EScaleType, ISettings } from 'obs-studio-node';
 
 /**
  * list of encoders for simple mode
@@ -24,7 +24,11 @@ enum EObsAdvancedEncoder {
   ffmpeg_nvenc = 'ffmpeg_nvenc',
   obs_x264 = 'obs_x264',
   amd_amf_h264 = 'amd_amf_h264',
+  h264_texture_amf = 'h264_texture_amf',
   obs_qsv11 = 'obs_qsv11',
+  obs_qsv11_v2 = 'obs_qsv11_v2',
+  obs_qsv11_hevc = 'obs_qsv11_hevc',
+  obs_qsv11_av1 = 'obs_qsv11_av1',
   jim_nvenc = 'jim_nvenc',
   ffmpeg_aom_av1 = 'ffmpeg_aom_av1',
   ffmpeg_svt_av1 = 'ffmpeg_svt_av1',
@@ -142,6 +146,11 @@ interface IAdvancedRecordingOutputSettings extends IRecordingOutputSettings {
    * but is not a property for the Simple Recording Factory instance.
    */
   useStreamEncoders: boolean;
+  enableFileSplit: boolean;
+  splitTime: number;
+  splitSize: number;
+  splitType: string;
+  resetTimestamps: boolean;
 }
 
 interface IStreamingOutputSettings {
@@ -157,6 +166,7 @@ interface ISimpleStreamingOutputSettings extends IStreamingOutputSettings {
 interface IAdvancedStreamingOutputSettings extends IStreamingOutputSettings {
   audioTrack: number;
   rescaling: boolean;
+  rescaleFilter: EScaleType;
   outputWidth: number;
   outputHeight: number;
   videoEncoder: EObsAdvancedEncoder;
@@ -184,6 +194,8 @@ export interface IRecordingEncoderSettings extends IEncoderSettings {
 
 export interface IStreamingEncoderSettings extends IEncoderSettings {
   preset: string;
+  // Deprecated compatibility flag for callers that only need enabled/disabled state.
+  // Advanced streaming runtime settings use RescaleFilter via IAdvancedStreamingOutputSettings.
   rescaleOutput: boolean;
   hasCustomResolution: boolean;
   encoderOptions: string;
@@ -218,10 +230,10 @@ type TOutputSettingsMode = 'Simple' | 'Advanced';
 const simpleEncoderToAnvancedEncoderMap: Dictionary<EObsAdvancedEncoder> = {
   [EObsSimpleEncoder.x264]: EObsAdvancedEncoder.obs_x264,
   [EObsSimpleEncoder.x264_lowcpu]: EObsAdvancedEncoder.obs_x264,
-  [EObsSimpleEncoder.qsv]: EObsAdvancedEncoder.obs_qsv11,
+  [EObsSimpleEncoder.qsv]: EObsAdvancedEncoder.obs_qsv11_v2,
   [EObsSimpleEncoder.nvenc]: EObsAdvancedEncoder.ffmpeg_nvenc,
   [EObsSimpleEncoder.jim_nvenc]: EObsAdvancedEncoder.jim_nvenc,
-  [EObsSimpleEncoder.amd]: EObsAdvancedEncoder.amd_amf_h264,
+  [EObsSimpleEncoder.amd]: EObsAdvancedEncoder.h264_texture_amf,
 };
 
 /**
@@ -254,6 +266,9 @@ export function obsEncoderToEncoderFamily(
       return EEncoderFamily.x264;
     case EObsSimpleEncoder.qsv:
     case EObsAdvancedEncoder.obs_qsv11:
+    case EObsAdvancedEncoder.obs_qsv11_v2:
+    case EObsAdvancedEncoder.obs_qsv11_hevc:
+    case EObsAdvancedEncoder.obs_qsv11_av1:
       return EEncoderFamily.qsv;
     case EObsSimpleEncoder.nvenc:
     case EObsAdvancedEncoder.ffmpeg_nvenc:
@@ -262,6 +277,7 @@ export function obsEncoderToEncoderFamily(
       return EEncoderFamily.jim_nvenc;
     case EObsSimpleEncoder.amd:
     case EObsAdvancedEncoder.amd_amf_h264:
+    case EObsAdvancedEncoder.h264_texture_amf:
       return EEncoderFamily.amd;
     case EObsAdvancedEncoder.obs_nvenc_av1_tex:
       return EEncoderFamily.obs_nvenc_av1_tex;
@@ -269,6 +285,10 @@ export function obsEncoderToEncoderFamily(
       return EEncoderFamily.obs_nvenc_hevc_tex;
     case EObsAdvancedEncoder.obs_nvenc_h264_tex:
       return EEncoderFamily.obs_nvenc_h264_tex;
+    case EObsAdvancedEncoder.ffmpeg_aom_av1:
+      return EEncoderFamily.ffmpeg_aom_av1;
+    case EObsAdvancedEncoder.ffmpeg_svt_av1:
+      return EEncoderFamily.ffmpeg_svt_av1;
   }
 }
 
@@ -396,17 +416,11 @@ export class OutputSettingsService extends Service {
       ? this.settingsService.findSettingValue(output, 'Streaming', field)
       : this.settingsService.findSettingValue(output, 'Recording', 'RecEncoder');
 
-    // START TODO: remove these 2 conversions after encoder updates and use 'encoder' in the lowCPU line below
-    const convertedEncoderName = this.convertEncoderToNewAPI(obsEncoderToEncoderFamily(encoder));
+    const convertedEncoderName = this.convertEncoderToNewAPI(encoder);
     const videoEncoder: EObsAdvancedEncoder =
       convertedEncoderName === EObsSimpleEncoder.x264_lowcpu
         ? EObsAdvancedEncoder.obs_x264
         : convertedEncoderName;
-
-    console.log(
-      `MLH getRecordingSettings encoder name to convert: ${encoder} converted name: ${convertedEncoderName} final value to use: ${videoEncoder}`,
-    );
-    // END TODO: remove these 2 conversions after encoder updates and use 'encoder' in the lowCPU line below
 
     const lowCPU: boolean = convertedEncoderName === EObsSimpleEncoder.x264_lowcpu;
 
@@ -445,6 +459,28 @@ export class OutputSettingsService extends Service {
     if (mode === 'Advanced') {
       const mixer = this.settingsService.findSettingValue(output, 'Recording', 'RecTracks');
       const rescaling = this.settingsService.findSettingValue(output, 'Recording', 'RecRescale');
+      const enableFileSplit = this.settingsService.findSettingValue(
+        output,
+        'Recording',
+        'RecSplitFile',
+      );
+      const splitTime =
+        this.settingsService.findSettingValue(output, 'Recording', 'RecSplitFileTime') * 60; // convert seconds to minutes
+      const splitSize = this.settingsService.findSettingValue(
+        output,
+        'Recording',
+        'RecSplitFileSize',
+      );
+      const splitType = this.settingsService.findSettingValue(
+        output,
+        'Recording',
+        'RecSplitFileType',
+      );
+      const resetTimestamps = this.settingsService.findSettingValue(
+        output,
+        'Recording',
+        'RecSplitFileResetTimestamps',
+      );
 
       // advanced settings
       return {
@@ -462,6 +498,11 @@ export class OutputSettingsService extends Service {
         outputHeight,
         fileFormat,
         muxerSettings,
+        enableFileSplit,
+        splitTime,
+        splitSize,
+        splitType,
+        resetTimestamps,
       };
     } else {
       // simple settings
@@ -587,11 +628,9 @@ export class OutputSettingsService extends Service {
       'Mode',
     );
 
-    // START TODO: remove this when ditching conversions after encoder updates
-    const encoder = obsEncoderToEncoderFamily(
+    const encoder =
       this.settingsService.findSettingValue(output, 'Streaming', 'Encoder') ||
-        this.settingsService.findSettingValue(output, 'Streaming', 'StreamEncoder'),
-    ) as EEncoderFamily;
+      this.settingsService.findSettingValue(output, 'Streaming', 'StreamEncoder');
 
     const convertedEncoderName:
       | EObsSimpleEncoder.x264_lowcpu
@@ -601,15 +640,6 @@ export class OutputSettingsService extends Service {
       convertedEncoderName === EObsSimpleEncoder.x264_lowcpu
         ? EObsAdvancedEncoder.obs_x264
         : convertedEncoderName;
-    // END TODO: remove this when ditching conversions after encoder updates
-
-    // START TODO: use this when ditching conversions after encoder updates
-    // const videoEncoder =
-    //   mode === 'Advanced'
-    //     ? this.settingsService.findSettingValue(output, 'Streaming', 'Encoder')
-    //     : this.settingsService.findSettingValue(output, 'Streaming', 'StreamEncoder');
-
-    // END TODO: use this when ditching conversions after encoder updates
 
     const enforceBitrateKey = mode === 'Advanced' ? 'ApplyServiceSettings' : 'EnforceBitrate';
     const enforceServiceBitrate = this.settingsService.findSettingValue(
@@ -633,10 +663,30 @@ export class OutputSettingsService extends Service {
     );
 
     if (mode === 'Advanced') {
-      const rescaling = this.settingsService.findSettingValue(output, 'Recording', 'RecRescale');
+      const rescaleFilter =
+        this.settingsService.findSettingValue(output, 'Streaming', 'RescaleFilter') ??
+        (this.settingsService.findSettingValue(output, 'Streaming', 'Rescale')
+          ? EScaleType.Bilinear
+          : EScaleType.Disable);
+      const rescaling = rescaleFilter !== EScaleType.Disable;
 
-      const outputWidth = this.videoSettingsService.outputResolutions[display].outputWidth;
-      const outputHeight = this.videoSettingsService.outputResolutions[display].outputHeight;
+      let outputWidth = this.videoSettingsService.outputResolutions[display].outputWidth;
+      let outputHeight = this.videoSettingsService.outputResolutions[display].outputHeight;
+
+      const rescaleResolution = this.settingsService.findSettingValue(
+        output,
+        'Streaming',
+        'RescaleRes',
+      );
+
+      if (rescaling && rescaleResolution) {
+        const [rescaleWidth, rescaleHeight] = rescaleResolution.split('x').map(Number);
+
+        if (Number.isFinite(rescaleWidth) && Number.isFinite(rescaleHeight)) {
+          outputWidth = rescaleWidth;
+          outputHeight = rescaleHeight;
+        }
+      }
 
       const audioTrack = this.settingsService.findSettingValue(output, 'Streaming', 'TrackIndex');
 
@@ -645,6 +695,7 @@ export class OutputSettingsService extends Service {
         enforceServiceBitrate,
         enableTwitchVOD,
         rescaling,
+        rescaleFilter,
         outputWidth,
         outputHeight,
         audioTrack,
@@ -716,7 +767,12 @@ export class OutputSettingsService extends Service {
     const encoderOptions =
       this.settingsService.findSettingValue(output, 'Streaming', 'x264Settings') ||
       this.settingsService.findSettingValue(output, 'Streaming', 'x264opts');
-    const rescaleOutput = this.settingsService.findSettingValue(output, 'Streaming', 'Rescale');
+    const rescaleFilter =
+      this.settingsService.findSettingValue(output, 'Streaming', 'RescaleFilter') ??
+      (this.settingsService.findSettingValue(output, 'Streaming', 'Rescale')
+        ? EScaleType.Bilinear
+        : EScaleType.Disable);
+    const rescaleOutput = rescaleFilter !== EScaleType.Disable;
 
     const resolutions = this.settingsService
       .findSetting(video, 'Untitled', 'Output')
@@ -839,6 +895,23 @@ export class OutputSettingsService extends Service {
     };
   }
 
+  getRecordingVideoEncoderSettings(mode: TOutputSettingsMode): ISettings {
+    const output = this.settingsService.state.Output.formData;
+    const video = this.settingsService.state.Video.formData;
+    const streaming = this.getStreamingEncoderSettings(output, video);
+    const recording = this.getRecordingEncoderSettings(output, video, mode, streaming);
+
+    const encoderSettings: ISettings = {
+      bitrate: recording.bitrate,
+    };
+
+    if (recording.rateControl != null) {
+      encoderSettings.rate_control = recording.rateControl;
+    }
+
+    return encoderSettings;
+  }
+
   /**
    * This method helps to simplify tuning the encoder's settings
    * This method can patch ONLY Advanced settings
@@ -911,7 +984,22 @@ export class OutputSettingsService extends Service {
     }
 
     if (settingsPatch.rescaleOutput !== void 0) {
-      this.settingsService.setSettingValue('Output', 'Rescale', settingsPatch.rescaleOutput);
+      // Rescale is stored as a scale-filter selection in OBS 31. Preserve the
+      // chosen filter when toggling on, and fall back to Bilinear for legacy callers.
+      const currentRescaleFilter = this.settingsService.findSettingValue(
+        this.settingsService.state.Output.formData,
+        'Streaming',
+        'RescaleFilter',
+      ) as EScaleType | undefined;
+
+      let rescaleFilter: EScaleType = EScaleType.Disable;
+      if (settingsPatch.rescaleOutput) {
+        rescaleFilter =
+          currentRescaleFilter !== undefined && currentRescaleFilter !== EScaleType.Disable
+            ? currentRescaleFilter
+            : EScaleType.Bilinear;
+      }
+      this.settingsService.setSettingValue('Output', 'RescaleFilter', rescaleFilter);
     }
 
     if (settingsPatch.bitrate !== void 0) {
@@ -962,9 +1050,29 @@ export class OutputSettingsService extends Service {
       case EObsSimpleEncoder.nvenc:
         return EObsAdvancedEncoder.ffmpeg_nvenc;
       case EObsSimpleEncoder.amd:
-        return EObsAdvancedEncoder.amd_amf_h264;
+        return EObsAdvancedEncoder.h264_texture_amf;
       case EObsSimpleEncoder.qsv:
+        return EObsAdvancedEncoder.obs_qsv11_v2;
+      case EObsAdvancedEncoder.obs_x264:
+        return EObsAdvancedEncoder.obs_x264;
+      case EObsAdvancedEncoder.ffmpeg_nvenc:
+        return EObsAdvancedEncoder.ffmpeg_nvenc;
+      case EObsAdvancedEncoder.amd_amf_h264:
+        return EObsAdvancedEncoder.h264_texture_amf;
+      case EObsAdvancedEncoder.h264_texture_amf:
+        return EObsAdvancedEncoder.h264_texture_amf;
+      case EObsAdvancedEncoder.obs_qsv11:
         return EObsAdvancedEncoder.obs_qsv11;
+      case EObsAdvancedEncoder.obs_qsv11_v2:
+        return EObsAdvancedEncoder.obs_qsv11_v2;
+      case EObsAdvancedEncoder.obs_qsv11_hevc:
+        return EObsAdvancedEncoder.obs_qsv11_hevc;
+      case EObsAdvancedEncoder.obs_qsv11_av1:
+        return EObsAdvancedEncoder.obs_qsv11_av1;
+      case EObsAdvancedEncoder.ffmpeg_aom_av1:
+        return EObsAdvancedEncoder.ffmpeg_aom_av1;
+      case EObsAdvancedEncoder.ffmpeg_svt_av1:
+        return EObsAdvancedEncoder.ffmpeg_svt_av1;
       case EObsSimpleEncoder.jim_nvenc:
         return EObsAdvancedEncoder.jim_nvenc;
       case EObsSimpleEncoder.x264_lowcpu:
@@ -975,6 +1083,8 @@ export class OutputSettingsService extends Service {
         return EObsAdvancedEncoder.obs_nvenc_hevc_tex;
       case EObsAdvancedEncoder.obs_nvenc_av1_tex:
         return EObsAdvancedEncoder.obs_nvenc_av1_tex;
+      default:
+        return encoder as EObsAdvancedEncoder;
     }
   }
 

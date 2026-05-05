@@ -27,6 +27,7 @@ import {
   SimpleRecordingFactory,
   AdvancedReplayBufferFactory,
   SimpleReplayBufferFactory,
+  ISettings,
 } from '../../../obs-api';
 import { Inject } from 'services/core/injector';
 import moment from 'moment';
@@ -757,7 +758,7 @@ export class StreamingService
       console.error('Error starting video transmission: ', e);
 
       const failureType =
-        (e as any).message && (e as any).message.includes('encoder')
+        e && (e as any).message && (e as any).message.includes('encoder')
           ? 'INVALID_ENCODER'
           : 'UNKNOWN_ERROR';
 
@@ -1294,6 +1295,17 @@ export class StreamingService
         // For enhanced broadcasting while multistreaming one of the displays, the horizontal and vertical streaming instances will be handled in `handleStreamingSignal`.
         // If Twitch is the only target for one of the displays, the other display streaming instance will also be handled in `handleStreamingSignal`.
         await this.createEnhancedBroadcastDualOutput();
+      } else if (this.views.isYouTubeDualStreaming) {
+        // To show the vertical stream in the YouTube mobile app, the vertical stream needs to be started last.
+        // So create the horizontal stream instance first
+
+        this.createStreaming({
+          output: 'horizontal',
+          audioTrack: 1,
+          start: true,
+          context: 'horizontal',
+          isEnhancedBroadcasting: false,
+        });
       } else {
         // For dual output without enhanced broadcasting, the vertical stream instance will be created and started after the horizontal stream.
         this.createStreaming({
@@ -1512,52 +1524,71 @@ export class StreamingService
     this.usageStatisticsService.recordFeatureUsage('Streaming');
   }
 
-  private async handleStartDualOutputStream(code: EOBSOutputSignal, context: TOutputContext) {
+  private async handleStartDualOutputStream(
+    code: EOBSOutputSignal,
+    context: TOutputContext,
+    time: string,
+  ) {
     // Handle dual output mode
 
     // Maybe not necessary, but just in case add a small delay to stagger creating/resolving the next streaming instance
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (context === 'enhancedBroadcasting' && this.views.isTwitchDualStreaming) {
-      // Twitch dual streaming uses a single enhanced broadcasting instance that sends both canvases
-      // via video (horizontal) and additionalVideo (vertical). No second streaming
-      // instance is needed — resolve the start streaming promise directly.
+      // Case A: Twitch dual stream alone. Enhanced Broadcasting sends both canvases via video (horizontal) and
+      // additionalVideo (vertical). No additional instance needed — resolve directly.
       await this.handleStartStreaming(code, 'horizontal');
+    } else if (this.views.isTwitchDualStreamEnabled && this.state.enhancedBroadcasting) {
+      // Case B: Twitch dual stream + other platforms. Enhanced Broadcasting sends Twitch to both canvases via
+      // additionalVideo; each display with non-Twitch targets needs its own non-Enhanced Broadcasting instance.
+      await this.handleStartEnhancedBroadcastingDualOutput(code, context, time);
     } else if (this.state.enhancedBroadcasting) {
-      // Handle enhanced broadcasting in dual output mode
-      if (context === 'enhancedBroadcasting') {
-        // For multistream enhanced broadcasting, create the other display's streaming instance
-        const twitchDisplay = this.views.getPlatformDisplayType('twitch');
-        const otherDisplay = twitchDisplay === 'horizontal' ? 'vertical' : 'horizontal';
-        const audioTrack = otherDisplay === 'horizontal' ? 1 : 2;
-
-        await this.validateOrCreateOutputInstance({
-          display: otherDisplay,
-          type: 'streaming',
-          audioTrack,
-          context: otherDisplay,
-          start: true,
-          isEnhancedBroadcasting: false,
-        });
-      } else {
-        // A non-enhanced broadcasting display just started. Check if the other display still needs
-        // a streaming instance (e.g. YouTube horizontal restream alongside Twitch
-        // dual stream that already created vertical).
-        const otherDisplay = (context === 'horizontal' ? 'vertical' : 'horizontal') as TDisplayType;
-        if (!this.contexts[otherDisplay].streaming) {
-          const audioTrack = otherDisplay === 'horizontal' ? 1 : 2;
+      // Case C: Twitch single-display Enhanced Broadcasting (twitch.display === 'horizontal' or 'vertical').
+      // Enhanced Broadcasting sends Twitch only to its assigned display. The other display (if any) needs its
+      // own non-Enhanced Broadcasting instance, and the Enhanced Broadcasting display needs one too if it multistreams non-Twitch
+      // targets.
+      // Note: right now, the flow for Case C is the same flow as Case B. This is separated in the code out to make debugging easier
+      // in the future since the logic for all the combinations is getting increasingly complex.
+      await this.handleStartEnhancedBroadcastingDualOutput(code, context, time);
+    } else if (this.views.isYouTubeDualStreaming) {
+      // For YouTube dual streaming without enhanced broadcasting, the horizontal stream needs to be started before the vertical stream.
+      if (context === 'horizontal') {
+        try {
           await this.validateOrCreateOutputInstance({
-            display: otherDisplay,
+            display: 'vertical',
             type: 'streaming',
-            audioTrack,
-            context: otherDisplay,
+            audioTrack: 2,
+            context: 'vertical',
             start: true,
             isEnhancedBroadcasting: false,
           });
-        } else {
-          // Both display streaming instances exist — resolve the start streaming promise
-          await this.handleStartStreaming(code, context as TDisplayType);
+
+          // Update the horizontal stream status to live for the UI
+          this.SET_STREAMING_STATUS(EStreamingState.Live, context, time);
+          this.streamingStatusChange.next(EStreamingState.Live);
+        } catch (e: unknown) {
+          // Error will be surfaced from `createStreaming` for YouTube dual streaming only if
+          // the vertical stream fails to start.
+          console.error('Error starting vertical stream in YouTube dual streaming', e);
+
+          this.handleFactoryOutputError(
+            {
+              type: 'streaming',
+              signal: 'start',
+              code: EOutputCode.Error,
+              error: $t('Error starting vertical stream in YouTube dual streaming.'),
+            },
+            'vertical',
+            EOBSOutputType.Streaming,
+          );
+
+          this.SET_STREAMING_STATUS(EStreamingState.Offline, context, time);
+          this.streamingStatusChange.next(EStreamingState.Offline);
         }
+      }
+
+      if (context === 'vertical') {
+        await this.handleStartStreaming(code, context);
       }
     } else {
       // In dual output mode without enhanced broadcasting, create the horizontal streaming instance after the vertical stream
@@ -1580,6 +1611,89 @@ export class StreamingService
         await this.handleStartStreaming(code, context);
       }
     }
+  }
+
+  /**
+   * Shared handler for dual-output start signals when enhanced broadcasting is active and the
+   * single-platform Twitch dual stream branch (Case A) doesn't apply. Covers:
+   *   - Twitch dual stream + other platforms (Enhanced Broadcasting on both canvases via additionalVideo)
+   *   - Twitch single-display Enhanced Broadcasting (Enhanced Broadcasting on one canvas)
+   *
+   * Iteratively creates non-Enhanced Broadcasting streaming instances for displays that have non-Twitch targets,
+   * marks each display Live as its instance starts (or as Enhanced Broadcasting starts, for displays where Enhanced Broadcasting is
+   * the sole stream provider), and finally resolves the start-streaming promise.
+   */
+  private async handleStartEnhancedBroadcastingDualOutput(
+    code: EOBSOutputSignal,
+    context: TOutputContext,
+    time: string,
+  ) {
+    const displays: TDisplayType[] = ['horizontal', 'vertical'];
+
+    // 1. Mark Live for the just-started display, or for Enhanced Broadcasting-only displays when Enhanced Broadcasting started.
+    const markLive = (d: TDisplayType) => {
+      this.SET_STREAMING_STATUS(EStreamingState.Live, d, time);
+      this.streamingStatusChange.next(EStreamingState.Live);
+    };
+
+    if (context === 'horizontal' || context === 'vertical') {
+      markLive(context);
+    } else if (context === 'enhancedBroadcasting') {
+      displays.forEach(d => {
+        const targets =
+          d === 'horizontal' ? this.views.horizontalStream : this.views.verticalStream;
+        if (targets.length > 0 && !this.displayNeedsNonEnhancedBroadcastingInstance(d)) {
+          markLive(d);
+        }
+      });
+    }
+
+    // 2. Create the next display that still needs its own non-Enhanced Broadcasting streaming instance.
+    //    Iterate horizontal first so the vertical instance (if any) starts last.
+    const nextDisplay = displays.find(
+      d => this.displayNeedsNonEnhancedBroadcastingInstance(d) && !this.contexts[d].streaming,
+    );
+
+    if (nextDisplay) {
+      await this.validateOrCreateOutputInstance({
+        display: nextDisplay,
+        type: 'streaming',
+        audioTrack: nextDisplay === 'horizontal' ? 1 : 2,
+        context: nextDisplay,
+        start: true,
+        isEnhancedBroadcasting: false,
+      });
+      return;
+    }
+
+    // 3. No more instances to create. Mark any remaining Enhanced Broadcasting-covered displays Live (covers the
+    //    case where the last non-Enhanced Broadcasting instance just started while an Enhanced Broadcasting-only display still hadn't
+    //    been marked — e.g. Enhanced Broadcasting had no Enhanced Broadcasting-only displays at Enhanced Broadcasting-start time but does now after
+    //    instance creation). Then resolve via handleStartStreaming.
+    if (context !== 'enhancedBroadcasting') {
+      displays.forEach(d => {
+        const targets =
+          d === 'horizontal' ? this.views.horizontalStream : this.views.verticalStream;
+        if (
+          d !== context &&
+          targets.length > 0 &&
+          !this.contexts[d].streaming &&
+          !this.displayNeedsNonEnhancedBroadcastingInstance(d)
+        ) {
+          markLive(d);
+        }
+      });
+    }
+
+    let resolveDisplay: TDisplayType;
+    if (context !== 'enhancedBroadcasting') {
+      resolveDisplay = context as TDisplayType;
+    } else if (this.views.isTwitchDualStreamEnabled) {
+      resolveDisplay = 'horizontal';
+    } else {
+      resolveDisplay = this.views.getPlatformDisplayType('twitch');
+    }
+    await this.handleStartStreaming(code, resolveDisplay);
   }
 
   private async handleStartSingleOutputStream(
@@ -1658,53 +1772,75 @@ export class StreamingService
       this.stopReplayBuffer();
     }
 
-    // Stop the horizontal stream. On the `Stop` signal in `handleStreamingSignal`, all other streaming
-    // instances will be stopped and destroyed. Otherwise, just cleanup all of the streaming instances.
-    if (
-      this.contexts.horizontal.streaming &&
-      this.state.status.horizontal.streaming !== EStreamingState.Offline
-    ) {
-      this.contexts.horizontal.streaming.stop(force);
-
-      // Return because in dual output mode, the vertical stream will be stopped in the `handleStreamingSignal`
+    // Stop every active streaming output immediately. Relying on later cleanup can leave the
+    // vertical stream alive while vertical recording or replay buffer finishes shutting down.
+    if (this.stopActiveStreamingInstances(force)) {
       return;
     }
 
-    // Stop the vertical stream first because in dual output mode, the horizontal stream will always be
-    // stopped in the `handleStreamingSignal`
-    if (
-      this.contexts.vertical.streaming &&
-      this.state.status.vertical.streaming !== EStreamingState.Offline
-    ) {
-      this.contexts.vertical.streaming.stop(force);
-    }
-
-    // For Twitch dual streaming, the enhanced broadcasting instance is in the `enhancedBroadcasting` context
-    // rather than a display context. Stop it directly.
-    if (this.contexts.enhancedBroadcasting.streaming) {
-      this.contexts.enhancedBroadcasting.streaming.stop(force);
-      return;
-    }
-
-    // If there are no display or enhanced broadcasting streaming instances, something has gone wrong.
-    // Clean up the streaming instances to prevent orphaned instances and alert the user.
+    // No display or enhanced broadcasting streaming instances exist. This can happen if a
+    // previous stop completed asynchronously while a per-display status was left non-Offline
+    // (e.g. an Enhanced Broadcasting-covered display whose status updates are driven by Enhanced Broadcasting signals that didn't
+    // map cleanly). Recover by resetting any stale Live/Starting/Ending statuses to Offline
+    // and running cleanup. Only surface a user-facing error if there's still an orphaned
+    // streaming instance in some other context — that's the genuine "something's wrong" case.
     if (!this.contexts.horizontal.streaming && !this.contexts.vertical.streaming) {
       this.handleCleanupStreamingInstances({ skipHorizontal: true });
 
-      const context = Object.keys(this.contexts).find(
+      const orphan = Object.keys(this.contexts).find(
         key =>
           this.contexts[key as TOutputContext].streaming !== null &&
           this.contexts[key as TOutputContext].streaming !== undefined,
-      ) as TOutputContext;
+      ) as TOutputContext | undefined;
 
-      this.createOBSError(
-        EOBSOutputType.Streaming,
-        context,
-        EOBSOutputSignal.Stop,
-        EOutputCode.Error,
-        $t('Error stopping stream: default streams do not exist.'),
-      );
+      const offlineTime = new Date().toISOString();
+      let resetAny = false;
+      (['horizontal', 'vertical'] as TDisplayType[]).forEach(d => {
+        if (this.state.status[d].streaming !== EStreamingState.Offline) {
+          this.SET_STREAMING_STATUS(EStreamingState.Offline, d, offlineTime);
+          resetAny = true;
+        }
+      });
+      if (resetAny) this.streamingStatusChange.next(EStreamingState.Offline);
+
+      if (orphan) {
+        this.createOBSError(
+          EOBSOutputType.Streaming,
+          orphan,
+          EOBSOutputSignal.Stop,
+          EOutputCode.Error,
+          $t('Error stopping stream: default streams do not exist.'),
+        );
+      }
     }
+  }
+
+  private stopActiveStreamingInstances(force?: boolean): boolean {
+    let stopped = false;
+    const contextNames: TOutputContext[] = [
+      'vertical',
+      'horizontal',
+      'enhancedBroadcasting',
+      'stream',
+      'streamSecond',
+    ];
+
+    contextNames.forEach(contextName => {
+      const streaming = this.contexts[contextName].streaming;
+      if (!streaming) return;
+
+      const forceStop =
+        force ||
+        (this.isDisplayContext(contextName) &&
+          this.state.status[contextName].streaming === EStreamingState.Offline);
+
+      // OBS can briefly emit deactivate/offline while a reconnect timer is still armed.
+      // If the instance still exists, force-stopping it cancels that pending reconnect.
+      streaming.stop(forceStop);
+      stopped = true;
+    });
+
+    return stopped;
   }
 
   private async createEnhancedBroadcastSingleStream() {
@@ -1783,10 +1919,10 @@ export class StreamingService
   ) {
     if (isEnhancedBroadcasting || contextName === 'enhancedBroadcasting') {
       // Ensure the native OBS enhanced broadcasting setting is enabled before
-      // creating an EB factory instance — the factory crashes if it isn't.
+      // creating an Enhanced Broadcasting factory instance — the factory crashes if it isn't.
       if (!this.settingsService.isEnhancedBroadcasting()) {
         console.warn(
-          'Enhanced broadcasting factory requested but native OBS EB is not enabled. Enabling now.',
+          'Enhanced broadcasting factory requested but native OBS Enhanced Broadcasting is not enabled. Enabling now.',
         );
         this.settingsService.setEnhancedBroadcasting(true);
       }
@@ -1848,8 +1984,10 @@ export class StreamingService
         | IEnhancedBroadcastingAdvancedStreaming;
 
       const resolution = this.videoSettingsService.outputResolutions[display];
-      stream.outputWidth = resolution.outputWidth;
-      stream.outputHeight = resolution.outputHeight;
+      if (!stream.rescaling) {
+        stream.outputWidth = resolution.outputWidth;
+        stream.outputHeight = resolution.outputHeight;
+      }
 
       if (!isEnhancedBroadcasting) {
         // stream audio track
@@ -1987,6 +2125,15 @@ export class StreamingService
         this.contexts[contextName].streaming.start();
       } catch (e: unknown) {
         console.error('Error starting streaming:', e);
+        // Surface YouTube vertical display error to the user
+        if (this.views.isYouTubeDualStreaming && display === 'vertical') {
+          throwStreamError(
+            'UNKNOWN_STREAMING_ERROR_WITH_MESSAGE',
+            {},
+            $t('Error starting vertical stream in YouTube dual streaming.'),
+          );
+        }
+
         const message =
           (e as any).message ??
           $t('An unknown error occurred while starting the stream. Please try again.');
@@ -2101,9 +2248,11 @@ export class StreamingService
 
     // To prevent errors, if the recording display is not set to a valid value,
     // correct it to the default display, which is 'horizontal'.
+    // Also show recording UI when using AI highlighter
     if (
       !this.views.settings.recording ||
-      !['horizontal', 'vertical', 'both'].includes(this.views.settings.recording)
+      !['horizontal', 'vertical', 'both'].includes(this.views.settings.recording) ||
+      this.highlighterService.views.useAiHighlighter
     ) {
       const settings = cloneDeep(this.views.settings);
       this.streamSettingsService.setSettings({
@@ -2273,6 +2422,15 @@ export class StreamingService
       recording.outputWidth = resolution.outputWidth;
       recording.outputHeight = resolution.outputHeight;
 
+      // create recording tracks, if necessary
+      if (Number.isFinite(recording.mixer)) {
+        for (let index = 1; index <= 6; index++) {
+          if (recording.mixer & (1 << (index - 1))) {
+            await this.validateOrCreateAudioTrack(index);
+          }
+        }
+      }
+
       // to prevent reference errors, cast the recording instance
       this.contexts[display].recording = recording as IAdvancedRecording;
     } else {
@@ -2365,10 +2523,15 @@ export class StreamingService
         key === 'videoEncoder' &&
         (contextName !== 'enhancedBroadcasting' || isEnhancedBroadcastingContext)
       ) {
-        const encoderSettings =
-          type === 'streaming'
-            ? this.outputSettingsService.getStreamingVideoEncoderSettings(mode)
-            : undefined;
+        let encoderSettings: ISettings | undefined;
+        switch (type) {
+          case 'streaming':
+            encoderSettings = this.outputSettingsService.getStreamingVideoEncoderSettings(mode);
+            break;
+          case 'recording':
+            encoderSettings = this.outputSettingsService.getRecordingVideoEncoderSettings(mode);
+            break;
+        }
 
         if (encoderSettings) {
           instance.videoEncoder = VideoEncoderFactory.create(
@@ -2460,7 +2623,7 @@ export class StreamingService
 
     if (info.signal === EOBSOutputSignal.Start) {
       if (this.views.isDualOutputMode) {
-        await this.handleStartDualOutputStream(info.signal, context);
+        await this.handleStartDualOutputStream(info.signal, context, time);
       } else {
         await this.handleStartSingleOutputStream(info.signal, context, nextState, time);
       }
@@ -2526,9 +2689,53 @@ export class StreamingService
       // Map its status updates to the horizontal display context for the UI.
       this.SET_STREAMING_STATUS(nextState, 'horizontal', time);
       this.streamingStatusChange.next(nextState);
+    } else if (context === 'enhancedBroadcasting') {
+      // Enhanced Broadcasting signals (every case except single-platform Twitch dual stream, handled above).
+      // Covers:
+      //   - Twitch dual stream + other platforms (Enhanced Broadcasting on both canvases via additionalVideo)
+      //   - Twitch single-display Enhanced Broadcasting (Enhanced Broadcasting on one canvas only)
+      //   - Single output Enhanced Broadcasting without restream
+      // Map Enhanced Broadcasting's status updates to every display where Enhanced Broadcasting is the sole stream provider — those
+      // displays don't have their own non-enhanced broadcasting instance to drive status, so without this they'd
+      // stay stuck at whatever was last set during start (typically Live from
+      // handleStartEnhancedBroadcastingDualOutput).
+      //
+      // We deliberately don't gate on `state.enhancedBroadcasting` here: toggleStreaming flips
+      // that to false synchronously after handleStopStreaming returns, before Enhanced Broadcasting's
+      // Stopping/Stop signals arrive. The Enhanced Broadcasting context only fires signals if its instance
+      // exists, so the context check is sufficient to know this is a real Enhanced Broadcasting signal.
+      let updated = false;
+      (['horizontal', 'vertical'] as TDisplayType[]).forEach(d => {
+        const targets =
+          d === 'horizontal' ? this.views.horizontalStream : this.views.verticalStream;
+        if (targets.length > 0 && !this.displayNeedsNonEnhancedBroadcastingInstance(d)) {
+          this.SET_STREAMING_STATUS(nextState, d, time);
+          updated = true;
+        }
+      });
+      if (updated) this.streamingStatusChange.next(nextState);
     }
   }
 
+  /**
+   * Whether `display` needs its own non-Enhanced Broadcasting streaming instance, given the current
+   * platform/destination configuration. Returns false when Enhanced Broadcasting already covers the
+   * only target on `display` (i.e. Twitch dual stream sending Twitch via the Enhanced Broadcasting
+   * instance's primary video / additionalVideo bindings).
+   */
+  private displayNeedsNonEnhancedBroadcastingInstance(display: TDisplayType): boolean {
+    const targets =
+      display === 'horizontal' ? this.views.horizontalStream : this.views.verticalStream;
+
+    if (targets.length === 0) return false;
+
+    const ebSendsTwitchToDisplay =
+      this.views.isTwitchDualStreamEnabled ||
+      this.views.getPlatformDisplayType('twitch') === display;
+
+    // Need our own instance if there's any non-Twitch target, or if Enhanced Broadcasting doesn't cover Twitch on this display.
+    return targets.some(t => t !== 'twitch') || !ebSendsTwitchToDisplay;
+  }
   private async handleRecordingSignal(info: EOutputSignal, display: TDisplayType) {
     console.info('Recording Signal:', JSON.stringify(info, null, 2), display);
 
@@ -3251,6 +3458,47 @@ export class StreamingService
     return `${hours}:${minutes}:${seconds}`;
   }
 
+  /**
+   * PERFORMANCE STATISTICS
+   */
+  get streamingPerformanceStats() {
+    let droppedFrames = 0;
+    let totalFrames = 0;
+    let kbitsPerSec = 0;
+    let dataOutput = 0;
+
+    for (const contextName of Object.keys(this.contexts) as TOutputContext[]) {
+      const instance = this.contexts[contextName].streaming;
+      if (!instance) continue;
+
+      droppedFrames += instance.droppedFrames;
+      totalFrames += instance.totalFrames;
+      kbitsPerSec += instance.kbitsPerSec;
+      dataOutput += instance.dataOutput;
+    }
+
+    return { droppedFrames, totalFrames, kbitsPerSec, dataOutput };
+  }
+
+  get recordingPerformanceStats() {
+    let kbitsPerSec = 0;
+    let dataOutput = 0;
+
+    for (const contextName of Object.keys(this.contexts) as TOutputContext[]) {
+      const instance = this.contexts[contextName].recording;
+      if (!instance) continue;
+
+      kbitsPerSec += instance.streaming.kbitsPerSec;
+      dataOutput += instance.streaming.dataOutput;
+    }
+
+    return { kbitsPerSec, dataOutput };
+  }
+
+  /**
+   * AUTO-RETRY
+   */
+
   private async handleRetryStartStreaming(info: IOBSOutputSignalInfo) {
     // Toggle off recording and replay buffer when starting the stream
     const recordWhenStreaming = this.streamSettingsService.settings.recordWhenStreaming;
@@ -3664,6 +3912,13 @@ export class StreamingService
         (contextName === 'horizontal' && skipHorizontal) ||
         this.contexts[contextName].streaming === undefined ||
         this.contexts[contextName].streaming === null
+      ) {
+        continue;
+      }
+
+      if (
+        this.isDisplayContext(contextName) &&
+        this.state.status[contextName].streaming === EStreamingState.Offline
       ) {
         continue;
       }
