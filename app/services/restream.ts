@@ -479,7 +479,7 @@ export class RestreamService extends StatefulService<IRestreamState> {
 
         // treat patreon as a custom destination
         if (platform === 'patreon') {
-          targetInfo.platform = 'relay';
+          targetInfo.platform = 'patreon';
           targetInfo.streamKey = `${this.patreonService.state.ingest}/${this.patreonService.state.streamKey}`;
         }
 
