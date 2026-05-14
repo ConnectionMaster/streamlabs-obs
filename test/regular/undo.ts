@@ -1,73 +1,101 @@
-import { useSpectron, test, focusMain, TExecutionContext } from '../helpers/spectron';
-import { addSource, sourceIsExisting } from '../helpers/spectron/sources';
+import { useWebdriver, test } from '../helpers/webdriver';
+import { addExistingSource, addSource, sourceIsExisting } from '../helpers/modules/sources';
 import { SceneBuilder } from '../helpers/scene-builder';
-import { getClient } from '../helpers/api-client';
 import {
   addScene,
   clickRemoveScene,
   selectScene,
   duplicateScene,
   sceneExisting,
-} from '../helpers/spectron/scenes';
-import { sleep } from '../helpers/sleep';
+} from '../helpers/modules/scenes';
+import { focusMain, click, isDisplayed, useMainWindow, getClient } from '../helpers/modules/core';
+import { getApiClient } from '../helpers/api-client';
+import { logIn, logOut, releaseUserInPool } from '../helpers/webdriver/user';
 
-useSpectron();
+// not a react hook
+// eslint-disable-next-line react-hooks/rules-of-hooks
+useWebdriver({
+  clearCollectionAfterEachTest: true,
+  restartAppAfterEachTest: false,
+});
 
-async function undo(t: TExecutionContext) {
-  await ((t.context.app.client.keys(['Control', 'z']) as any) as Promise<any>);
-  await ((t.context.app.client.keys('Control') as any) as Promise<any>);
+async function undo() {
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  await useMainWindow(async () => {
+    await ((getClient().keys(['Control', 'z']) as any) as Promise<any>);
+    await ((getClient().keys('Control') as any) as Promise<any>);
+  });
 }
 
-async function redo(t: TExecutionContext) {
-  await ((t.context.app.client.keys(['Control', 'y']) as any) as Promise<any>);
-  await ((t.context.app.client.keys('Control') as any) as Promise<any>);
+async function redo() {
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  await useMainWindow(async () => {
+    await ((getClient().keys(['Control', 'y']) as any) as Promise<any>);
+    await ((getClient().keys('Control') as any) as Promise<any>);
+  });
 }
 
 test('Creating some sources with undo/redo', async t => {
-  await focusMain(t);
+  await focusMain();
 
-  await addSource(t, 'Color Source', 'Color Source');
-  await addSource(t, 'Color Source', 'Color Source 2');
-  await addSource(t, 'Color Source', 'Color Source 3');
+  const sceneBuilder = new SceneBuilder(await getApiClient());
 
-  await focusMain(t);
+  await addSource('Color Block', 'Color Source');
+  await addSource('Color Block', 'Color Source 2');
+  await addSource('Color Block', 'Color Source 3');
 
-  t.true(await sourceIsExisting(t, 'Color Source'));
-  t.true(await sourceIsExisting(t, 'Color Source 2'));
-  t.true(await sourceIsExisting(t, 'Color Source 3'));
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Color Source 3:
+    Color Source 2:
+    Color Source:
+  `,
+    ),
+  );
 
-  await undo(t);
+  await undo();
 
-  t.true(await sourceIsExisting(t, 'Color Source'));
-  t.true(await sourceIsExisting(t, 'Color Source 2'));
-  t.false(await sourceIsExisting(t, 'Color Source 3'));
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Color Source 2:
+    Color Source:
+  `,
+    ),
+  );
 
-  await undo(t);
+  await undo();
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Color Source:
+  `,
+    ),
+  );
 
-  t.true(await sourceIsExisting(t, 'Color Source'));
-  t.false(await sourceIsExisting(t, 'Color Source 2'));
-  t.false(await sourceIsExisting(t, 'Color Source 3'));
+  await undo();
+  t.true(sceneBuilder.isEqualTo(''));
 
-  await undo(t);
+  await redo();
+  await redo();
+  await redo();
 
-  t.false(await sourceIsExisting(t, 'Color Source'));
-  t.false(await sourceIsExisting(t, 'Color Source 2'));
-  t.false(await sourceIsExisting(t, 'Color Source 3'));
-
-  await redo(t);
-  await redo(t);
-  await redo(t);
-
-  t.true(await sourceIsExisting(t, 'Color Source'));
-  t.true(await sourceIsExisting(t, 'Color Source 2'));
-  t.true(await sourceIsExisting(t, 'Color Source 3'));
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Color Source 3:
+    Color Source 2:
+    Color Source:
+  `,
+    ),
+  );
 });
 
 test('Deleting a scene with undo/redo', async t => {
-  const client = await getClient();
-  const sceneBuilder = new SceneBuilder(client);
+  const sceneBuilder = new SceneBuilder(await getApiClient());
 
-  await addScene(t, 'New Scene');
+  await addScene('New Scene');
 
   // Build a complex item and folder hierarchy
   const sketch = `
@@ -90,23 +118,22 @@ test('Deleting a scene with undo/redo', async t => {
 
   sceneBuilder.build(sketch);
 
-  await focusMain(t);
-  await clickRemoveScene(t);
+  await focusMain();
+  await clickRemoveScene('New Scene');
 
   t.true(sceneBuilder.isEqualTo(''));
 
-  await undo(t);
-  await selectScene(t, 'New Scene');
+  await undo();
+  await selectScene('New Scene');
 
   t.true(sceneBuilder.isEqualTo(sketch));
 
-  await redo(t);
+  await redo();
   t.true(sceneBuilder.isEqualTo(''));
 });
 
 test('Duplicating a scene with undo/redo', async t => {
-  const client = await getClient();
-  const sceneBuilder = new SceneBuilder(client);
+  const sceneBuilder = new SceneBuilder(await getApiClient());
 
   // Build a complex item and folder hierarchy
   const sketch = `
@@ -128,21 +155,214 @@ test('Duplicating a scene with undo/redo', async t => {
   `;
 
   sceneBuilder.build(sketch);
-  await duplicateScene(t, 'Scene', 'Duplicate');
-  await focusMain(t);
+  await duplicateScene('Scene', 'Duplicate');
+  await focusMain();
 
-  await selectScene(t, 'Duplicate');
+  await selectScene('Duplicate');
   t.true(sceneBuilder.isEqualTo(sketch));
 
-  await selectScene(t, 'Scene');
+  await selectScene('Scene');
   t.true(sceneBuilder.isEqualTo(sketch));
 
-  await undo(t);
+  await undo();
 
-  t.false(await sceneExisting(t, 'Duplicate'));
+  t.false(await sceneExisting('Duplicate'));
 
-  await redo(t);
+  await redo();
 
-  await selectScene(t, 'Duplicate');
+  await selectScene('Duplicate');
   t.true(sceneBuilder.isEqualTo(sketch));
+});
+
+test('Editor commands', async t => {
+  const sceneBuilder = new SceneBuilder(await getApiClient());
+  // Single Output Mode
+
+  // New source
+  await addSource('Color Block', 'Block 0');
+  await focusMain();
+  t.true(await sourceIsExisting('Block 0'));
+  t.true(sceneBuilder.isEqualTo('Block 0: color_source, [horizontal]'));
+
+  await undo();
+  t.false(await sourceIsExisting('Block 0'));
+  t.true(sceneBuilder.isEqualTo(''));
+
+  await redo();
+  t.true(await sourceIsExisting('Block 0'));
+  t.true(
+    sceneBuilder.isEqualTo('Block 0: color_source, [horizontal]'),
+    'Single output: undo/redo creates new source',
+  );
+
+  // Existing source
+  await addExistingSource('Color Block', 'Block 0');
+  await focusMain();
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 0: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+  `),
+  );
+  await undo();
+
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 0: color_source, [horizontal]
+  `),
+  );
+
+  await redo();
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Block 0: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+  `,
+    ),
+    'Single Output: undo/redo adds existing source',
+  );
+
+  // Source is placed in the correct order
+  await addSource('Color Block', 'Block 1');
+  await focusMain();
+  t.true(await sourceIsExisting('Block 1'));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 1: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+  `),
+  );
+
+  await undo();
+  t.false(await sourceIsExisting('Block 1'));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 0: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+  `),
+  );
+
+  await redo();
+  t.true(await sourceIsExisting('Block 1'));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 1: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+    Block 0: color_source, [horizontal]
+  `),
+    'Single Output: undo/redo places source in correct order',
+  );
+
+  // Dual Output Mode
+
+  // New source
+  const user = await logIn(t);
+  await focusMain();
+  await click('[data-name=dual-output-toggle]');
+  await isDisplayed('div#vertical-display');
+
+  await addSource('Color Block', 'Block 2');
+  await focusMain();
+  t.true(await sourceIsExisting('Block 2', true));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+  `),
+  );
+
+  await undo();
+  t.false(await sourceIsExisting('Block 2', true));
+  t.true(sceneBuilder.isEqualTo(''));
+
+  await redo();
+  t.true(await sourceIsExisting('Block 2', true));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+  `),
+    'Dual Output: undo/redo creates new source',
+  );
+
+  // Existing source
+  await addExistingSource('Color Block', 'Block 2');
+  await focusMain();
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+    Block 2: color_source, [vertical]
+  `),
+  );
+  await undo();
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+  `),
+  );
+
+  await redo();
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+    Block 2: color_source, [vertical]
+  `,
+    ),
+    'Dual Output: undo/redo adds existing source',
+  );
+
+  // New source is placed in the correct order
+  await addSource('Color Block', 'Block 3');
+  await focusMain();
+  t.true(await sourceIsExisting('Block 3', true));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 3: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 3: color_source, [vertical]
+    Block 2: color_source, [vertical]
+    Block 2: color_source, [vertical]
+  `),
+  );
+
+  await undo();
+  t.false(await sourceIsExisting('Block 3', true));
+  t.true(
+    sceneBuilder.isEqualTo(`
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [vertical]
+    Block 2: color_source, [vertical]
+  `),
+  );
+
+  await redo();
+  t.true(await sourceIsExisting('Block 3', true));
+  t.true(
+    sceneBuilder.isEqualTo(
+      `
+    Block 3: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 2: color_source, [horizontal]
+    Block 3: color_source, [vertical]
+    Block 2: color_source, [vertical]
+    Block 2: color_source, [vertical]
+  `,
+    ),
+    'Dual Output: undo/redo places source in correct order',
+  );
+
+  await logOut(t);
+  await releaseUserInPool(user);
+
+  t.pass();
 });
