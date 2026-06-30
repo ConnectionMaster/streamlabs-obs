@@ -51,12 +51,22 @@ export class StreamingRecordingModule extends Module {
     return this.serializeStreamInfo();
   }
 
+  @apiMethod()
+  startStreaming() {
+    this.streamingService.goLive();
+  }
+
+  @apiMethod()
+  stopStreaming() {
+    this.streamingService.toggleStreaming();
+  }
+
   private serializeStreamInfo(): IStreamInfo {
     const info = this.streamingService.views;
     const commonFields = info.commonFields;
     return {
       title: commonFields.title,
-      game: commonFields.game,
+      game: info.game,
       viewerCount: info.viewerCount,
     };
   }

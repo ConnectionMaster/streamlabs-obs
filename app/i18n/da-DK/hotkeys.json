@@ -8,8 +8,8 @@
   "Hide %{sourcename}": "Skjul %{sourcename}",
   "Push to Show %{sourcename}": "Tryk for at vise %{sourcename}",
   "Push to Hide %{sourcename}": "Tryk for at skjule %{sourcename}",
-  "Mute": "Mikrofon fra",
-  "Unmute": "Mikrofon til",
+  "Mute": "Gør stum",
+  "Unmute": "Fjern stum",
   "Push to Mute": "Tryk for at slå mikrofon fra",
   "Push to Talk": "Tryk for at tale",
   "Enable Studio Mode": "Aktivér studiotilstand",
@@ -22,6 +22,13 @@
   "Restart": "Genstart",
   "Next Slide": "Næste dias",
   "Previous Slide": "Forrige dias",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "Spring over"
+  "Toggle Performance Mode": "Performancetilstand til/fra",
+  "Skip Alert": "Spring over",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "For at bruge genvejstaster på Mac skal du gå til Systemindstillinger > Sikkerhed > Tilgængelighed og slå Streamlabs Desktop til.",
+  "Start Virtual Camera": "Start virtuelt kamera",
+  "Stop Virtual Camera": "Stop virtuelt kamera",
+  "This scene has not been converted to Dual Output. Please make the scene active to add vertical sources.": "Denne scene er ikke blevet konverteret til Dual Output. Gør scenen aktiv for at tilføje lodrette kilder.",
+  "Learn more here": "Få mere at vide her",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>Pro-tip:</color> Angiv Mærker i Hotkeys-indstillingerne for at tidsstemple dine optagelser. <link>Konfigurer her</link>",
+  "Markers": "Mærker"
 }

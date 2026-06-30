@@ -3,6 +3,7 @@ import { ScenesService } from 'services/scenes';
 import { SourcesService, TSourceType } from 'services/sources';
 import { TransitionsService } from 'services/transitions';
 import { KeyListenerService } from 'services/key-listener';
+import { MarkersService } from 'services/markers';
 import { Inject } from 'services/core/injector';
 import { StatefulService, mutation, ServiceHelper } from 'services';
 import defer from 'lodash/defer';
@@ -13,6 +14,9 @@ import { GameOverlayService } from './game-overlay';
 import { CustomizationService } from './customization';
 import { RecentEventsService } from './recent-events';
 import { UsageStatisticsService } from './usage-statistics';
+import { getOS, OS } from 'util/operating-systems';
+import { TDisplayType } from './settings-v2';
+import { VirtualWebcamService } from 'app-services';
 
 function getScenesService(): ScenesService {
   return ScenesService.instance;
@@ -42,6 +46,14 @@ function getRecentEventsService(): RecentEventsService {
   return RecentEventsService.instance;
 }
 
+function getVirtualCameraService(): VirtualWebcamService {
+  return VirtualWebcamService.instance;
+}
+
+function getMarkersService(): MarkersService {
+  return MarkersService.instance;
+}
+
 const isAudio = (sourceId: string) => {
   const source = getSourcesService().views.getSource(sourceId);
 
@@ -55,8 +67,9 @@ const isSourceType = (type: TSourceType) => (sourceId: string) => {
 };
 
 function getHotkeyHash(hotkey: IHotkey): string {
-  return `${hotkey.actionName}/${hotkey.sceneId || ''}${hotkey.sourceId ||
-    ''}/${hotkey.sceneItemId || ''}`;
+  return `${hotkey.actionName}/${hotkey.sceneId || ''}${hotkey.sourceId || ''}/${
+    hotkey.sceneItemId || ''
+  }`;
 }
 
 /**
@@ -68,7 +81,7 @@ const processObsHotkey = (isKeyDown: boolean) => (itemId: string, hotkeyId: numb
   obs.NodeObs.OBS_API_ProcessHotkeyStatus(hotkeyId, isKeyDown);
 };
 
-type THotkeyType = 'GENERAL' | 'SCENE' | 'SCENE_ITEM' | 'SOURCE';
+type THotkeyType = 'GENERAL' | 'SCENE' | 'SCENE_ITEM' | 'SOURCE' | 'MARKER';
 
 /**
  * Represents the key bound to a hotkey action
@@ -159,15 +172,22 @@ const GENERAL_ACTIONS: HotkeyGroup = {
     description: () => $t('Save Replay'),
     down: () => getStreamingService().saveReplay(),
   },
+  SPLIT_FILE: {
+    name: 'SPLIT_FILE',
+    description: () => $t('Split Recording File'),
+    down: () => getStreamingService().splitFile(),
+  },
   TOGGLE_OVERLAY: {
     name: 'TOGGLE_OVERLAY',
     description: () => $t('Toggle in-game overlay'),
     down: () => getGameOverlayService().toggleOverlay(),
+    shouldApply: () => getOS() === OS.Windows,
   },
   TOGGLE_OVERLAY_POSITIONING: {
     name: 'TOGGLE_OVERLAY_POSITIONING',
     description: () => $t('Toggle overlay positioning mode'),
     down: () => getGameOverlayService().setPreviewMode(!getGameOverlayService().state.previewMode),
+    shouldApply: () => getOS() === OS.Windows,
   },
   TOGGLE_PERFORMANCE_MODE: {
     name: 'TOGGLE_PERFORMANCE_MODE',
@@ -179,6 +199,18 @@ const GENERAL_ACTIONS: HotkeyGroup = {
     description: () => $t('Skip Alert'),
     down: () => getRecentEventsService().skipAlert(),
   },
+  TOGGLE_VIRTUAL_CAMERA_ON: {
+    name: 'TOGGLE_VIRTUAL_CAMERA_ON',
+    description: () => $t('Start Virtual Camera'),
+    down: () => getVirtualCameraService().start(),
+    isActive: () => getVirtualCameraService().state.running,
+  },
+  TOGGLE_VIRTUAL_CAMERA_OFF: {
+    name: 'TOGGLE_VIRTUAL_CAMERA_OFF',
+    description: () => $t('Stop Virtual Camera'),
+    down: () => getVirtualCameraService().stop(),
+    isActive: () => !getVirtualCameraService().state.running,
+  },
 };
 
 const SOURCE_ACTIONS: HotkeyGroup = {
@@ -186,14 +218,14 @@ const SOURCE_ACTIONS: HotkeyGroup = {
     name: 'TOGGLE_MUTE',
     description: () => $t('Mute'),
     down: sourceId => getSourcesService().setMuted(sourceId, true),
-    isActive: sourceId => getSourcesService().views.getSource(sourceId).muted,
+    isActive: sourceId => !!getSourcesService().views.getSource(sourceId)?.muted,
     shouldApply: isAudio,
   },
   TOGGLE_UNMUTE: {
     name: 'TOGGLE_UNMUTE',
     description: () => $t('Unmute'),
     down: sourceId => getSourcesService().setMuted(sourceId, false),
-    isActive: sourceId => !getSourcesService().views.getSource(sourceId).muted,
+    isActive: sourceId => getSourcesService().views.getSource(sourceId)?.muted === false,
     shouldApply: isAudio,
   },
   PUSH_TO_MUTE: {
@@ -281,59 +313,68 @@ const SCENE_ITEM_ACTIONS: HotkeyGroup = {
     name: 'TOGGLE_SOURCE_VISIBILITY_SHOW',
     description: sceneItemId => {
       const sceneItem = getScenesService().views.getSceneItem(sceneItemId);
-      return $t('Show %{sourcename}', { sourcename: sceneItem.source.name });
+      return $t('Show %{sourcename}', { sourcename: sceneItem?.source.name });
     },
-    shouldApply: sceneItemId => getScenesService().views.getSceneItem(sceneItemId).video,
-    isActive: sceneItemId => getScenesService().views.getSceneItem(sceneItemId).visible,
-    down: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(true),
+    shouldApply: sceneItemId => !!getScenesService().views.getSceneItem(sceneItemId)?.video,
+    isActive: sceneItemId => !!getScenesService().views.getSceneItem(sceneItemId)?.visible,
+    down: sceneItemId => {
+      getScenesService().views.toggleNodeVisibility(sceneItemId, true);
+    },
   },
   TOGGLE_SOURCE_VISIBILITY_HIDE: {
     name: 'TOGGLE_SOURCE_VISIBILITY_HIDE',
     description: sceneItemId => {
       const sceneItem = getScenesService().views.getSceneItem(sceneItemId);
-      return $t('Hide %{sourcename}', { sourcename: sceneItem.source.name });
+      return $t('Hide %{sourcename}', { sourcename: sceneItem?.source.name });
     },
-    shouldApply: sceneItemId => getScenesService().views.getSceneItem(sceneItemId).video,
-    isActive: sceneItemId => !getScenesService().views.getSceneItem(sceneItemId).visible,
-    down: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(false),
+    shouldApply: sceneItemId => !!getScenesService().views.getSceneItem(sceneItemId)?.video,
+    isActive: sceneItemId => getScenesService().views.getSceneItem(sceneItemId)?.visible === false,
+    down: sceneItemId => {
+      getScenesService().views.toggleNodeVisibility(sceneItemId, false);
+    },
   },
   PUSH_TO_SOURCE_SHOW: {
     name: 'PUSH_TO_SOURCE_SHOW',
     description: sceneItemId => {
       const sceneItem = getScenesService().views.getSceneItem(sceneItemId);
-      return $t('Push to Show %{sourcename}', { sourcename: sceneItem.source.name });
+      return $t('Push to Show %{sourcename}', { sourcename: sceneItem?.source.name });
     },
-    shouldApply: sceneItemId => getScenesService().views.getSceneItem(sceneItemId).video,
-    up: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(false),
-    down: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(true),
+    shouldApply: sceneItemId => !!getScenesService().views.getSceneItem(sceneItemId)?.video,
+    up: sceneItemId => getScenesService().views.toggleNodeVisibility(sceneItemId, false),
+    down: sceneItemId => getScenesService().views.toggleNodeVisibility(sceneItemId, true),
   },
   PUSH_TO_SOURCE_HIDE: {
     name: 'PUSH_TO_SOURCE_HIDE',
     description: sceneItemId => {
       const sceneItem = getScenesService().views.getSceneItem(sceneItemId);
-      return $t('Push to Hide %{sourcename}', { sourcename: sceneItem.source.name });
+      return $t('Push to Hide %{sourcename}', { sourcename: sceneItem?.source.name });
     },
-    shouldApply: sceneItemId => getScenesService().views.getSceneItem(sceneItemId).video,
-    up: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(true),
-    down: sceneItemId =>
-      getScenesService()
-        .views.getSceneItem(sceneItemId)
-        .setVisibility(false),
+    shouldApply: sceneItemId => !!getScenesService().views.getSceneItem(sceneItemId)?.video,
+    up: sceneItemId => getScenesService().views.toggleNodeVisibility(sceneItemId, true),
+    down: sceneItemId => getScenesService().views.toggleNodeVisibility(sceneItemId, false),
+  },
+};
+
+const MARKERS_ACTIONS: HotkeyGroup = {
+  MARKER_1: {
+    name: 'MARKER_1',
+    description: () => getMarkersService().views.getLabel('MARKER_1'),
+    down: () => getMarkersService().actions.addMarker('MARKER_1'),
+  },
+  MARKER_2: {
+    name: 'MARKER_2',
+    description: () => getMarkersService().views.getLabel('MARKER_2'),
+    down: () => getMarkersService().actions.addMarker('MARKER_2'),
+  },
+  MARKER_3: {
+    name: 'MARKER_3',
+    description: () => getMarkersService().views.getLabel('MARKER_3'),
+    down: () => getMarkersService().actions.addMarker('MARKER_3'),
+  },
+  MARKER_4: {
+    name: 'MARKER_4',
+    description: () => getMarkersService().views.getLabel('MARKER_4'),
+    down: () => getMarkersService().actions.addMarker('MARKER_4'),
   },
 };
 
@@ -351,6 +392,7 @@ const ACTIONS: HotkeyGroup = {
   ...SOURCE_ACTIONS,
   ...SCENE_ACTIONS,
   ...SCENE_ITEM_ACTIONS,
+  ...MARKERS_ACTIONS,
 };
 
 /**
@@ -364,6 +406,8 @@ export interface IHotkey {
   sourceId?: string;
   sceneItemId?: string;
   hotkeyId?: number;
+  isMarker?: boolean;
+  display?: TDisplayType;
 }
 
 /**
@@ -374,6 +418,7 @@ export interface IHotkeysSet {
   general: IHotkey[];
   sources: Dictionary<IHotkey[]>;
   scenes: Dictionary<IHotkey[]>;
+  markers: IHotkey[];
 }
 
 interface IHotkeysServiceState {
@@ -401,7 +446,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
   /**
    * Memoizes the currently registered hotkeys
    */
-  private registeredHotkeys: Hotkey[];
+  private registeredHotkeys: Hotkey[] | null;
 
   init() {
     this.scenesService.sceneAdded.subscribe(() => this.invalidate());
@@ -454,11 +499,22 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
             actionName: action.name,
             bindings: [],
             sceneItemId: sceneItem.sceneItemId,
+            display: sceneItem?.display,
           };
           hotkeys[getHotkeyHash(hotkey)] = hotkey;
           addedHotkeys.add(`${action.name}-${sceneItem.sceneItemId}`);
         });
       });
+    });
+
+    Object.values(MARKERS_ACTIONS).forEach(action => {
+      const hotkey: IHotkey = {
+        actionName: action.name,
+        bindings: [],
+        isMarker: true,
+      };
+      hotkeys[getHotkeyHash(hotkey)] = hotkey;
+      addedHotkeys.add(action.name);
     });
 
     const obsHotkeys: OBSHotkey[] = obs.NodeObs.OBS_API_QueryHotkeys();
@@ -484,7 +540,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
 
     this.state.hotkeys.forEach(savedHotkey => {
       const hotkey = hotkeys[getHotkeyHash(savedHotkey)];
-      if (hotkey) hotkey.bindings = [].concat(savedHotkey.bindings);
+      if (hotkey) hotkey.bindings = [...savedHotkey.bindings];
     });
 
     this.registeredHotkeys = Object.keys(hotkeys).map(key => this.getHotkey(hotkeys[key]));
@@ -494,9 +550,25 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
     return new Hotkey(obj);
   }
 
+  // Only works for general hotkeys for now
+  getGeneralHotkeyByName(name: string) {
+    return this.getHotkeysSet().general.find(hotkey => hotkey.actionName === name);
+  }
+
+  // Only works for general hotkeys for now
+  applyGeneralHotkey(hotkey: IHotkey) {
+    const set = this.getHotkeysSet();
+    set.general.forEach(h => {
+      if (h.actionName === hotkey.actionName) {
+        h.bindings = hotkey.bindings;
+      }
+    });
+    this.applyHotkeySet(set);
+  }
+
   getHotkeys(): Hotkey[] {
     if (!this.registeredHotkeys) this.updateRegisteredHotkeys();
-    return this.registeredHotkeys.filter(hotkey => hotkey.shouldApply);
+    return (this.registeredHotkeys ?? []).filter(hotkey => hotkey.shouldApply);
   }
 
   getHotkeysSet(): IHotkeysSet {
@@ -513,10 +585,13 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
       if (sceneHotkeys.length) scenesHotkeys[scene.id] = sceneHotkeys;
     });
 
+    const markersHotkeys = this.getHotkeys().filter(hotkey => hotkey.type === 'MARKER');
+
     return {
       general: this.serializeHotkeys(this.getGeneralHotkeys()),
       sources: this.serializeHotkeys(sourcesHotkeys),
       scenes: this.serializeHotkeys(scenesHotkeys),
+      markers: this.serializeHotkeys(markersHotkeys),
     };
   }
 
@@ -542,6 +617,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
       general: [],
       sources: {},
       scenes: {},
+      markers: [],
     });
   }
 
@@ -552,6 +628,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
     Object.keys(hotkeySet.sources).forEach(sourceId =>
       hotkeys.push(...hotkeySet.sources[sourceId]),
     );
+    hotkeys.push(...hotkeySet.markers);
     this.setHotkeys(hotkeys);
     this.bindHotkeys();
   }
@@ -570,12 +647,16 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
 
   getSceneItemsHotkeys(sceneId: string): Hotkey[] {
     const scene = this.scenesService.views.getScene(sceneId);
-    const sceneItemsIds = scene.nodes.map(item => item.id);
-    return this.getHotkeys().filter(hotkey => sceneItemsIds.includes(hotkey.sceneItemId));
+    const sceneItemsIds = scene?.nodes.map(item => item.id) ?? [];
+    return this.getHotkeys().filter(hotkey => sceneItemsIds.includes(hotkey.sceneItemId ?? ''));
   }
 
   getSceneItemHotkeys(sceneItemId: string): Hotkey[] {
     return this.getHotkeys().filter(hotkey => hotkey.sceneItemId === sceneItemId);
+  }
+
+  getMarkerHotkeys(): Hotkey[] {
+    return this.getHotkeys().filter(hotkey => hotkey.type === 'MARKER');
   }
 
   unregisterAll() {
@@ -620,7 +701,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
         eventType: 'registerKeydown',
         callback: () => {
           this.usageStatisticsService.recordFeatureUsage('HotkeyPress');
-          hotkeys.forEach(hotkey => hotkey.action.downHandler());
+          hotkeys.forEach(hotkey => hotkey.action.downHandler && hotkey.action.downHandler());
         },
       });
     });
@@ -631,7 +712,8 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
       this.keyListenerService.register({
         ...binding,
         eventType: 'registerKeyup',
-        callback: () => hotkeys.forEach(hotkey => hotkey.action.upHandler()),
+        callback: () =>
+          hotkeys.forEach(hotkey => hotkey.action.upHandler && hotkey.action.upHandler()),
       });
     });
   }
@@ -661,7 +743,7 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
     return action && action.name && idPropFor(hotkey);
   }
 
-  private getActionForHotkey(hotkey: OBSHotkey): IHotkeyAction {
+  private getActionForHotkey(hotkey: OBSHotkey): IHotkeyAction | null {
     const action = getActionFromName(hotkey.HotkeyName);
 
     // Return the action immediately if there's a 1-1 mapping
@@ -675,24 +757,28 @@ export class HotkeysService extends StatefulService<IHotkeysServiceState> {
     if (source) {
       return ACTIONS[`${source.type.toUpperCase()}_${hotkey.HotkeyName}`];
     }
+
+    return null;
   }
 }
 
 /**
  * Represents a single bindable hotkey
  */
-@ServiceHelper()
+@ServiceHelper('HotkeysService')
 export class Hotkey implements IHotkey {
   actionName: string;
   sceneId?: string;
   sourceId?: string;
   sceneItemId?: string;
+  isMarker?: boolean;
   bindings: IBinding[];
 
   type: THotkeyType;
   description: string;
   action: IHotkeyAction;
   shouldApply: boolean;
+  display?: TDisplayType;
 
   private readonly hotkeyModel: IHotkey;
 
@@ -706,15 +792,17 @@ export class Hotkey implements IHotkey {
       this.type = 'SCENE_ITEM';
     } else if (this.sceneId) {
       this.type = 'SCENE';
+    } else if (this.isMarker) {
+      this.type = 'MARKER';
     } else {
       this.type = 'GENERAL';
     }
 
-    const entityId = this.sourceId || this.sceneId || this.sceneItemId;
+    const entityId = this.sourceId ?? this.sceneId ?? this.sceneItemId ?? 'NO_ENTITY';
 
     this.action = this.getAction(entityId);
     this.description = this.action.description(entityId);
-    this.shouldApply = this.action.shouldApply(entityId);
+    this.shouldApply = (this.action.shouldApply && this.action.shouldApply(entityId)) ?? false;
   }
 
   isDestroyed() {
@@ -747,7 +835,7 @@ export class Hotkey implements IHotkey {
     // or not to execute each action.
     if (up) {
       action.upHandler = () => {
-        if (!action.isActive(entityId)) {
+        if (action.isActive && !action.isActive(entityId)) {
           defer(() => up(entityId, this.hotkeyModel.hotkeyId));
         }
       };
@@ -755,7 +843,7 @@ export class Hotkey implements IHotkey {
 
     if (down) {
       action.downHandler = () => {
-        if (!action.isActive(entityId)) {
+        if (action.isActive && !action.isActive(entityId)) {
           defer(() => down(entityId, this.hotkeyModel.hotkeyId));
         }
       };
@@ -769,7 +857,7 @@ const getMigrationMapping = (actionName: string) => {
   return {
     MUTE: 'TOGGLE_MUTE',
     UNMUTE: 'TOGGLE_UNMUTE',
-  }[normalizeActionName(actionName)];
+  }[normalizeActionName(actionName)] as string;
 };
 
 const getActionFromName = (actionName: string) => ({

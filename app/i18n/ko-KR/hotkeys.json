@@ -8,8 +8,8 @@
   "Hide %{sourcename}": "%{sourcename} 숨김",
   "Push to Show %{sourcename}": "푸시하여 %{sourcename} 표시",
   "Push to Hide %{sourcename}": "푸시하여 %{sourcename} 숨김",
-  "Mute": "뮤트",
-  "Unmute": "뮤트 취소",
+  "Mute": "음소거",
+  "Unmute": "음소거 해제 ",
   "Push to Mute": "푸시하여 뮤트",
   "Push to Talk": "푸시하여 대화",
   "Enable Studio Mode": "스튜디오 모드 활성화",
@@ -22,6 +22,13 @@
   "Restart": "다시 시작",
   "Next Slide": "다음 슬라이드",
   "Previous Slide": "이전 슬라이드",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "알림 건너뛰기"
+  "Toggle Performance Mode": "성능 모드 토글",
+  "Skip Alert": "알림 건너뛰기",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "Mac에서 단축키를 사용하려면 시스템 설정 > 보안 > 접근성으로 이동하여 Streamlabs Desktop을 켜십시오.",
+  "Start Virtual Camera": "가상 카메라 시작",
+  "Stop Virtual Camera": "가상 카메라 중지",
+  "This scene has not been converted to Dual Output. Please make the scene active to add vertical sources.": "이 장면은 Dual Output으로 변환되지 않았습니다. 세로 소스를 추가하려면 장면을 활성화하십시오.",
+  "Learn more here": "여기에서 자세히 알아보기",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>프로 팁:</color> 단축키 설정에서 마커를 설정하여 녹화 영상에 타임스탬프를 찍을 수 있습니다. <link>여기에서 설정</link>",
+  "Markers": "마커"
 }

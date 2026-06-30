@@ -8,8 +8,8 @@
   "Hide %{sourcename}": "%{sourcename} kaynağını gizle",
   "Push to Show %{sourcename}": "%{sourcename} Kaynağını Göstermek İçin Bas",
   "Push to Hide %{sourcename}": "%{sourcename} Kaynağını Gizlemek İçin Bas",
-  "Mute": "Sesi Kapat",
-  "Unmute": "Sesi Aç",
+  "Mute": "Sustur",
+  "Unmute": "Ses Aç",
   "Push to Mute": "Sesi Kapatmak İçin Bas",
   "Push to Talk": "Konuşmak İçin Bas",
   "Enable Studio Mode": "Stüdyo Modunu Etkinleştir",
@@ -22,6 +22,13 @@
   "Restart": "Yeniden Başlat",
   "Next Slide": "Sonraki Slayt",
   "Previous Slide": "Önceki Slayt",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "Uyarıyı Atla"
+  "Toggle Performance Mode": "Performans Moduna Geç",
+  "Skip Alert": "Uyarıyı Atla",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "Mac üzerinde kısayol tuşlarını kullanmak için, Sistem Ayarları > Güvenlik > Erişilebilirlik bölümüne gidin ve Streamlabs Desktop’u etkinleştirin.",
+  "Start Virtual Camera": "Sanal Kamerayı Başlatın",
+  "Stop Virtual Camera": "Sanal Kamerayı Durdurun",
+  "This scene has not been converted to Dual Output. Please make the scene active to add vertical sources.": "Bu sahne Dual Output’a dönüştürülmemiş. Dikey kaynaklar eklemek için lütfen sahneyi etkin hale getirin.",
+  "Learn more here": "Buradan daha fazla bilgi edinin",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>Profesyonel ipucu:</color> Kayıtlarınıza zaman damgası eklemek için Kısayol Tuşları ayarlarında İşaretler’i ayarlayın. <link>Buradan ayarlayın</link>",
+  "Markers": "İşaretler"
 }

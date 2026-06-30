@@ -4,7 +4,7 @@ import { InputComponent, TSlobsInputProps, useTextInput, ValuesOf } from './inpu
 import InputWrapper from './InputWrapper';
 import { TextAreaProps } from 'antd/lib/input';
 
-const ANT_TEXTAREA_FEATURES = ['showCount', 'autoSize', 'maxLength'] as const;
+const ANT_TEXTAREA_FEATURES = ['showCount', 'autoSize', 'maxLength', 'rows'] as const;
 
 export type TTextAreaInputProps = TSlobsInputProps<
   {},
@@ -14,7 +14,7 @@ export type TTextAreaInputProps = TSlobsInputProps<
 >;
 
 export const TextAreaInput = InputComponent((p: TTextAreaInputProps) => {
-  const { inputAttrs, wrapperAttrs } = useTextInput(p, ANT_TEXTAREA_FEATURES);
+  const { inputAttrs, wrapperAttrs } = useTextInput('textarea', p, ANT_TEXTAREA_FEATURES);
   return (
     <InputWrapper {...wrapperAttrs}>
       <Input.TextArea {...inputAttrs} />

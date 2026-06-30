@@ -11,6 +11,7 @@ import { GameCaptureNode } from './nodes/overlays/game-capture';
 import { parse } from './parse';
 import { StreamlabelNode } from './nodes/overlays/streamlabel';
 import { WidgetNode } from './nodes/overlays/widget';
+import { IconLibraryNode } from './nodes/overlays/icon-library';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -21,6 +22,8 @@ import { SceneSourceNode } from './nodes/overlays/scene';
 import { AppService } from 'services/app';
 import { importExtractZip } from '../../util/slow-imports';
 import { downloadFile, IDownloadProgress } from 'util/requests';
+import { NodeMapNode } from './nodes/node-map';
+import { SmartBrowserNode } from './nodes/overlays/smartBrowserSource';
 
 const NODE_TYPES = {
   RootNode,
@@ -35,6 +38,9 @@ const NODE_TYPES = {
   TransitionNode,
   SceneSourceNode,
   GameCaptureNode,
+  IconLibraryNode,
+  NodeMapNode,
+  SmartBrowserNode,
 };
 
 export class OverlaysPersistenceService extends Service {
@@ -60,7 +66,7 @@ export class OverlaysPersistenceService extends Service {
 
     this.ensureOverlaysDirectory();
 
-    await new Promise(async (resolve, reject) => {
+    await new Promise<void>(async (resolve, reject) => {
       // import of extractZip takes to much time on startup, so import it dynamically
       const extractZip = (await importExtractZip()).default;
       extractZip(overlayFilePath, { dir: assetsPath }, err => {
@@ -74,6 +80,7 @@ export class OverlaysPersistenceService extends Service {
 
     const configPath = path.join(assetsPath, 'config.json');
     const data = fs.readFileSync(configPath).toString();
+
     const root = parse(data, NODE_TYPES);
     await root.load({ assetsPath });
 
@@ -95,7 +102,7 @@ export class OverlaysPersistenceService extends Service {
     const archiver = (await import('archiver')).default;
     const archive = archiver('zip', { zlib: { level: 9 } });
 
-    await new Promise(resolve => {
+    await new Promise<void>(resolve => {
       output.on('close', (err: any) => {
         resolve();
       });

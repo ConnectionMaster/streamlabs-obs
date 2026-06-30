@@ -1,13 +1,14 @@
 import Vue from 'vue';
-import electron from 'electron';
-import { Component } from 'vue-property-decorator';
+import * as remote from '@electron/remote';
+import { Component, Watch } from 'vue-property-decorator';
 import { Inject } from 'services/core/injector';
 import { getComponents, IModalOptions, IWindowOptions, WindowsService } from 'services/windows';
 import { CustomizationService } from 'services/customization';
-import { TitleBar } from 'components/shared/ReactComponent';
+import { TitleBar } from 'components/shared/ReactComponentList';
 import { AppService } from 'services/app';
 import styles from './ChildWindow.m.less';
 import ModalWrapper from '../shared/modals/ModalWrapper';
+import antdThemes, { Theme } from 'styles/antd/index';
 
 @Component({})
 export default class ChildWindow extends Vue {
@@ -19,7 +20,16 @@ export default class ChildWindow extends Vue {
   private refreshingTimeout: number;
   private modalOptions: IModalOptions = { renderFn: null };
 
+  unbind: () => void;
+
+  theme: Theme = 'night-theme';
+
   mounted() {
+    this.unbind = this.customizationService.state.bindProps(this, {
+      theme: 'theme',
+    });
+
+    antdThemes[this.theme].use();
     WindowsService.modalChanged.subscribe(modalOptions => {
       this.modalOptions = { ...this.modalOptions, ...modalOptions };
     });
@@ -30,12 +40,12 @@ export default class ChildWindow extends Vue {
     });
   }
 
-  get options() {
-    return this.windowsService.state.child;
+  destroyed() {
+    this.unbind();
   }
 
-  get theme() {
-    return this.customizationService.currentTheme;
+  get options() {
+    return this.windowsService.state.child;
   }
 
   get currentComponent() {
@@ -50,12 +60,18 @@ export default class ChildWindow extends Vue {
     return this.appService.state.loading;
   }
 
+  @Watch('theme')
+  updateAntd(newTheme: Theme, oldTheme: Theme) {
+    antdThemes[oldTheme].unuse();
+    antdThemes[newTheme].use();
+  }
+
   clearComponentStack() {
     this.components = [];
   }
 
   private setWindowTitle() {
-    electron.remote.getCurrentWindow().setTitle(this.currentComponent.title);
+    remote.getCurrentWindow().setTitle(this.currentComponent.title);
   }
 
   windowResizeTimeout: number;
@@ -136,6 +152,8 @@ export default class ChildWindow extends Vue {
         <ModalWrapper renderFn={this.modalOptions?.renderFn} />
 
         {this.componentsToRender.map((comp, index) => {
+          // TODO: index
+          // @ts-ignore
           const ChildWindowComponent = getComponents()[comp.componentName];
           return (
             <ChildWindowComponent key={`${comp.componentName}-${index}`} vShow={comp.isShown} />

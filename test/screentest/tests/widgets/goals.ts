@@ -1,13 +1,14 @@
-import { TExecutionContext, test, useSpectron, closeWindow } from '../../../helpers/spectron/index';
-import { logIn, logOut } from '../../../helpers/spectron/user';
+import { TExecutionContext, test, useWebdriver } from '../../../helpers/webdriver/index';
+import { logIn, logOut } from '../../../helpers/webdriver/user';
 import { makeScreenshots, useScreentest } from '../../screenshoter';
 import { FormMonkey } from '../../../helpers/form-monkey';
 import { addWidget, EWidgetType, waitForWidgetSettingsSync } from '../../../helpers/widget-helpers';
+import { closeWindow } from '../../../helpers/modules/core';
 
-useSpectron({ restartAppAfterEachTest: false });
+useWebdriver({ restartAppAfterEachTest: false });
 useScreentest();
 
-testGoal('Donation Goal', EWidgetType.DonationGoal);
+testGoal('Tip Goal', EWidgetType.DonationGoal);
 testGoal('Follower Goal', EWidgetType.FollowerGoal);
 testGoal('Bit Goal', EWidgetType.BitGoal);
 
@@ -52,7 +53,7 @@ function testGoal(goalType: string, widgetType: EWidgetType) {
     `);
     await makeScreenshots(t, 'Created Goal');
 
-    await closeWindow(t);
+    await closeWindow('child');
     await logOut(t);
   });
 
@@ -80,7 +81,7 @@ function testGoal(goalType: string, widgetType: EWidgetType) {
 
     await makeScreenshots(t, 'Settings');
 
-    await closeWindow(t);
+    await closeWindow('child');
     await logOut(t);
     t.pass();
   });

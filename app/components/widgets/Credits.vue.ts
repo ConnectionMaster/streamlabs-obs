@@ -24,6 +24,8 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
   }
 
   optionIterable(map: Dictionary<string>) {
+    // TODO: index
+    // @ts-ignore
     return Object.keys(map).filter(option => this.wData.settings[option] != null);
   }
 
@@ -63,9 +65,11 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
     return this.service.getMetadata(this.themeOptions);
   }
 
-  navItems = [
-    { value: 'manage-credits', label: $t('Manage Credits') },
-    { value: 'visual', label: $t('Visual Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-credits', label: $t('Manage Credits') },
+      { value: 'visual', label: $t('Visual Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 }

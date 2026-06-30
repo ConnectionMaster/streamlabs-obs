@@ -11,6 +11,7 @@ import { $t } from 'services/i18n';
 import { formMetadata, IListOption } from 'components/shared/inputs';
 import { metadata } from 'components/widgets/inputs';
 import uuid from 'uuid/v4';
+import { authorizedHeaders, handleResponse } from 'util/requests';
 
 export interface ISpinWheelSettings extends IWidgetSettings {
   resultColor: string;
@@ -46,13 +47,15 @@ export class SpinWheelService extends WidgetSettingsService<ISpinWheelData> {
   static initialState = WIDGET_INITIAL_STATE;
 
   getApiSettings() {
+    const host = this.getHost();
     return {
       type: WidgetType.SpinWheel,
-      url: WidgetDefinitions[WidgetType.SpinWheel].url(this.getHost(), this.getWidgetToken()),
-      previewUrl: `https://${this.getHost()}/widgets/wheel?token=${this.getWidgetToken()}`,
-      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/wheel`,
-      settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/wheel`,
-      settingsUpdateEvent: 'spinwheelSettingsUpdate',
+      url: WidgetDefinitions[WidgetType.SpinWheel].url(host, this.getWidgetToken()),
+      previewUrl: `https://${host}/widgets/wheel?token=${this.getWidgetToken()}`,
+      webSettingsUrl: `https://${host}/dashboard#/widgets/wheel`,
+      dataFetchUrl: `https://${host}/api/v5/slobs/widget/wheel`,
+      settingsSaveUrl: `https://${host}/api/v5/slobs/widget/wheel`,
+      settingsUpdateEvent: 'WheelSettingsUpdate',
       customCodeAllowed: true,
       customFieldsAllowed: true,
     };
@@ -90,6 +93,15 @@ export class SpinWheelService extends WidgetSettingsService<ISpinWheelData> {
         max: 15,
       }),
     });
+  }
+
+  async spinWheel() {
+    // eslint-disable-next-line
+    const url = `https://${this.getHost()}/api/v5/slobs/widget/wheel/spin/${this.getWidgetToken()}`;
+    const headers = authorizedHeaders(this.userService.apiToken);
+    const request = new Request(url, { headers, method: 'POST' });
+    const response = await fetch(request);
+    return handleResponse(response);
   }
 
   protected patchAfterFetch(data: any): ISpinWheelData {

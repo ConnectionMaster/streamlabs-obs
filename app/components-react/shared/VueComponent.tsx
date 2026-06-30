@@ -3,7 +3,7 @@ import uuid from 'uuid';
 import { I18nService } from '../../services/i18n';
 import { StatefulService } from '../../services/core/stateful-service';
 import Vue from 'vue';
-import { isEqual } from 'lodash';
+import isEqual from 'lodash/isEqual';
 
 interface IProps {
   componentClass: any;
@@ -34,7 +34,7 @@ export class VueComponent extends Component<IProps, { id: string; vueInstance: V
       methods: {
         updateProps(newProps: { componentClass: typeof Vue; componentProps: unknown }) {
           this['componentClass'] = newProps.componentClass;
-          this['componenentProps'] = newProps.componentProps;
+          this['componentProps'] = newProps.componentProps;
         },
       },
       render(h) {
@@ -45,6 +45,8 @@ export class VueComponent extends Component<IProps, { id: string; vueInstance: V
   }
 
   componentDidUpdate(props: IProps): void {
+    // TODO: index
+    // @ts-ignore
     this.state.vueInstance!['updateProps'](props);
   }
 

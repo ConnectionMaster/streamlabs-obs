@@ -1,6 +1,8 @@
 import { sleep } from './sleep';
 import { cloneDeep, isMatch } from 'lodash';
-import { click, TExecutionContext } from './spectron';
+import { TExecutionContext } from './webdriver';
+import { click } from './modules/core';
+import { setInputValue as setBaseInputValue } from './modules/forms/base';
 
 interface IUIInput {
   type: string;
@@ -34,6 +36,8 @@ const months = [
 
 /**
  * helper for simulating user input into SLOBS forms
+ * Use it for Vuex inputs only
+ * @deprecated
  */
 export class FormMonkey {
   constructor(
@@ -208,6 +212,8 @@ export class FormMonkey {
 
       this.log(`got: ${value}`);
       const key = returnTitlesInsteadValues ? input.title : input.name;
+      // TODO: index
+      // @ts-ignore
       formData[key] = value;
     }
 
@@ -293,7 +299,7 @@ export class FormMonkey {
     const $colorPicker = await this.client.$(`${selector} [name="colorpicker-input"]`);
     await $colorPicker.click(); // open colorpicker
     // tslint:disable-next-line:no-parameter-reassignment TODO
-    value = value.substr(1); // get rid of # character in value
+    value = value.slice(1); // get rid of # character in value
     const inputSelector = `${selector} .vc-input__input`;
     await sleep(100); // give colorpicker some time to be opened
     await this.setInputValue(inputSelector, value);
@@ -485,13 +491,13 @@ export class FormMonkey {
     const year = date.getFullYear();
 
     // open calendar
-    await click(this.t, selector);
+    await click(selector);
 
     // switch to month selection
-    await click(this.t, `${selector} .day__month_btn`);
+    await click(`${selector} .day__month_btn`);
 
     // switch to year selection
-    await click(this.t, `${selector} .month__year_btn`);
+    await click(`${selector} .month__year_btn`);
 
     const $el = await this.client.$(selector);
 
@@ -509,15 +515,7 @@ export class FormMonkey {
   }
 
   async setInputValue(selector: string, value: string) {
-    const $el = await this.client.$(selector);
-
-    await $el.waitForDisplayed();
-    await $el.click();
-    await ((this.client.keys(['Control', 'a']) as any) as Promise<any>); // select all
-    await ((this.client.keys('Control') as any) as Promise<any>); // release ctrl key
-    await ((this.client.keys('Backspace') as any) as Promise<any>); // clear
-    await $el.click(); // click again if it's a list input
-    await ((this.client.keys(value) as any) as Promise<any>); // type text
+    await setBaseInputValue(selector, value);
   }
 
   async setTwitchTagsValue(selector: string, values: string[]) {
@@ -601,7 +599,7 @@ export function selectTitle(optionTitle: string): FNValueSetter {
     await form.waitForLoading(input.name);
 
     // click on the first option
-    await click(form.t, `${input.selector} .multiselect__element`);
+    await click( `${input.selector} .multiselect__element`);
   };
 }
 
@@ -622,7 +620,6 @@ export function selectGamesByTitles(
     for (const game of games) {
       // click to the option
       await click(
-        form.t,
         `${input.selector} .multiselect__element [data-option-value="${game.platform} ${game.title}"]`,
       );
     }
