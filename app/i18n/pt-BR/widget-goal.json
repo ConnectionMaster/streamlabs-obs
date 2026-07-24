@@ -7,7 +7,6 @@
   "End Goal": "Meta final",
   "Starting Amount": "Valor Inicial",
   "End After": "Terminar depois de",
-  "Include resubs?": "Incluir reinscritos?",
   "Layout": "Layout",
   "Background Color": "Cor de Fundo",
   "Bar Color": "Cor da Barra",
@@ -22,6 +21,11 @@
   "Facebook Supporters": "Apoiadores do Facebook",
   "Facebook chat": "Bate-papo do Facebook",
   "Member Goal": "Objetivo de membro",
-  "Streamlabs Charity Goal": "Streamlabs Charity Goal",
-  "Streamlabs Charity Donations": "Streamlabs Charity Donations"
+  "Streamlabs Charity Goal": "Objetivo de caridade Streamlabs",
+  "Streamlabs Charity Donations": "Doações de caridade Streamlabs",
+  "Charity donations": "Doações beneficentes",
+  "Goal Settings": "Configurações de meta",
+  "Must be in MM/DD/YYYY format.": "Deve estar no formato MM/DD/AAAA.",
+  "Condensed": "Compacto",
+  "Count Power-Ups": "Count Power-Ups"
 }

@@ -2,13 +2,15 @@ import { IJsonRpcEvent, IJsonRpcRequest, IJsonRpcResponse } from '../../app/serv
 import { Observable, Subject, Subscription } from 'rxjs';
 import { first } from 'rxjs/operators';
 import { isEqual } from 'lodash';
+import { NamedPipeClient } from './named-pipe-client';
 
 const net = require('net');
-const { spawnSync } = require('child_process');
-const snp = require('node-win32-np');
+const snp = process.platform === 'win32' ? require('node-win32-np') : null;
 
 const PIPE_NAME = 'slobs';
 const PIPE_PATH = `\\\\.\\pipe\\${PIPE_NAME}`;
+const TCP_PORT = 28194;
+const TCP_HOST = '127.0.0.1';
 const PROMISE_TIMEOUT = 20000;
 
 let clientInstance: ApiClient = null;
@@ -54,7 +56,11 @@ export class ApiClient {
     return new Promise((resolve, reject) => {
       this.resolveConnection = resolve;
       this.rejectConnection = reject;
-      this.socket.connect(PIPE_PATH);
+      if (process.platform === 'win32') {
+        this.socket.connect(PIPE_PATH);
+      } else {
+        this.socket.connect(TCP_PORT, TCP_HOST);
+      }
     });
   }
 
@@ -122,7 +128,7 @@ export class ApiClient {
 
     const response = this.sendMessageSync(requestBody);
     const parsedResponse = JSON.parse(response.toString());
-    this.log(`Response Sync:`, parsedResponse);
+    this.log('Response Sync:', parsedResponse);
 
     if (parsedResponse.error) {
       throw parsedResponse.error;
@@ -137,13 +143,15 @@ export class ApiClient {
       try {
         requestBody = JSON.parse(message);
       } catch (e) {
-        throw 'Invalid JSON';
+        throw new Error('Invalid JSON');
       }
     }
 
-    if (!requestBody.id) throw 'id is required';
+    if (!requestBody.id) throw new Error('id is required');
 
     return new Promise((resolve, reject) => {
+      // TODO: index
+      // @ts-ignore
       this.requests[requestBody.id] = {
         resolve,
         reject,
@@ -152,7 +160,13 @@ export class ApiClient {
       };
       const rawMessage = `${JSON.stringify(requestBody)}\n`;
       this.log('Send async:', rawMessage);
-      this.socket.write(rawMessage);
+
+      if (!this.socket.writable) {
+        this.log('Socket is not writeable. Attempted to write:', rawMessage);
+        reject(new Error('Socket is not writeable'));
+      } else {
+        this.socket.write(rawMessage);
+      }
     });
   }
 
@@ -162,24 +176,57 @@ export class ApiClient {
       try {
         requestBody = JSON.parse(message);
       } catch (e) {
-        throw 'Invalid JSON';
+        throw new Error('Invalid JSON');
       }
     }
 
-    if (!requestBody.id) throw 'id is required';
-
+    if (!requestBody.id) throw new Error('id is required');
     const rawMessage = `${JSON.stringify(requestBody)}\n`;
     this.log('Send sync:', rawMessage);
 
-    const client = new snp.Client(PIPE_PATH);
-    client.write(Buffer.from(rawMessage));
+    // Windows: use named pipes, which support synchronous communication. On other platforms, fall back to TCP sockets.
+    if (snp) {
+      const client = new snp.Client(PIPE_PATH);
+      client.write(Buffer.from(rawMessage));
 
-    /* \x0a is being used as a message delimiter for
-     * JSON-RPC messages. */
-    const response = client.read_until('\x0a');
-    client.close();
+      /* \x0a is being used as a message delimiter for
+      * JSON-RPC messages. */
+      const response = client.read_until('\x0a');
+      client.close();
 
-    return Buffer.concat(response);
+      return Buffer.concat(response);
+    }
+    // Mac: use raw socket callbacks (not Promises) so deasync.loopWhile
+    // can drive the event loop without microtask flushing issues.
+    let result: Buffer | undefined;
+    let error: any;
+    let done = false;
+
+    const chunks: Buffer[] = [];
+    const socket = new net.Socket();
+
+    socket.connect(TCP_PORT, TCP_HOST, () => {
+      socket.write(rawMessage);
+    });
+
+    socket.on('data', (data: Buffer) => {
+      chunks.push(data);
+      if (data.toString().includes('\x0a')) {
+        socket.destroy();
+        result = Buffer.concat(chunks as Uint8Array[]);
+        done = true;
+      }
+    });
+
+    socket.on('error', (e: Error) => {
+      error = e;
+      done = true;
+    });
+
+    require('deasync').loopWhile(() => !done);
+
+    if (error) throw error;
+    return result!;
   }
 
   sendJson(json: string) {
@@ -198,6 +245,8 @@ export class ApiClient {
 
         // if message is response for an API call
         // than we should have a pending request object
+        // TODO: index
+        // @ts-ignore
         const request = this.requests[message.id];
         if (request) {
           if (message.error) {
@@ -205,6 +254,8 @@ export class ApiClient {
           } else {
             request.resolve(message.result);
           }
+          // TODO: index
+          // @ts-ignore
           delete this.requests[message.id];
         }
 
@@ -279,6 +330,8 @@ export class ApiClient {
 
     return new Proxy(resourceModel, {
       get: (target, property: string, receiver) => {
+        // TODO: index
+        // @ts-ignore
         if (resourceModel[property] !== void 0) return resourceModel[property];
 
         const resourceScheme = this.getResourceScheme(resourceId);
@@ -324,7 +377,7 @@ export class ApiClient {
   }
 }
 
-export async function getClient() {
+export async function getApiClient() {
   if (!clientInstance) clientInstance = new ApiClient();
 
   if (clientInstance.getConnectionStatus() === 'disconnected') {
@@ -349,6 +402,8 @@ class ApiEventWatcher {
     // start watching for events
     this.subscriptions = this.eventNames.map(eventName => {
       const [resourceId, prop] = eventName.split('.');
+      // TODO: index
+      // @ts-ignore
       const observable = this.apiClient.getResource(resourceId)[prop] as Observable<any>;
       return observable.subscribe(() => void 0);
     });

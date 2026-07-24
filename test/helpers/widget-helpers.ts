@@ -1,8 +1,9 @@
 import { sleep } from './sleep';
-import { focusChild, TExecutionContext } from './spectron';
+import { TExecutionContext } from './webdriver';
 import { WidgetsService, WidgetType } from '../../app/services/widgets';
 import { SourcesService } from '../../app/services/sources';
-import { getClient } from './api-client';
+import { getApiClient } from './api-client';
+import { focusChild } from './modules/core';
 
 export async function waitForWidgetSettingsSync(t: TExecutionContext) {
   await sleep(2000);
@@ -30,18 +31,20 @@ export enum EWidgetType {
   SponsorBanner = 13,
   MediaShare = 14,
   SubGoal = 15,
+  CustomWidget = 16,
+  GamePulseWidget = 17,
 }
 
 /**
  * Add a widget and open the props window
  */
 export async function addWidget(t: TExecutionContext, type: EWidgetType, name: string) {
-  const api = await getClient();
+  const api = await getApiClient();
   const widgetService = api.getResource<WidgetsService>('WidgetsService');
   const sourcesService = api.getResource<SourcesService>('SourcesService');
 
   const widget = widgetService.createWidget((type as unknown) as WidgetType, name);
   sourcesService.showSourceProperties(widget.sourceId);
-  await focusChild(t);
+  await focusChild();
   await (await t.context.app.client.$('button=Widget Editor')).waitForDisplayed(); // wait for loading
 }
