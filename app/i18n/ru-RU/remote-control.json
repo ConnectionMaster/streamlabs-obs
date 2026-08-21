@@ -1,12 +1,18 @@
 {
   "Show details": "Показать подробности",
   "Hide details": "Скрыть подробности",
-  "API token": "Токен API",
+  "API Token": "Токен API",
   "Generate new": "Создать новый",
   "Port": "Порт",
-  "IP addresses": "IP-адреса",
-  "You can now control Streamlabs OBS from your phone.": "Теперь вы можете управлять Streamlabs OBS с вашего телефона.",
-  "To begin, Scan this QR code with your phone.": "Чтобы начать, просканируйте этот QR-код своим телефоном.",
-  "This feature will only work with the most recent version of the Streamlabs mobile app.": "Для работы функции требуется самая последняя версия мобильного приложения Streamlabs.",
-  "Click to show": "Нажмите, чтобы показать"
+  "IP Addresses": "IP-адреса",
+  "Click to show": "Нажмите, чтобы показать",
+  "The free Streamlabs Controller app allows you to control Streamlabs Desktop from your iOS or Android device. You must be logged in to use this feature.": "Бесплатное приложение Streamlabs Controller позволяет управлять приложением Streamlabs Desktop с устройства iOS или Android. Вы должны войти в систему, чтобы воспользоваться этой функцией.",
+  "Allow Controller app connections": "Разрешить подключения приложений контроллера",
+  "Connected Devices": "Подключенные устройства",
+  "Disconnect": "Отключить",
+  "No devices connected": "Нет подключенных устройств",
+  "Some third party applications connect to Streamlabs Desktop via websockets connection. Toggle this to allow such connections and display connection info.": "Некоторые сторонние приложения подключаются к Streamlabs Desktop через веб-сокеты. Установите этот флажок, чтобы разрешить такие соединения и отобразить информацию о них.",
+  "Warning: Displaying this portion on stream may leak sensitive information.": "Предупреждение: Отображение этой части в трансляции может привести к утечке конфиденциальной информации.",
+  "Allow third party connections": "Разрешить сторонние подключения",
+  "Host": "Размещение"
 }

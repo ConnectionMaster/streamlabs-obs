@@ -9,7 +9,7 @@
   "Push to Show %{sourcename}": "Naciśnij, aby pokazać %{sourcename}",
   "Push to Hide %{sourcename}": "Naciśnij, aby ukryć %{sourcename}",
   "Mute": "Wycisz",
-  "Unmute": "Wyłącz wyciszenie",
+  "Unmute": "Odcisz",
   "Push to Mute": "Naciśnij, aby wyciszyć",
   "Push to Talk": "Naciśnij, aby mówić",
   "Enable Studio Mode": "Włącz tryb studia",
@@ -22,6 +22,13 @@
   "Restart": "Uruchom ponownie",
   "Next Slide": "Kolejny slajd",
   "Previous Slide": "Poprzedni slajd",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "Pomiń powiadomienie"
+  "Toggle Performance Mode": "Przełącz Tryb wydajności",
+  "Skip Alert": "Pomiń powiadomienie",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "Aby korzystać ze skrótów klawiszowych na Macu, przejdź do menu „Ustawienia systemowe” > „Prywatność i ochrona” > „Dostępność” i włącz uprawnienia dla Streamlabs Desktop.",
+  "Start Virtual Camera": "Uruchom wirtualną kamerę",
+  "Stop Virtual Camera": "Zatrzymaj wirtualną kamerę",
+  "This scene has not been converted to Dual Output. Please make the scene active to add vertical sources.": "Ta scena nie została przekonwertowana do trybu Dual Output. Uaktywnij scenę, aby dodać źródła pionowe.",
+  "Learn more here": "Dowiedz się więcej tutaj",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>Wskazówka:</color> ustaw znaczniki w ustawieniach skrótów klawiszowych, aby dodawać sygnatury czasowe do nagrań. <link>Skonfiguruj tutaj</link>",
+  "Markers": "Znaczniki"
 }

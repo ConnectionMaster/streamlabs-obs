@@ -1,0 +1,141 @@
+import React, { CSSProperties, useCallback, useMemo } from 'react';
+import { $t } from 'services/i18n';
+import { RadioInput } from './inputs';
+import { TDisplayType } from 'services/settings-v2';
+import { platformLabels, TPlatform } from 'services/platforms';
+import { useGoLiveSettings } from 'components-react/windows/go-live/useGoLiveSettings';
+import { TDisplayOutput } from 'services/streaming';
+import { ICustomRadioOption } from './inputs/RadioInput';
+
+interface IDisplaySelectorProps {
+  title: string;
+  index: number;
+  platform: TPlatform | null;
+  destinationName?: string;
+  className?: string;
+  style?: CSSProperties;
+  nolabel?: boolean;
+  alignIcons?: 'left' | 'center' | 'right';
+  visible?: boolean;
+  disabled?: boolean;
+}
+
+export default function DisplaySelector(p: IDisplaySelectorProps) {
+  const {
+    display,
+    canDualStream,
+    updateCustomDestinationDisplayAndSaveSettings,
+    updatePlatformDisplayAndSaveSettings,
+    toggleVerticalDisplay,
+  } = useGoLiveSettings().extend(module => ({
+    get canDualStream() {
+      if (!p.platform) return false;
+      return module.getCanDualStream(p.platform);
+    },
+    get display(): TDisplayOutput {
+      const defaultDisplay = p.platform
+        ? module.settings.platforms[p.platform]?.display
+        : module.settings.customDestinations[p.index]?.display;
+
+      if (defaultDisplay === 'both' && !this.canDualStream) {
+        return 'horizontal';
+      }
+
+      return defaultDisplay ?? 'horizontal';
+    },
+  }));
+
+  const displays: ICustomRadioOption[] = useMemo(() => {
+    const defaultDisplays = [
+      {
+        label: $t('Horizontal'),
+        value: 'horizontal',
+        icon: 'icon-desktop',
+      },
+      {
+        label: $t('Vertical'),
+        value: 'vertical',
+        icon: 'icon-phone-case',
+      },
+    ];
+
+    if (canDualStream) {
+      const tooltip = p?.platform
+        ? $t('Stream both horizontally and vertically to %{platform}', {
+            platform: platformLabels(p.platform),
+          })
+        : undefined;
+
+      return [
+        ...defaultDisplays,
+        {
+          label: $t('Both'),
+          value: 'both' as TDisplayType,
+          icon: 'icon-dual-output',
+          tooltip,
+        },
+      ];
+    }
+
+    return defaultDisplays;
+  }, [canDualStream]);
+
+  const onChange = useCallback(
+    (val: string) => {
+      const updatedDisplay = val as TDisplayOutput;
+      if (p.platform) {
+        updatePlatformDisplayAndSaveSettings(p.platform, updatedDisplay);
+      } else {
+        if (updatedDisplay === 'both') {
+          // There's no UI that would allow for this, but just in case
+          throw new Error('Attempted to update custom display for dual stream, this is impossible');
+        }
+        updateCustomDestinationDisplayAndSaveSettings(p.index, updatedDisplay as TDisplayType);
+      }
+
+      // When the user selects either of these displays it indicates that they will stream in dual output mode,
+      // so if they do not already have the vertical display visible in the editor, show it
+      if (updatedDisplay === 'both' || updatedDisplay === 'vertical') {
+        toggleVerticalDisplay();
+      }
+    },
+    [
+      p.platform,
+      p.index,
+      updatePlatformDisplayAndSaveSettings,
+      updateCustomDestinationDisplayAndSaveSettings,
+    ],
+  );
+
+  // Convert displays array to Dictionary<TInputValue>
+  const displayDict = useMemo(() => {
+    return displays.reduce((acc: Dictionary<ICustomRadioOption>, curr) => {
+      acc[curr.value] = curr;
+      return acc;
+    }, {} as Dictionary<ICustomRadioOption>);
+  }, [displays]);
+
+  const name = `${p.platform || p.destinationName}Display`;
+  const value = displayDict[display]?.value || 'horizontal';
+
+  return (
+    <RadioInput
+      nolabel={p?.nolabel}
+      label={p?.nolabel ? undefined : p.title}
+      name={name}
+      value={value}
+      defaultValue="horizontal"
+      options={displays}
+      alignIcons={p?.alignIcons}
+      onChange={onChange}
+      icons={true}
+      className={p?.className}
+      style={p?.style}
+      direction="horizontal"
+      gapsize={0}
+      nowrap
+      optionType="button"
+      disabled={p?.disabled}
+    />
+  );
+}

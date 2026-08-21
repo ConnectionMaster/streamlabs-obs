@@ -4,6 +4,7 @@ import {
   IStreamingEncoderSettings,
   EEncoderFamily,
 } from 'services/settings';
+import { UserService } from 'services/user';
 import { StreamingService, EStreamingState } from 'services/streaming';
 import { Inject, mutation, PersistentStatefulService } from 'services/core';
 import { IEncoderProfile } from './definitions';
@@ -12,6 +13,22 @@ import { camelize, handleErrors } from '../../util/requests';
 import { UrlService } from '../hosts';
 
 export * from './definitions';
+
+function normalizeCodec(codec?: string): string {
+  const normalized = codec?.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  switch (normalized) {
+    case 'h264':
+    case 'avc':
+    case 'avc1':
+      return 'h264';
+    case 'h265':
+    case 'hevc':
+      return 'hevc';
+    default:
+      return normalized || 'h264';
+  }
+}
 
 /**
  SLOBS will send these information as inputs for the server
@@ -39,16 +56,22 @@ interface IVideoEncodingOptimizationServiceState {
   lastLoadedGame: string;
   lastLoadedProfiles: IEncoderProfile[];
   lastSelectedProfile: IEncoderProfile;
+
+  /**
+   * This flag exists to essentially grant grandfathered access to
+   * video encoding optimizations. This flag will be set if the user
+   * doesn't currently have the flag and has optimized profiles enabled.
+   */
+  canSeeOptimizedProfile: boolean;
 }
 
-export class VideoEncodingOptimizationService extends PersistentStatefulService<
-  IVideoEncodingOptimizationServiceState
-> {
+export class VideoEncodingOptimizationService extends PersistentStatefulService<IVideoEncodingOptimizationServiceState> {
   static defaultState: IVideoEncodingOptimizationServiceState = {
     useOptimizedProfile: false,
     lastLoadedGame: '',
     lastLoadedProfiles: [],
     lastSelectedProfile: null,
+    canSeeOptimizedProfile: null,
   };
 
   private previousSettings: {
@@ -61,9 +84,16 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
   @Inject() private streamingService: StreamingService;
   @Inject() private outputSettingsService: OutputSettingsService;
   @Inject() private urlService: UrlService;
+  @Inject() userService: UserService;
 
   init() {
     super.init();
+
+    // Set grandfathered status
+    if (this.state.canSeeOptimizedProfile == null) {
+      this.SET_CAN_SEE_OPTIMIZED_PROFILE(this.state.useOptimizedProfile);
+    }
+
     this.streamingService.streamingStatusChange.subscribe(status => {
       if (status === EStreamingState.Offline && this.isUsingEncodingOptimizations) {
         this.isUsingEncodingOptimizations = false;
@@ -83,10 +113,12 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
     // use settings for nvenc instead
     const encoder =
       settings.encoder === EEncoderFamily.jim_nvenc ? EEncoderFamily.nvenc : settings.encoder;
+    const codec = normalizeCodec(settings.codec);
 
     const filteredProfiles = profiles.filter(profile => {
       return (
         profile.encoder === encoder &&
+        normalizeCodec(profile.codec) === codec &&
         profile.bitrateMax >= settings.bitrate &&
         profile.bitrateMin <= settings.bitrate &&
         (!settings.preset || settings.preset === profile.presetIn)
@@ -127,7 +159,7 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
         )
           .then(handleErrors)
           .then(camelize);
-      } catch (e) {
+      } catch (e: unknown) {
         // probably some network error
         // don't stop here
       }
@@ -139,10 +171,10 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
         profiles = await fetch(this.urlService.getStreamlabsApi('gamepresets/DEFAULT'))
           .then(handleErrors)
           .then(camelize);
-      } catch (e) {
+      } catch (e: unknown) {
         // probably some network error
         // don't stop here
-        console.error(e);
+        console.error('Error fetching game presets', e);
       }
     }
 
@@ -165,8 +197,11 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
       bitrate: currentSettings.streaming.bitrate,
     };
 
-    if (!currentSettings.streaming.hasCustomResolution) {
-      // change the resolution only if user didn't set a custom one
+    // change the resolution only if user didn't set a custom one or if not using tiktok
+    if (
+      !currentSettings.streaming.hasCustomResolution &&
+      this.userService.platformType !== 'tiktok'
+    ) {
       newStreamingSettings.outputResolution = encoderProfile.resolutionOut;
     }
 
@@ -221,6 +256,11 @@ export class VideoEncodingOptimizationService extends PersistentStatefulService<
   @mutation()
   private SAVE_LAST_SELECTED_PROFILE(profile: IEncoderProfile) {
     this.state.lastSelectedProfile = profile;
+  }
+
+  @mutation()
+  SET_CAN_SEE_OPTIMIZED_PROFILE(val: boolean) {
+    this.state.canSeeOptimizedProfile = val;
   }
 }
 

@@ -1,24 +1,28 @@
 import { Service } from './core/service';
-import { SettingsService } from './settings';
+import { StatefulService, InitAfter, mutation } from 'services/core';
+import { ISettingsSubCategory, SettingsService } from './settings';
 import * as obs from '../../obs-api';
-import electron, { BrowserWindow } from 'electron';
 import { Inject } from './core/injector';
 import Utils from './utils';
 import { WindowsService } from './windows';
 import { ScalableRectangle } from '../util/ScalableRectangle';
 import { Subscription } from 'rxjs';
-import { SelectionService } from 'services/selection';
+import { DualOutputService } from './dual-output';
 import { byOS, OS, getOS } from 'util/operating-systems';
+import * as remote from '@electron/remote';
+import { onUnload } from 'util/unload';
+import { ISelectionState, SelectionService } from 'services/selection';
+import { SourcesService } from 'services/sources';
+import { ScenesService } from 'services/scenes';
+import { TDisplayType, VideoSettingsService } from './settings-v2';
 
 // TODO: There are no typings for nwr
 let nwr: any;
 
 // NWR is used to handle display rendering via IOSurface on mac
 if (getOS() === OS.Mac) {
-  nwr = electron.remote.require('node-window-rendering');
+  nwr = remote.require('node-window-rendering');
 }
-
-const { remote } = electron;
 
 const DISPLAY_ELEMENT_POLLING_INTERVAL = 500;
 
@@ -29,6 +33,7 @@ export interface IDisplayOptions {
   slobsWindowId?: string;
   paddingColor?: IRGBColor;
   renderingMode?: number;
+  type?: TDisplayType;
 }
 
 export class Display {
@@ -67,6 +72,10 @@ export class Display {
   movedListener: () => void;
   movedTimeout: number;
 
+  cancelUnload: () => void;
+
+  type: TDisplayType;
+
   constructor(public name: string, options: IDisplayOptions = {}) {
     this.sourceId = options.sourceId;
     this.electronWindowId = options.electronWindowId || remote.getCurrentWindow().id;
@@ -79,10 +88,13 @@ export class Display {
 
     this.currentScale = this.windowsService.state[this.slobsWindowId].scaleFactor;
 
+    this.type = options.type ?? 'horizontal';
+
     this.videoService.actions.createOBSDisplay(
       this.electronWindowId,
       name,
       this.renderingMode,
+      this.type,
       this.sourceId,
     );
 
@@ -95,9 +107,11 @@ export class Display {
     }
 
     // also sync girdlines when selection changes
-    this.selectionSubscription = this.selectionService.updated.subscribe(state => {
-      this.switchGridlines(state.selectedIds.length <= 1);
-    });
+    this.selectionSubscription = this.selectionService.updated.subscribe(
+      (state: ISelectionState) => {
+        this.switchGridlines(state.selectedIds.length <= 1);
+      },
+    );
 
     if (options.paddingColor) {
       this.videoService.actions.setOBSDisplayPaddingColor(
@@ -119,6 +133,8 @@ export class Display {
     this.boundClose = this.remoteClose.bind(this);
 
     electronWindow.on('close', this.boundClose);
+
+    this.cancelUnload = onUnload(() => this.boundClose());
   }
 
   trackingFun: () => void;
@@ -160,7 +176,8 @@ export class Display {
       }
     };
 
-    this.trackingFun();
+    // Allow a browser paint before trying to set initional position
+    window.setTimeout(() => this.trackingFun(), 0);
     this.trackingInterval = window.setInterval(this.trackingFun, DISPLAY_ELEMENT_POLLING_INTERVAL);
   }
 
@@ -195,11 +212,13 @@ export class Display {
 
   existingWindow = false;
 
-  resize(width: number, height: number) {
+  async resize(width: number, height: number) {
+    if (getOS() === OS.Mac && (width === 0 || height === 0 || this.displayDestroyed)) {
+      return; // obs gs_draw_sprite() does not render zero sized sprites (so do not call resizeOBSDisplay)
+    }
     this.currentPosition.width = width;
     this.currentPosition.height = height;
     this.videoService.actions.resizeOBSDisplay(this.name, width, height);
-    if (this.outputRegionCallbacks.length) this.refreshOutputRegion();
 
     // On mac, resizing the display is not enough, we also have to
     // recreate the window and IOSurface for the new size
@@ -209,13 +228,23 @@ export class Display {
         nwr.destroyIOSurface(this.name);
       }
 
-      const surface = this.videoService.createOBSIOSurface(this.name);
-      nwr.createWindow(
-        this.name,
-        remote.BrowserWindow.fromId(this.electronWindowId).getNativeWindowHandle(),
-      );
-      nwr.connectIOSurface(this.name, surface);
-      this.existingWindow = true;
+      try {
+        const surface = this.videoService.createOBSIOSurface(this.name);
+        nwr.createWindow(
+          this.name,
+          remote.BrowserWindow.fromId(this.electronWindowId).getNativeWindowHandle(),
+        );
+        this.existingWindow = true;
+        nwr.connectIOSurface(this.name, surface);
+
+        if (this.outputRegionCallbacks.length) {
+          await this.refreshOutputRegion();
+        }
+      } catch (ex: unknown) {
+        console.log(`Error encountered creating iosurface: ${ex}`);
+      }
+    } else if (this.outputRegionCallbacks.length) {
+      await this.refreshOutputRegion();
     }
   }
 
@@ -238,9 +267,12 @@ export class Display {
 
   destroy() {
     const win = remote.BrowserWindow.fromId(this.electronWindowId);
+
     if (win) {
       win.removeListener('close', this.boundClose);
     }
+    window.removeEventListener('beforeunload', this.boundClose);
+    this.cancelUnload();
     this.remoteClose();
   }
 
@@ -249,6 +281,8 @@ export class Display {
   }
 
   async refreshOutputRegion() {
+    if (this.displayDestroyed) return;
+
     const position = await this.videoService.actions.return.getOBSDisplayPreviewOffset(this.name);
 
     // This can happen while we were async fetching the offset
@@ -279,48 +313,62 @@ export class Display {
     this.videoService.actions.setOBSDisplayDrawGuideLines(this.name, enabled);
   }
 }
-
+@InitAfter('UserService')
+@InitAfter('VideoSettingsService')
 export class VideoService extends Service {
   @Inject() settingsService: SettingsService;
+  @Inject() scenesService: ScenesService;
+  @Inject() videoSettingsService: VideoSettingsService;
+  @Inject() dualOutputService: DualOutputService;
+  @Inject() sourcesService: SourcesService;
 
   init() {
     this.settingsService.loadSettingsIntoStore();
   }
 
-  getScreenRectangle() {
+  getScreenRectangle(display: TDisplayType = 'horizontal') {
     return new ScalableRectangle({
       x: 0,
       y: 0,
-      width: this.baseWidth,
-      height: this.baseHeight,
+      width: this.baseResolutions[display].baseWidth,
+      height: this.baseResolutions[display].baseHeight,
     });
   }
 
-  get baseWidth() {
-    return this.baseResolution.width;
-  }
-
-  get baseHeight() {
-    return this.baseResolution.height;
-  }
-
-  get baseResolution() {
-    const [widthStr, heightStr] = this.settingsService.views.values.Video.Base.split('x');
-    const width = parseInt(widthStr, 10);
-    const height = parseInt(heightStr, 10);
+  get baseResolutions() {
+    const baseResolutions = this.videoSettingsService.baseResolutions;
 
     return {
-      width,
-      height,
+      horizontal: {
+        baseWidth: baseResolutions.horizontal.baseWidth,
+        baseHeight: baseResolutions.horizontal.baseHeight,
+      },
+      vertical: {
+        baseWidth: baseResolutions.vertical.baseWidth,
+        baseHeight: baseResolutions.vertical.baseHeight,
+      },
     };
   }
 
-  setBaseResolution(resolution: { width: number; height: number }) {
-    this.settingsService.setSettingValue(
-      'Video',
-      'Base',
-      `${resolution.width}x${resolution.height}`,
-    );
+  setBaseResolution(resolutions: {
+    horizontal: {
+      baseWidth: number;
+      baseHeight: number;
+    };
+    vertical: {
+      baseWidth: number;
+      baseHeight: number;
+    };
+  }) {
+    // if the context has not been established when the migration for the root node has run,
+    // there will be no base resolution data in the node so access it directly from the service if that is the case
+    const baseWidth =
+      resolutions?.horizontal.baseWidth ??
+      this.videoSettingsService.baseResolutions.horizontal.baseWidth;
+    const baseHeight =
+      resolutions?.horizontal.baseHeight ??
+      this.videoSettingsService.baseResolutions.horizontal.baseHeight;
+    this.settingsService.setSettingValue('Video', 'Base', `${baseWidth}x${baseHeight}`);
   }
 
   /**
@@ -329,22 +377,32 @@ export class VideoService extends Service {
   createOBSDisplay(
     electronWindowId: number,
     name: string,
-    remderingMode: number,
+    renderingMode: number,
+    type: TDisplayType,
     sourceId?: string,
   ) {
     const electronWindow = remote.BrowserWindow.fromId(electronWindowId);
+
+    // the display must have a context, otherwise the sources will not identify
+    // which display they belong to
+    const context =
+      this.videoSettingsService.contexts[type] ?? this.videoSettingsService.contexts.horizontal;
 
     if (sourceId) {
       obs.NodeObs.OBS_content_createSourcePreviewDisplay(
         electronWindow.getNativeWindowHandle(),
         sourceId,
         name,
+        false,
+        context,
       );
     } else {
       obs.NodeObs.OBS_content_createDisplay(
         electronWindow.getNativeWindowHandle(),
         name,
-        remderingMode,
+        renderingMode,
+        false,
+        context,
       );
     }
   }

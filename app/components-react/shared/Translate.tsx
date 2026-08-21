@@ -1,6 +1,6 @@
 import { camelize } from 'humps';
 import React, { useEffect, useState, ReactElement, createElement } from 'react';
-import { keyBy } from 'lodash';
+import keyBy from 'lodash/keyBy';
 
 /**
  * Convert xml message from i18n dictionary into a React component
@@ -14,8 +14,21 @@ import { keyBy } from 'lodash';
  *
  * </pre>
  */
-export default function Translate(p: { message: string; children: ReactElement[] | ReactElement }) {
-  const children = Array.isArray(p.children) ? p.children : [p.children];
+export default function Translate(p: {
+  message: string;
+  children?: ReactElement[] | ReactElement;
+  style?: React.CSSProperties;
+
+  /**
+   * Optional: pass individual render functions for each slot
+   */
+  renderSlots?: Dictionary<(text: string) => ReactElement>;
+}) {
+  let children: ReactElement[] = [];
+  if (p.children) {
+    children = Array.isArray(p.children) ? p.children : [p.children];
+  }
+
   const [s, setState] = useState<{
     xmlNodes: ChildNode[];
     xmlNamedNodes: Record<string, ChildNode>;
@@ -44,10 +57,10 @@ export default function Translate(p: { message: string; children: ReactElement[]
   }, [p.message]);
 
   function render() {
-    return <span>{s.xmlNodes.map(renderXmlNode)}</span>;
+    return <span style={p.style}>{s.xmlNodes.map(renderXmlNode)}</span>;
   }
 
-  function renderXmlNode(xmlNode: ChildNode, ind: number) {
+  function renderXmlNode(xmlNode: ChildNode & { tagName: string }, ind: number) {
     // don't handle script nodes
     if (xmlNode.nodeName === 'script') {
       throw new Error('XSS injection detected');
@@ -67,6 +80,9 @@ export default function Translate(p: { message: string; children: ReactElement[]
         { ...namedReactNode.props, key: ind },
         xmlNode.textContent,
       );
+    } else if (p.renderSlots && p.renderSlots[slotName]) {
+      // A custom render function was passed for this slot
+      return p.renderSlots[slotName](xmlNode.textContent ?? '');
     } else {
       // render simple html tags like <a><b><i><strong>
       // attributes are not supported

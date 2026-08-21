@@ -6,23 +6,32 @@ import { mutation } from 'services/core/stateful-service';
 import { CustomizationService } from 'services/customization';
 import { $t } from 'services/i18n';
 import uuid from 'uuid/v4';
-import { LAYOUT_DATA, ELEMENT_DATA, ELayout, ELayoutElement } from './layout-data';
+import {
+  LAYOUT_DATA,
+  ELEMENT_DATA,
+  ELayout,
+  ELayoutElement,
+  TLayout,
+  TLayoutElement,
+} from './layout-data';
 import { UsageStatisticsService } from 'services/usage-statistics';
+import { menuTitles } from 'services/side-nav/menu-data';
 
 export { ELayout, ELayoutElement };
 
 export interface IVec2Array extends Array<IVec2Array | IVec2> {}
 
-export type LayoutSlot = '1' | '2' | '3' | '4' | '5' | '6';
+export type TLayoutSlot = '1' | '2' | '3' | '4' | '5' | '6';
+
+export type TSlottedElements = Partial<Record<ELayoutElement, { slot: TLayoutSlot; src?: string }>>;
 
 interface ILayoutState {
   name: string;
   icon: string;
   currentLayout: ELayout;
-  slottedElements: { [Element in ELayoutElement]?: { slot: LayoutSlot; src?: string } };
-  resizes: { bar1: number; bar2?: number };
+  slottedElements: TSlottedElements;
+  resizes: { bar1: number; bar2: number };
 }
-
 interface ILayoutServiceState {
   currentTab: string;
   tabs: {
@@ -35,14 +44,25 @@ class LayoutViews extends ViewHandler<ILayoutServiceState> {
     return this.state.tabs[this.state.currentTab];
   }
 
-  get component() {
+  get component(): TLayout {
     return LAYOUT_DATA[this.currentTab.currentLayout].component;
   }
 
   get elementsToRender() {
     return Object.keys(this.currentTab.slottedElements).filter(
-      key => this.currentTab.slottedElements[key].slot,
+      (key: TLayoutElement) => this.currentTab.slottedElements[key].slot,
     );
+  }
+
+  get studioTabs() {
+    return Object.keys(this.state.tabs).map((tab, i) => ({
+      key: tab,
+      target: tab,
+      title:
+        i === 0 || !this.state.tabs[tab].name ? menuTitles('Editor') : this.state.tabs[tab].name,
+      icon: this.state.tabs[tab].icon,
+      trackingTarget: tab === 'default' ? 'editor' : 'custom',
+    }));
   }
 
   elementTitle(element: ELayoutElement) {
@@ -51,7 +71,6 @@ class LayoutViews extends ViewHandler<ILayoutServiceState> {
   }
 
   elementComponent(element: ELayoutElement) {
-    if (!element) return;
     return ELEMENT_DATA()[element].component;
   }
 
@@ -88,6 +107,8 @@ class LayoutViews extends ViewHandler<ILayoutServiceState> {
 
   aggregateMinimum(orientation: 'x' | 'y', slots: IVec2Array) {
     const minimums = slots.map(mins => {
+      // TODO: index
+      // @ts-ignore
       if (mins) return mins[orientation];
       return 10;
     });
@@ -131,6 +152,7 @@ export class LayoutService extends PersistentStatefulService<ILayoutServiceState
     if (!this.state.tabs.default.name) {
       this.SET_TAB_NAME('default', $t('Editor'));
     }
+
     if (
       this.customizationService.state.legacyEvents &&
       isEqual(this.state, LayoutService.defaultState)
@@ -161,9 +183,17 @@ export class LayoutService extends PersistentStatefulService<ILayoutServiceState
     const slottedElements = {};
     if (this.state.currentTab !== 'default') return;
     Object.keys(this.state.tabs.default.slottedElements).forEach(el => {
+      // TODO: index
+      // @ts-ignore
       if (typeof this.state.tabs.default.slottedElements[el] === 'string') {
+        // TODO: index
+        // @ts-ignore
         slottedElements[el] = { slot: this.state.tabs.default.slottedElements[el] };
+        // TODO: index
+        // @ts-ignore
       } else if (this.state.tabs.default.slottedElements[el]) {
+        // TODO: index
+        // @ts-ignore
         slottedElements[el] = this.state.tabs.default.slottedElements[el];
       }
     });
@@ -187,7 +217,7 @@ export class LayoutService extends PersistentStatefulService<ILayoutServiceState
     this.checkUsage();
   }
 
-  setSlots(slottedElements: { [key in ELayoutElement]?: { slot: LayoutSlot } }) {
+  setSlots(slottedElements: { [key in ELayoutElement]?: { slot: TLayoutSlot } }) {
     this.SET_SLOTS(slottedElements);
   }
 
@@ -199,6 +229,7 @@ export class LayoutService extends PersistentStatefulService<ILayoutServiceState
     const id = uuid();
     this.ADD_TAB(name, icon, id);
     this.checkUsage();
+    return id;
   }
 
   removeCurrentTab() {
@@ -213,7 +244,25 @@ export class LayoutService extends PersistentStatefulService<ILayoutServiceState
   }
 
   @mutation()
-  SET_SLOTS(slottedElements: { [key in ELayoutElement]?: { slot: LayoutSlot } }) {
+  SET_SLOTS(slottedElements: { [key in ELayoutElement]?: { slot: TLayoutSlot } }) {
+    // This is necessary because of the reversed data model of this service's state,
+    // combined with the way persistent stateful service does a deep merge of default
+    // state. If we don't explicitly set elements contained in the default state to null
+    // then we will get multiple elements assigned to a slot on next restart.
+    if (LayoutService.defaultState.tabs[this.state.currentTab]) {
+      Object.keys(LayoutService.defaultState.tabs[this.state.currentTab].slottedElements).forEach(
+        el => {
+          // TODO: index
+          // @ts-ignore
+          if (!slottedElements[el]) {
+            // TODO: index
+            // @ts-ignore
+            slottedElements[el] = { slot: null };
+          }
+        },
+      );
+    }
+
     Vue.set(this.state.tabs[this.state.currentTab], 'slottedElements', slottedElements);
   }
 

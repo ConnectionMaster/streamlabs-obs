@@ -8,7 +8,8 @@ import { InternalApiService } from 'services/api/internal-api';
 const { ipcRenderer } = electron;
 
 /**
- * A transport layer for IPC communications between services in the child and main window
+ * A transport layer for the service IPC: runs in the worker window, receives
+ * service requests from the UI windows, and returns responses and events.
  */
 export class IpcServerService extends Service {
   servicesEventsSubscription: Subscription;
@@ -23,7 +24,7 @@ export class IpcServerService extends Service {
       if (!request.params.noReturn) {
         try {
           ipcRenderer.send('services-response', response);
-        } catch (e) {
+        } catch (e: unknown) {
           console.error('Failed to send services response', e, {
             request,
             response,
@@ -38,7 +39,7 @@ export class IpcServerService extends Service {
       // wrap in try/catch to prevent un-subscribing in the case of failure
       try {
         this.sendEvent(event);
-      } catch (e) {
+      } catch (e: unknown) {
         console.error(
           'Failed to send event to an IPC client. Make sure the object is serializable',
           e,

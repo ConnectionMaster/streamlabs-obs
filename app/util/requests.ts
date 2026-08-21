@@ -66,7 +66,7 @@ export async function downloadFile(
         const fileStream = fs.createWriteStream(dstPath);
         let bytesWritten = 0;
 
-        const readStream = ({ done, value }: { done: boolean; value: Uint8Array }) => {
+        const readStream = ({ done, value }: { done: boolean; value?: Uint8Array }) => {
           if (done) {
             fileStream.end((err: Error) => {
               if (err) {
@@ -137,17 +137,32 @@ export function jfetch<TResponse = unknown>(
   options: IJfetchOptions = {},
 ): Promise<TResponse> {
   return fetch(request, init).then(response => {
+    const contentType = response.headers.get('content-type');
+    const isJson = contentType && contentType.includes('application/json');
     if (response.ok) {
-      const contentType = response.headers.get('content-type');
-      const isJson = contentType && contentType.includes('application/json');
       if (isJson || options.forceJson) {
         return response.json() as Promise<TResponse>;
       } else {
-        console.warn('jfetch: Got non-JSON response');
-        throw response;
+        console.warn(`jfetch: Got non-JSON response ${response.status} from ${response.url}`);
+        return (response.text() as unknown) as Promise<TResponse>;
       }
+    } else if (isJson) {
+      return throwJsonError(response);
     } else {
       throw response;
     }
+  });
+}
+
+function throwJsonError(response: Response): Promise<never> {
+  return new Promise((res, rej) => {
+    response.json().then((json: unknown) => {
+      rej({
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url,
+        result: json,
+      });
+    });
   });
 }

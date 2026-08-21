@@ -9,7 +9,7 @@
   "Push to Show %{sourcename}": "Pulsar para mostrar %{sourcename}",
   "Push to Hide %{sourcename}": "Pulsar para ocultar %{sourcename}",
   "Mute": "Silenciar",
-  "Unmute": "Reactivar sonido",
+  "Unmute": "Escuchar",
   "Push to Mute": "Pulsar para silenciar",
   "Push to Talk": "Pulsar para hablar",
   "Enable Studio Mode": "Activar modo Estudio",
@@ -22,6 +22,13 @@
   "Restart": "Reiniciar",
   "Next Slide": "Siguiente diapositiva",
   "Previous Slide": "Diapositiva anterior",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "Omitir alerta"
+  "Toggle Performance Mode": "Alternar modo Rendimiento",
+  "Skip Alert": "Omitir alerta",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "Para utilizar las teclas de acceso rápido en Mac, ve a Ajustes del Sistema > Seguridad > Accesibilidad y activa Streamlabs Desktop.",
+  "Start Virtual Camera": "Iniciar cámara virtual",
+  "Stop Virtual Camera": "Detener cámara virtual",
+  "This scene has not been converted to Dual Output. Please make the scene active to add vertical sources.": "Esta escena no se ha convertido a Dual Output. Activa la escena para añadir fuentes verticales.",
+  "Learn more here": "Obtén más información aquí",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>Consejo profesional:</color> establece Marcadores en la configuración de las teclas de acceso rápido para indicar tiempo de tus grabaciones. <link>Configurar aquí</link>",
+  "Markers": "Marcadores"
 }

@@ -23,13 +23,18 @@ export class HotkeysNode extends ArrayNode<IHotkey, IContext, Hotkey> {
     } else if (context.sourceId) {
       items = this.hotkeysService.getSourceHotkeys(context.sourceId);
     } else {
-      items = this.hotkeysService.getGeneralHotkeys();
+      items = [
+        ...this.hotkeysService.getGeneralHotkeys(),
+        ...this.hotkeysService.getMarkerHotkeys(),
+      ];
     }
     return items.filter(hotkey => hotkey.bindings.length);
   }
 
   saveItem(hotkey: Hotkey, context: IContext): Promise<IHotkey> {
     const hotkeyObj = hotkey.getModel();
+    // TODO: index
+    // @ts-ignore
     Object.keys(context).forEach(key => delete hotkeyObj[key]);
     return Promise.resolve(hotkeyObj);
   }
