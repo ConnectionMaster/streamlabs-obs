@@ -1,0 +1,57 @@
+.do-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.do-input {
+  margin-right: 10px;
+  color: var(--title);
+  font-size: 14px;
+
+  :global(.ant-checkbox-wrapper) {
+    margin: 0px;
+  }
+}
+
+.do-switch-active {
+  color: var(--teal) !important;
+}
+
+.toggle-error {
+  padding: 0px !important;
+  text-align: unset !important;
+
+  :global(.ant-message-notice-content) {
+    padding: 4px 16px;
+  }
+}
+
+.dual-output-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  font-size: 14px;
+  color: var(--title);
+
+  :global(.ant-tooltip-placement-bottom) {
+    left: 10px !important;
+  }
+
+  :global(.ant-form-item) {
+    margin-bottom: 0 !important;
+  }
+}
+
+.do-tooltip {
+  :global(.ant-tooltip-placement-bottom .ant-tooltip-arrow) {
+    left: 170px !important;
+  }
+}
+
+.so-tooltip {
+  :global(.ant-tooltip-placement-bottom .ant-tooltip-arrow) {
+    left: 158px !important;
+  }
+}

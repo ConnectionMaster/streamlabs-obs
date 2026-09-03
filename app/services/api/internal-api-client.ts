@@ -7,19 +7,21 @@ import { ServicesManager } from '../../services-manager';
 import { commitMutation } from '../../store';
 import { ServiceHelper } from 'services/core';
 import Utils from 'services/utils';
+import { RealmObject, RealmService } from 'services/realm';
 const { ipcRenderer } = electron;
 
 /**
  * A client for communication with internalApi
- * Only the child window and one-off windows instantiate this class
+ * Instantiated in every non-worker (UI) window — main, child, and one-off — to
+ * proxy service calls over IPC to the worker window, where services execute.
  */
 export class InternalApiClient {
   private servicesManager: ServicesManager = ServicesManager.instance;
 
   /**
-   * If the result of calling a service method in the main window is promise -
-   * we create a linked promise in the child window and keep its callbacks here until
-   * the promise in the main window will be resolved or rejected
+   * When a service method executed in the worker window returns a promise, we
+   * create a linked promise here in the calling window and keep its callbacks in
+   * this map until the worker resolves or rejects the original promise.
    */
   private promises: Dictionary<Function[]> = {};
 
@@ -41,7 +43,8 @@ export class InternalApiClient {
   }
 
   /**
-   * All services methods calls will be sent to the main window
+   * All service method calls are sent over IPC (via the Electron main process)
+   * to the worker window, where the services actually execute.
    * TODO: add more comments and try to refactor
    */
   applyIpcProxy(service: Service, isAction = false, shouldReturn = false): Service {
@@ -58,13 +61,34 @@ export class InternalApiClient {
           return this.applyIpcProxy(target, true, true);
         }
 
+        // TODO: index
+        // @ts-ignore
         if (!target[property]) return target[property];
 
+        // TODO: index
+        // @ts-ignore
         if (typeof target[property] !== 'function' && !(target[property] instanceof Observable)) {
+          // TODO: index
+          // @ts-ignore
+          return target[property];
+        }
+
+        if (
+          // TODO: index
+          // @ts-ignore
+          typeof target[property] === 'function' &&
+          // TODO: index
+          // @ts-ignore
+          target[property]['__executeInCurrentWindow']
+        ) {
+          // TODO: index
+          // @ts-ignore
           return target[property];
         }
 
         const methodName = property.toString();
+        // TODO: index
+        // @ts-ignore
         const isHelper = target['_isHelper'];
 
         // TODO: Remove once you're sure this is impossible
@@ -77,7 +101,11 @@ export class InternalApiClient {
           shouldReturn,
         });
 
+        // TODO: index
+        // @ts-ignore
         if (typeof target[property] === 'function') return handler;
+        // TODO: index
+        // @ts-ignore
         if (target[property] instanceof Observable) return handler();
       },
     });
@@ -120,7 +148,7 @@ export class InternalApiClient {
 
         try {
           ipcRenderer.send('services-request-async', request);
-        } catch (e) {
+        } catch (e: unknown) {
           console.error('Failed to send async services request', e, {
             request,
           });
@@ -216,11 +244,19 @@ export class InternalApiClient {
       return helper;
     }
 
+    if (result && result._type === 'REALM_OBJECT') {
+      return RealmService.registeredClasses[result.realmType].fromId(result.resourceId);
+    }
+
     // payload can contain helpers-objects
     // we have to wrap them in IpcProxy too
     traverse(result).forEach((item: any) => {
       if (item && item._type === 'HELPER') {
         return this.getResource(item.resourceId);
+      }
+
+      if (item && item._type === 'REALM_OBJECT') {
+        return RealmService.registeredClasses[result.realmType].fromId(result.resourceId);
       }
     });
 
@@ -279,7 +315,7 @@ export class InternalApiClient {
             // skip the promise result if this promise has been created from another window
             if (!promises[promisePayload.resourceId]) return;
 
-            // resolve or reject the promise depending on the response from the main window
+            // resolve or reject the promise depending on the response from the worker window
             const [resolve, reject] = promises[promisePayload.resourceId];
             const callback = promisePayload.isRejected ? reject : resolve;
             callback(promisePayload.data);

@@ -1,8 +1,9 @@
 import { ArrayNode } from './array-node';
 import { HotkeysService, IHotkey, Hotkey } from '../../hotkeys';
 import { Inject } from '../../core/injector';
+import { ISceneCollectionLoadContext } from './load-session';
 
-interface IContext {
+interface IContext extends ISceneCollectionLoadContext {
   sceneId?: string;
   sceneItemId?: string;
   sourceId?: string;
@@ -23,19 +24,26 @@ export class HotkeysNode extends ArrayNode<IHotkey, IContext, Hotkey> {
     } else if (context.sourceId) {
       items = this.hotkeysService.getSourceHotkeys(context.sourceId);
     } else {
-      items = this.hotkeysService.getGeneralHotkeys();
+      items = [
+        ...this.hotkeysService.getGeneralHotkeys(),
+        ...this.hotkeysService.getMarkerHotkeys(),
+      ];
     }
     return items.filter(hotkey => hotkey.bindings.length);
   }
 
   saveItem(hotkey: Hotkey, context: IContext): Promise<IHotkey> {
     const hotkeyObj = hotkey.getModel();
+    // TODO: index
+    // @ts-ignore
     Object.keys(context).forEach(key => delete hotkeyObj[key]);
     return Promise.resolve(hotkeyObj);
   }
 
   loadItem(obj: IHotkey, context: IContext): Promise<void> {
-    this.hotkeysService.addHotkey({ ...obj, ...context });
+    const hotkeyContext = { ...context };
+    delete hotkeyContext.loadSession;
+    this.hotkeysService.addHotkey({ ...obj, ...hotkeyContext });
     return Promise.resolve();
   }
 

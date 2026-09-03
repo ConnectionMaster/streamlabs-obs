@@ -2,8 +2,11 @@ import { ModalLayout } from '../shared/ModalLayout';
 import { $t } from '../../services/i18n';
 import React, { useState } from 'react';
 import { Services } from '../service-provider';
-import { useOnCreate } from '../hooks';
+import { useOnCreate } from 'slap';
 import { assertIsDefined } from '../../util/properties-type-guards';
+import { TextInput } from '../shared/inputs/TextInput';
+import { Button } from 'antd';
+import Form, { useForm } from '../shared/inputs/Form';
 
 interface IWindowOptions {
   renameId?: string;
@@ -21,27 +24,33 @@ export default function NameFolder() {
 
   // define stateful variables and setters
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
+
+  // define a form
+  const form = useForm();
 
   // get window options on component create
   const options = useOnCreate(() => {
-    const options = (WindowsService.state.child.queryParams as unknown) as IWindowOptions;
-    const scene = ScenesService.views.getScene(options.sceneId);
+    const windowOptions = (WindowsService.state.child.queryParams as unknown) as IWindowOptions;
+    const scene = ScenesService.views.getScene(
+      windowOptions.sceneId ?? ScenesService.views.activeSceneId,
+    );
     assertIsDefined(scene);
-    const name = options.renameId
-      ? scene.getFolder(options.renameId)!.name
+    const name = windowOptions.renameId
+      ? scene.getFolder(windowOptions.renameId)!.name
       : ScenesService.suggestName('New Folder');
     setName(name);
-    return options;
+    return windowOptions;
   });
 
   // define a submit method
-  function submit(e: any) {
-    e.preventDefault();
-    if (!name) {
-      setError($t('The source name is required'));
+  async function submit() {
+    try {
+      await form.validateFields();
+    } catch (e: unknown) {
       return;
-    } else if (options.renameId) {
+    }
+
+    if (options.renameId) {
       EditorCommandsService.executeCommand(
         'RenameFolderCommand',
         options.sceneId,
@@ -67,14 +76,17 @@ export default function NameFolder() {
 
   return (
     <ModalLayout onOk={submit}>
-      <form onSubmit={submit}>
-        {!error && (
-          <p style={{ marginBottom: '10px' }}>{$t('Please enter the name of the folder')}</p>
-        )}
-
-        {error && <p style={{ marginBottom: '10px', color: 'red' }}>{error}</p>}
-        <input type="text" value={name} onInput={ev => setName(ev.target['value'])} />
-      </form>
+      <Form layout="vertical" form={form} onFinish={submit}>
+        <TextInput
+          name="name"
+          value={name}
+          onInput={v => setName(v)}
+          label={$t('Please enter the name of the folder')}
+          required={true}
+          uncontrolled={false}
+          autoFocus
+        />
+      </Form>
     </ModalLayout>
   );
 }

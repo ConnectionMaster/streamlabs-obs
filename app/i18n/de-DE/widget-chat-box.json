@@ -1,7 +1,6 @@
 {
   "Visual Settings": "Optische Einstellungen",
   "Font Settings": "Schriftart-Einstellungen",
-  "Chatter": "Chatter",
   "Always Show Messages": "Nachrichten immer anzeigen",
   "Show Moderator Badges": "Moderatoren-Abzeichen anzeigen",
   "Show Subscriber Badges": "Abonnenten-Abzeichen anzeigen",
@@ -11,9 +10,21 @@
   "Show Top Coin Holder Badges": "Top Coin Holder-Abzeichen anzeigen",
   "Enable BetterTTV Emotes": "BetterTTV-Emotes aktivieren",
   "Enable FrankerFaceZ Emotes": "FrankerFaceZ-Emotes aktivieren",
+  "Enable 7TV Emotes": "7TV-Emotes aktivieren",
   "Text Color": "Textfarbe",
   "Font Size": "Schriftgröße",
   "Muted Chatters": "Stumm geschaltete Chatter",
-  "Hide Commands": "Befehle ausblenden",
-  "Background Color": "Hintergrundfarbe"
+  "Background Color": "Hintergrundfarbe",
+  "Show Platform Icons": "Plattformsymbole anzeigen",
+  "Theme": "Thema",
+  "Badges": "Abzeichen",
+  "Extra Emotes": "Zusätzliche Emotes",
+  "Chat Delay": "Chat-Verzögerung",
+  "Hide Delay": "Ausblendungsverzögerung",
+  "Disable Message Animations": "Nachrichten-Animationen deaktivieren",
+  "Hide Characters": "Zeichen ausblenden",
+  "Hide Common Chat Bots": "Bekannte Chat-Bots verbergen",
+  "Hide commands starting with `!`": "Befehle beginnend mit \"!\" verstecken",
+  "Chat Notifications": "Chat-Benachrichtigungen",
+  "Trigger a sound to notify you when there is new chat activity": "Löse einen Ton aus, um dich zu benachrichtigen, wenn es neue Chat-Aktivitäten gibt"
 }

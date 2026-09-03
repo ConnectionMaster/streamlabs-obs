@@ -3,7 +3,6 @@
   "Includes": "包含",
   "Show Followers": "顯示關注者",
   "Show Subscribers": "顯示訂閱者",
-  "Show donations": "顯示捐贈",
   "Show Cheers": "顯示祝賀",
   "Show Moderators": "顯示版主",
   "Followers": "關注者",
@@ -28,8 +27,9 @@
   "Speed of the rolling credits.": "滾動點數的速度",
   "Roll Time": "滾動時間",
   "Duration of the rolling credits.": "滾動點數的持續時間",
-  "Show Donations": "Show Donations",
+  "Show Power-Ups": "Show Power-Ups",
+  "Show Donations": "顯示捐贈贊助",
   "Show Subscriptions": "顯示訂閱者",
-  "Show Members": "Show Members",
+  "Show Members": "顯示會員",
   "Show Super Chats": "顯示超級聊天者"
 }

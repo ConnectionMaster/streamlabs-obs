@@ -1,0 +1,36 @@
+.platform-icon {
+  padding-right: 32px;
+}
+
+.platform-button {
+  padding-top: 14px;
+  padding-bottom: 14px;
+
+  background: var(--midtone);
+  color: var(--button);
+
+  &--streamlabs {
+    &,
+    &:hover,
+    &:focus,
+    &:active {
+      background: white !important;
+      color: black !important;
+    }
+  }
+}
+
+:global(.ant-btn-icon-only) {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.arrow-icon {
+  padding-left: 32px;
+}

@@ -7,6 +7,7 @@ import { Subject } from 'rxjs';
 const singleton = Symbol('singleton');
 const singletonEnforcer = Symbol('singletonEnforcer');
 const instances: Service[] = [];
+const proxies: Service[] = [];
 
 /**
  * Makes all functions return a Promise and sets other types to never
@@ -58,11 +59,13 @@ function getActionProxy<T extends Service>(
       }
 
       return (...args: unknown[]) => {
-        return new Promise((resolve, reject) => {
+        return new Promise<unknown>((resolve, reject) => {
           try {
+            // TODO: index
+            // @ts-ignore
             const result: unknown = (target[key] as Function).apply(target, args);
-            isReturn ? resolve(result) : resolve();
-          } catch (e) {
+            isReturn ? resolve(result) : resolve(undefined);
+          } catch (e: unknown) {
             reject(e);
           }
         });
@@ -89,11 +92,26 @@ export abstract class Service {
   serviceName = this.constructor.name;
 
   static get instance() {
+    // TODO: index
+    // @ts-ignore
     const instance = !this.hasInstance ? Service.createInstance(this) : this[singleton];
-    return this.proxyFn ? this.proxyFn(instance) : instance;
+
+    if (this.proxyFn) {
+      // TODO: index
+      // @ts-ignore
+      if (!proxies[this.name]) proxies[this.name] = this.proxyFn(instance);
+
+      // TODO: index
+      // @ts-ignore
+      return proxies[this.name];
+    } else {
+      return instance;
+    }
   }
 
   static get hasInstance(): boolean {
+    // TODO: index
+    // @ts-ignore
     return !!instances[this.name];
   }
 
@@ -143,7 +161,9 @@ export abstract class Service {
   }
 
   constructor(enforcer: Symbol) {
-    if (enforcer !== singletonEnforcer) throw new Error('Cannot construct singleton');
+    if (enforcer !== singletonEnforcer) {
+      throw new Error('Cannot construct singleton');
+    }
   }
 
   /**

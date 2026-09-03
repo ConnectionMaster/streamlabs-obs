@@ -1,0 +1,15 @@
+{
+  "Stream Shift": "Stream Shift",
+  "Stay uninterrupted by switching between devices mid stream. Works between Desktop and Mobile App.": "Reste connecté sans interruption en passant d’un dispositif à l’autre en cours de stream. Fonctionne entre un ordinateur et une application mobile.",
+  "Claim Stream": "Demander le stream",
+  "Another stream detected": "Un autre stream a été détecté",
+  "Stream successfully switched": "Basculement réussi du stream",
+  "Stream Shift cannot be used with Dual Output": "Stream Shift ne fonctionne pas avec le Dual Output.",
+  "Your stream has been successfully switched to Streamlabs Desktop. Enjoy your stream!": "Ton stream a bien été basculé sur Streamlabs Desktop. Bon streaming !",
+  "Your stream has been successfully switched to Streamlabs Mobile. Enjoy your stream!": "Ton stream a bien été basculé sur Streamlabs Mobile. Bon streaming !",
+  "Your stream has been switched to Streamlabs Desktop from another device. Enjoy your stream!": "Ton stream a été basculé vers Streamlabs Desktop depuis un autre dispositif. Bon streaming !",
+  "Switch to Streamlabs Desktop": "Basculer sur Streamlabs Desktop",
+  "Upgrade to Ultra to switch streams between devices.": "Passe à Ultra pour basculer ton stream entre plusieurs dispositifs.",
+  "Force Start": "Forcer le démarrage",
+  "A stream on another device has been detected. Would you like to switch your stream to Streamlabs Desktop? If you do not wish to continue this stream, please end it from the current streaming source. If you're sure you're not live and it has been incorrectly detected, choose \"Force Start\" below.": "Un stream sur un autre dispositif a été détecté. Veux-tu basculer ton stream sur Streamlabs Desktop ? Si tu ne veux pas continuer ce stream, arrête-le depuis la source de streaming actuelle. Si tu es sûr de ne pas être en direct et qu’il a été mal détecté, clique sur « Forcer le démarrage » ci-dessous."
+}

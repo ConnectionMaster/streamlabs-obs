@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const rimraf = require('rimraf');
 
 // install native deps
 execSync('node ./scripts/install-native-deps.js', { stdio: [0, 1, 2] });
