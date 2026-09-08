@@ -8,7 +8,6 @@
   "Browse the Gallery": "Просмотр галереи",
   "Cancel": "Отмена",
   "OK": "ОК",
-  "Select": "Выбрать",
   "You don't have any uploaded files!": "У вас нет выгруженных файлов!",
   "You don't have any uploaded images!": "У вас нет выгруженных картинок!",
   "You don't have any uploaded sounds!": "У вас нет выгруженных звуков!",
@@ -19,12 +18,18 @@
   "Stock Files": "Хранилище файлов",
   "My Uploads": "Мои выгрузки",
   "Not a supported file type": "Неподдерживаемый тип файла",
-  "Downloading...": "Загрузка...",
   "Uploading...": "Выгрузка...",
   "URL Copied": "Ссылка скопирована",
   "Failed to copy URL": "Не удалось скопировать ссылку",
   "Image URL": "Ссылка картинки",
   "Example": "Пример",
   "Change Media": "Изменить медиафайл",
-  "No Sound": "Нет звука"
+  "No Sound": "Нет звука",
+  "No Media": "Нет медиафайлов",
+  "Change Link": "Изменить ссылку",
+  "Clear Link": "Очистить ссылку",
+  "Media URL": "URL-адрес медиафайла",
+  "Only .jpeg and .png is supported": "Only .jpeg and .png is supported",
+  "This file could not be uploaded": "This file could not be uploaded",
+  "You must have Streamlabs Ultra to use this media": "You must have Streamlabs Ultra to use this media"
 }

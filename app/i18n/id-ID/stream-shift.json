@@ -1,0 +1,15 @@
+{
+  "Stream Shift": "Stream Shift",
+  "Stay uninterrupted by switching between devices mid stream. Works between Desktop and Mobile App.": "Tetap tidak terganggu dengan beralih antar perangkat di tengah-tengah streaming. Dapat digunakan di Desktop dan Aplikasi Seluler.",
+  "Claim Stream": "Klaim Aliran Langsung",
+  "Another stream detected": "Aliran langsung lain terdeteksi",
+  "Stream successfully switched": "Aliran langsung berhasil dialihkan",
+  "Stream Shift cannot be used with Dual Output": "Stream Shift tidak dapat digunakan dengan Output Ganda",
+  "Your stream has been successfully switched to Streamlabs Desktop. Enjoy your stream!": "Aliran langsung Anda telah berhasil dialihkan ke Streamlabs Desktop. Nikmati streaming Anda!",
+  "Your stream has been successfully switched to Streamlabs Mobile. Enjoy your stream!": "Your stream has been successfully switched to Streamlabs Mobile. Enjoy your stream!",
+  "Your stream has been switched to Streamlabs Desktop from another device. Enjoy your stream!": "Aliran langsung Anda telah dialihkan ke Streamlabs Desktop dari perangkat lain. Nikmati streaming Anda!",
+  "Switch to Streamlabs Desktop": "Beralih ke Streamlabs Desktop",
+  "Upgrade to Ultra to switch streams between devices.": "Tingkatkan ke Ultra untuk mengganti aliran langsung antar perangkat.",
+  "Force Start": "Paksa Mulai",
+  "A stream on another device has been detected. Would you like to switch your stream to Streamlabs Desktop? If you do not wish to continue this stream, please end it from the current streaming source. If you're sure you're not live and it has been incorrectly detected, choose \"Force Start\" below.": "Aliran pada perangkat lain telah terdeteksi. Apakah Anda ingin mengalihkan aliran langsung Anda ke Streamlabs Desktop? Jika Anda tidak ingin melanjutkan aliran langsung ini, silakan akhiri dari sumber aliran langsung saat ini. Jika Anda yakin Anda tidak sedang dalam keadaan hidup dan terdeteksi secara tidak benar, pilih \"Paksa Mulai\" di bawah ini."
+}

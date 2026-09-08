@@ -1,11 +1,16 @@
 {
-  "Compose Tweet": "Compose Tweet",
-  "Custom URL with": "Custom URL with",
-  "Share Your Stream": "Share Your Stream",
-  "Connect to Twitter": "Connect to Twitter",
-  "Enable Tweet Sharing": "Enable Tweet Sharing",
-  "Tweet when going live": "Tweet when going live",
-  "Unlink Twitter": "Unlink Twitter",
-  "Tweet & Go Live": "Tweet & Go Live",
-  "Could not connect to Twitter": "Could not connect to Twitter"
+  "Share Your Stream": "Uw stream delen",
+  "X (Twitter) Chat Type": "X (Twitter) Type chat",
+  "Disabled": "Uitgeschakeld",
+  "Chat will be disabled": "Chat wordt uitgeschakeld",
+  "Everyone": "iedereen",
+  "All viewers will be able to chat": "Alle kijkers kunnen chatten.",
+  "Verified Only": "Alleen geverifieerd",
+  "Only verified viewers will be able to chat": "Alleen geverifieerde kijkers kunnen chatten.",
+  "Followed Only": "Alleen gevolgd",
+  "Only accounts you follow will be able to chat": "Alleen accounts die je volgt, kunnen met je chatten.",
+  "Subscriber Only": "Alleen voor abonnees",
+  "Only viewers that subscribe to you will be able to chat": "Alleen kijkers die zich op je kanaal hebben geabonneerd, kunnen chatten.",
+  "You need X premium account to go live on X.": "Je hebt een X premium account nodig om live te gaan op X.",
+  "You need X premium account to go live on X. Click to learn more": "Je hebt een X premium account nodig om live te gaan op X. Klik hier voor meer info."
 }

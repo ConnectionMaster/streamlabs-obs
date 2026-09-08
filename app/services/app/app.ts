@@ -10,6 +10,7 @@ import { TransitionsService } from 'services/transitions';
 import { SourcesService } from 'services/sources';
 import { ScenesService } from 'services/scenes';
 import { VideoService } from 'services/video';
+import { VideoSettingsService } from 'services/settings-v2/video';
 import { track, UsageStatisticsService } from 'services/usage-statistics';
 import { IpcServerService } from 'services/api/ipc-server';
 import { TcpServerService } from 'services/api/tcp-server';
@@ -39,7 +40,23 @@ import { ApplicationMenuService } from 'services/application-menu';
 import { KeyListenerService } from 'services/key-listener';
 import { MetricsService } from '../metrics';
 import { SettingsService } from '../settings';
+import { DualOutputService } from 'services/dual-output';
 import { OS, getOS } from 'util/operating-systems';
+import * as remote from '@electron/remote';
+import { RealmService } from 'services/realm';
+import { StreamAvatarService } from 'services/stream-avatar/stream-avatar-service';
+import { NavigationService } from 'services/navigation';
+import { StreamingService } from 'services/streaming';
+import { VirtualWebcamService } from 'services/virtual-webcam';
+import { WebsocketService } from 'services/websocket';
+import { ObsModuleLoadNotificationsService } from 'services/obs-module-load-notifications-service';
+import {
+  executeImmediateShutdownSteps,
+  IWorkerShutdownPlan,
+  runWorkerShutdown,
+} from 'util/worker-shutdown';
+
+const SHUTDOWN_ANALYTICS_TIMEOUT_MS = 3 * 1000;
 
 interface IAppState {
   loading: boolean;
@@ -89,15 +106,24 @@ export class AppService extends StatefulService<IAppState> {
   @Inject() private metricsService: MetricsService;
   @Inject() private settingsService: SettingsService;
   @Inject() private usageStatisticsService: UsageStatisticsService;
+  @Inject() private videoSettingsService: VideoSettingsService;
+  @Inject() private dualOutputService: DualOutputService;
+  @Inject() private realmService: RealmService;
+  @Inject() private streamAvatarService: StreamAvatarService;
+  @Inject() private navigationService: NavigationService;
+  @Inject() private streamingService: StreamingService;
+  @Inject() private virtualWebcamService: VirtualWebcamService;
+  @Inject() private websocketService: WebsocketService;
+  @Inject() private obsModuleLoadNotificationsService: ObsModuleLoadNotificationsService;
 
   static initialState: IAppState = {
     loading: true,
-    argv: electron.remote.process.argv,
+    argv: remote.process.argv,
     errorAlert: false,
     onboarded: false,
   };
 
-  readonly appDataDirectory = electron.remote.app.getPath('userData');
+  readonly appDataDirectory = remote.app.getPath('userData');
 
   loadingChanged = new Subject<boolean>();
 
@@ -113,6 +139,8 @@ export class AppService extends StatefulService<IAppState> {
         this.SET_ERROR_ALERT(true);
       });
     }
+
+    this.realmService.connect();
 
     // perform several concurrent http requests
     await Promise.all([
@@ -138,8 +166,8 @@ export class AppService extends StatefulService<IAppState> {
       // TODO: We should come up with a better way to handle this.
       await this.sceneCollectionsService.initialize();
     }
+    await this.obsModuleLoadNotificationsService.refreshModuleLoadNotifications();
 
-    this.SET_ONBOARDED(this.onboardingService.startOnboardingIfRequired());
     this.dismissablesService.initialize();
 
     electron.ipcRenderer.on('shutdown', () => {
@@ -154,7 +182,6 @@ export class AppService extends StatefulService<IAppState> {
     this.tcpServerService.listen();
 
     this.patchNotesService.showPatchNotesIfRequired(this.state.onboarded);
-    this.announcementsService.updateBanner();
 
     this.crashReporterService.endStartup();
 
@@ -167,7 +194,20 @@ export class AppService extends StatefulService<IAppState> {
     }
 
     ipcRenderer.send('AppInitFinished');
-    this.metricsService.recordMetric('sceneCollectionLoadingTime');
+    const sceneCollectionLoadingTime = Date.now();
+    this.metricsService.recordMetric('sceneCollectionLoadingTime', sceneCollectionLoadingTime);
+
+    // Log startup times
+    const metrics = this.metricsService.getMetrics();
+    if (metrics?.appStartTime) {
+      console.log(
+        '=================================\n',
+        'Time to load scene collection: ',
+        (sceneCollectionLoadingTime - metrics.appStartTime) / 1000,
+        'seconds',
+        '\n=================================',
+      );
+    }
   }
 
   shutdownStarted = new Subject();
@@ -176,28 +216,168 @@ export class AppService extends StatefulService<IAppState> {
   private shutdownHandler() {
     this.START_LOADING();
     this.loadingChanged.next(true);
-    this.tcpServerService.stopListening();
+
+    // Stop external callers before yielding or starting the delayed teardown. This prevents API
+    // mutations from racing the final scene snapshot.
+    const ingressReport = executeImmediateShutdownSteps([
+      {
+        name: 'TcpServerService.stopListening',
+        criticality: 'required',
+        run: () => this.tcpServerService.stopListening(),
+      },
+      {
+        name: 'IpcServerService.stopListening',
+        criticality: 'required',
+        run: () => this.ipcServerService.stopListening(),
+      },
+    ]);
 
     window.setTimeout(async () => {
-      obs.NodeObs.InitShutdownSequence();
-      this.crashReporterService.beginShutdown();
-      this.shutdownStarted.next();
-      this.keyListenerService.shutdown();
-      this.platformAppsService.unloadAllApps();
-      await this.usageStatisticsService.flushEvents();
-      this.windowsService.shutdown();
-      this.ipcServerService.stopListening();
-      await this.userService.flushUserSession();
-      await this.sceneCollectionsService.deinitialize();
-      this.performanceService.stop();
-      this.transitionsService.shutdown();
-      await this.gameOverlayService.destroy();
-      await this.fileManagerService.flushAll();
-      obs.NodeObs.RemoveSourceCallback();
-      obs.NodeObs.OBS_service_removeCallback();
-      obs.IPC.disconnect();
-      this.crashReporterService.endShutdown();
-      electron.ipcRenderer.send('shutdownComplete');
+      const plan: IWorkerShutdownPlan = {
+        persistence: [
+          {
+            name: 'CrashReporterService.beginShutdown',
+            criticality: 'required',
+            run: () => this.crashReporterService.beginShutdown(),
+          },
+          {
+            name: 'SceneCollectionsService.persistForShutdown',
+            criticality: 'required',
+            run: () => this.sceneCollectionsService.persistForShutdown(),
+          },
+          {
+            name: 'UserService.flushUserSession',
+            criticality: 'required',
+            run: () => this.userService.flushUserSession(),
+          },
+          {
+            name: 'FileManagerService.flushAllBeforeTeardown',
+            criticality: 'required',
+            run: () => this.fileManagerService.flushAll(),
+          },
+        ],
+        teardown: [
+          {
+            name: 'AppService.shutdownStarted',
+            criticality: 'required',
+            run: () => this.shutdownStarted.next(),
+          },
+          {
+            name: 'NodeObs.InitShutdownSequence',
+            criticality: 'required',
+            run: () => obs.NodeObs.InitShutdownSequence(),
+          },
+          {
+            name: 'StreamAvatarService.stopAvatarProcess',
+            criticality: 'best-effort',
+            run: () => this.streamAvatarService.stopAvatarProcess(),
+          },
+          {
+            name: 'RecentEventsService.shutdown',
+            criticality: 'best-effort',
+            run: () => this.recentEventsService.shutdown(),
+          },
+          {
+            name: 'WebsocketService.disconnect',
+            criticality: 'best-effort',
+            run: () => this.websocketService.disconnect(),
+          },
+          {
+            name: 'KeyListenerService.shutdown',
+            criticality: 'best-effort',
+            run: () => this.keyListenerService.shutdown(),
+          },
+          {
+            name: 'PlatformAppsService.unloadAllApps',
+            criticality: 'best-effort',
+            run: () => this.platformAppsService.unloadAllApps(),
+          },
+          {
+            name: 'StreamingService.shutdown',
+            criticality: 'required',
+            run: () => this.streamingService.shutdown(),
+          },
+          {
+            name: 'WindowsService.shutdown',
+            criticality: 'best-effort',
+            run: () => this.windowsService.shutdown(),
+          },
+          {
+            name: 'SceneCollectionsService.deinitialize',
+            criticality: 'required',
+            run: () => this.sceneCollectionsService.deinitialize({ persist: false }),
+          },
+          {
+            name: 'PerformanceService.stop',
+            criticality: 'best-effort',
+            run: () => this.performanceService.stop(),
+          },
+          {
+            name: 'TransitionsService.shutdown',
+            criticality: 'required',
+            run: () => this.transitionsService.shutdown(),
+          },
+          {
+            name: 'VideoSettingsService.shutdown',
+            criticality: 'required',
+            run: () => this.videoSettingsService.shutdown(),
+          },
+          {
+            name: 'GameOverlayService.destroy',
+            criticality: 'required',
+            run: () => this.gameOverlayService.destroy(),
+          },
+          {
+            name: 'FileManagerService.flushAllAfterTeardown',
+            criticality: 'required',
+            run: () => this.fileManagerService.flushAll(),
+          },
+          {
+            name: 'NodeObs.RemoveSourceCallback',
+            criticality: 'required',
+            run: () => obs.NodeObs.RemoveSourceCallback(),
+          },
+          {
+            name: 'NodeObs.RemoveTransitionCallback',
+            criticality: 'required',
+            run: () => obs.NodeObs.RemoveTransitionCallback(),
+          },
+          {
+            name: 'NodeObs.RemoveVolmeterCallback',
+            criticality: 'required',
+            run: () => obs.NodeObs.RemoveVolmeterCallback(),
+          },
+          {
+            name: 'NodeObs.OBS_service_removeCallback',
+            criticality: 'required',
+            run: () => obs.NodeObs.OBS_service_removeCallback(),
+          },
+          {
+            name: 'OBS IPC disconnect',
+            criticality: 'required',
+            run: () => obs.IPC.disconnect(),
+          },
+        ],
+        bestEffort: [
+          {
+            name: 'UsageStatisticsService.flushEvents',
+            criticality: 'best-effort',
+            timeoutMs: SHUTDOWN_ANALYTICS_TIMEOUT_MS,
+            run: signal => this.usageStatisticsService.flushEvents(signal),
+          },
+        ],
+      };
+
+      await runWorkerShutdown(plan, {
+        initialReport: ingressReport,
+        markClean: () => this.crashReporterService.endShutdown(),
+        onComplete: report => {
+          electron.ipcRenderer.send('shutdownComplete', {
+            clean: report.clean,
+            failedSteps: report.failures.map(failure => failure.name),
+          });
+        },
+      });
     }, 300);
   }
 
@@ -215,9 +395,18 @@ export class AppService extends StatefulService<IAppState> {
       this.START_LOADING();
       this.loadingChanged.next(true);
 
-      // The scene collections window is the only one we don't close when
-      // switching scene collections, because it results in poor UX.
-      if (this.windowsService.state.child.componentName !== 'ManageSceneCollections') {
+      // There are two exceptions that do not close the child window during this process
+      // 1. ManageSceneCollections - accesses loading mode often and often performs
+      // multiple loading operations during the window's lifecycle
+      // 2. Stream Settings - enabling custom rtmp here disables dual output which
+      // triggers loading mode, but they will want to configure settings here
+      // immediately after doing so
+      const childWindow = this.windowsService.state.child;
+      const isManageSceneCollections = childWindow.componentName === 'ManageSceneCollections';
+      const isStreamSettings =
+        childWindow.componentName === 'Settings' &&
+        this.navigationService.state.currentSettingsTab === 'Stream';
+      if (!isManageSceneCollections && !isStreamSettings) {
         this.windowsService.closeChildWindow();
       }
 
@@ -231,12 +420,12 @@ export class AppService extends StatefulService<IAppState> {
       await this.sceneCollectionsService.disableAutoSave();
     }
 
-    let error: Error = null;
+    let error: any = null;
     let result: any = null;
 
     try {
       result = fn();
-    } catch (e) {
+    } catch (e: unknown) {
       error = null;
     }
 
@@ -246,7 +435,7 @@ export class AppService extends StatefulService<IAppState> {
       this.loadingPromises[promiseId] = result;
       try {
         returningValue = await result;
-      } catch (e) {
+      } catch (e: unknown) {
         error = e;
       }
       delete this.loadingPromises[promiseId];
@@ -265,7 +454,7 @@ export class AppService extends StatefulService<IAppState> {
     this.loadingChanged.next(false);
     // Set timeout to allow transition animation to play
     if (opts.hideStyleBlockers) {
-      setTimeout(() => this.windowsService.updateStyleBlockers('main', false), 500);
+      setTimeout(() => this.windowsService.actions.updateStyleBlockers('main', false), 500);
     }
     if (error) throw error;
     return returningValue;
@@ -277,6 +466,10 @@ export class AppService extends StatefulService<IAppState> {
       'https://slobs-cdn.streamlabs.com/configs/game_capture_list.json',
       `${this.appDataDirectory}/game_capture_list.json`,
     );
+  }
+
+  setOnboarded(value: boolean) {
+    this.SET_ONBOARDED(value);
   }
 
   @mutation()

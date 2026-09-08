@@ -7,6 +7,7 @@
   "Fade to Color": "Zanikanie do koloru",
   "Luma Wipe": "Luma Wipe",
   "Stinger": "Stinger",
+  "Shuffle": "Losuj",
   "Transition": "Przejście",
   "Duration": "Czas trwania",
   "Add Transition": "Dodaj przejście",
@@ -26,5 +27,9 @@
   "This scene transition is managed by an App and cannot be edited.": "To przejście między scenami jest obsługiwane przez aplikację i nie może być edytowane.",
   "Global Transition": "Przejście globalne",
   "Edit": "Edytuj",
-  "Live": "Na żywo"
+  "Live": "Na żywo",
+  "Transitions": "Przejścia",
+  "Connections": "Połączenia",
+  "Softness": "Miękkość",
+  "Invert": "Odwróć"
 }

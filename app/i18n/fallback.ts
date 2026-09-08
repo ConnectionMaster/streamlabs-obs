@@ -11,6 +11,7 @@
  */
 
 const fallbackDictionary = {
+  ...require('./en-US/ai.json'),
   ...require('./en-US/advanced-statistics.json'),
   ...require('./en-US/app.json'),
   ...require('./en-US/apps.json'),
@@ -21,6 +22,7 @@ const fallbackDictionary = {
   ...require('./en-US/filters.json'),
   ...require('./en-US/game-overlay.json'),
   ...require('./en-US/hotkeys.json'),
+  ...require('./en-US/live-outputs.json'),
   ...require('./en-US/media-gallery.json'),
   ...require('./en-US/notifications.json'),
   ...require('./en-US/onboarding.json'),
@@ -31,7 +33,6 @@ const fallbackDictionary = {
   ...require('./en-US/remote-control.json'),
   ...require('./en-US/scenes.json'),
   ...require('./en-US/settings.json'),
-  ...require('./en-US/socials.json'),
   ...require('./en-US/source-props.json'),
   ...require('./en-US/sources.json'),
   ...require('./en-US/streaming.json'),
@@ -53,8 +54,23 @@ const fallbackDictionary = {
   ...require('./en-US/widget-stream-boss.json'),
   ...require('./en-US/widget-tip-jar.json'),
   ...require('./en-US/widget-viewer-count.json'),
+  ...require('./en-US/widget-poll.json'),
+  ...require('./en-US/widget-emote-wall.json'),
+  ...require('./en-US/widget-chat-highlight.json'),
+  ...require('./en-US/widget-game-pulse.json'),
   ...require('./en-US/widgets.json'),
   ...require('./en-US/youtube.json'),
+  ...require('./en-US/tiktok.json'),
+  ...require('./en-US/highlighter.json'),
+  ...require('./en-US/loader.json'),
+  ...require('./en-US/guest-cam.json'),
+  ...require('./en-US/kick.json'),
+  ...require('./en-US/stream-shift.json'),
+  ...require('./en-US/developer.json'),
+  ...require('./en-US/dual-output.json'),
+  ...require('./en-US/patreon.json'),
+  ...require('./en-US/recording.json'),
+  ...require('./en-US/stream-avatar-automations.json'),
 };
 
 export default fallbackDictionary;

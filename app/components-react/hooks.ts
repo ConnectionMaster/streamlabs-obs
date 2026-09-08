@@ -1,20 +1,14 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { debounce } from 'lodash';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import debounce from 'lodash/debounce';
+import throttle from 'lodash/throttle';
 import { StatefulService } from '../services/core';
-import { createBinding, TBindings } from './shared/inputs';
-import { useForm } from './shared/inputs/Form';
-import { FormInstance } from 'antd/lib/form/hooks/useForm';
+import { Services } from './service-provider';
+import Util from 'services/utils';
 
 /**
  * Creates a reactive state for a React component based on Vuex store
  */
-export function useVuex<TReturnValue>(selector: () => TReturnValue): TReturnValue;
-export function useVuex<T, TReturnValue>(
-  target: T,
-  selector: (state: T) => TReturnValue,
-): TReturnValue;
-export function useVuex(...args: any[]) {
-  const selector = args.length === 1 ? args[0] : () => args[1](args[0]);
+export function useVuex<TReturnValue>(selector: () => TReturnValue, deep = true): TReturnValue {
   const [state, setState] = useState(selector);
   useEffect(() => {
     const unsubscribe = StatefulService.store.watch(
@@ -22,6 +16,7 @@ export function useVuex(...args: any[]) {
       newState => {
         setState(newState);
       },
+      { deep },
     );
     return () => {
       unsubscribe();
@@ -29,6 +24,32 @@ export function useVuex(...args: any[]) {
   }, []);
 
   return state;
+}
+
+/**
+ * Watch a value in Vuex. A few caveats:
+ * - This intentionally does not call your watch function on first
+ *   render. This is specifically for tying behavior to when the
+ *   watched value changes.
+ * - Your selector should return a simple value, not an object. This
+ *   is because (like React deps) the values are compared with simple
+ *   === equality, and will not do a proper object comparison.
+ * @param selector A function that returns a value to watch
+ * @param watchFn A function that runs when the value changes
+ */
+export function useWatchVuex<TSelectorValue>(
+  selector: () => TSelectorValue,
+  watchFn: (newVal: TSelectorValue, oldVal: TSelectorValue) => void,
+) {
+  const selectorVal = useVuex(selector);
+  const oldVal = useRef(selectorVal);
+
+  useEffect(() => {
+    if (selectorVal !== oldVal.current) {
+      watchFn(selectorVal, oldVal.current);
+      oldVal.current = selectorVal;
+    }
+  }, [selectorVal]);
 }
 
 /**
@@ -47,81 +68,85 @@ export function useOnDestroy(cb: () => void) {
 }
 
 /**
- * Init state with an async callback
- */
-export function useAsyncState<TStateType>(
-  defaultState: TStateType | (() => TStateType),
-  asyncCb?: (initialState: TStateType) => Promise<TStateType>,
-): [TStateType, (newState: TStateType) => unknown, Promise<TStateType | null> | undefined] {
-  // define a state
-  const [state, setState] = useState(defaultState);
-
-  let isDestroyed = false;
-
-  // create and save the promise if provided
-  const [promise] = useState(() => {
-    if (asyncCb) {
-      return asyncCb(state).then(newState => {
-        // do not update the state if the component has been destroyed
-        if (isDestroyed) return null;
-        setState(newState);
-        return newState;
-      });
-    }
-  });
-
-  useOnDestroy(() => {
-    isDestroyed = true;
-  });
-
-  return [state, setState, promise];
-}
-
-type TUseFormStateResult<TState> = {
-  s: TState;
-  setState: (p: TState) => unknown;
-  updateState: (p: Partial<TState>) => unknown;
-  bind: TBindings<TState>;
-  stateRef: { current: TState };
-  form: FormInstance<TState>;
-};
-
-/**
- * Create the state object and return helper methods
- */
-export function useFormState<T extends object>(initializer: T | (() => T)): TUseFormStateResult<T> {
-  const [s, setStateRaw] = useState<T>(initializer);
-
-  // create a reference to the last actual state
-  const stateRef = useRef(s);
-
-  // create a reference to AntForm
-  const form = useForm();
-
-  function setState(newState: T) {
-    // keep the reference in sync when we update the state
-    stateRef.current = newState;
-    setStateRaw(newState);
-  }
-
-  // create a function for state patching
-  function updateState(patch: Partial<T>) {
-    setState({ ...stateRef.current, ...patch });
-  }
-
-  return {
-    s,
-    setState,
-    updateState,
-    bind: createBinding(s, setState),
-    stateRef,
-    form,
-  };
-}
-
-/**
  * Create a debounced version of the function
  */
 export function useDebounce<T extends (...args: any[]) => any>(ms = 0, cb: T) {
   return useCallback(debounce(cb, ms), []);
+}
+
+/**
+ * Create a throttled version of the function
+ */
+export function useThrottle<T extends (...args: any[]) => any>(ms = 0, cb: T) {
+  return useCallback(throttle(cb, ms), []);
+}
+
+/**
+ * Sets a function that guarantees a re-render and fresh state on every tick of the delay
+ */
+export function useRenderInterval(callback: () => void, delay: number, condition = true) {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (condition) {
+      const timeout = window.setTimeout(() => {
+        callback();
+        setTick(tick + 1);
+      }, delay);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [tick, condition]);
+}
+
+/**
+ * Useful for firing off an async request when the component mounts, but
+ * the result will be automatically discarded if the component unmounts
+ * before the request finishes. React throws a warning when doing state
+ * updates for unmounted components, and this prevents that.
+ * @param executor Function that returns a promise
+ * @param handler Function that takes a promise that is canceled on unmount
+ */
+export function usePromise<TPromiseResult>(
+  executor: () => Promise<TPromiseResult>,
+  handler: (promise: Promise<TPromiseResult>) => void,
+) {
+  useEffect(() => {
+    let unmounted = false;
+
+    handler(
+      new Promise((resolve, reject) => {
+        executor()
+          .then(r => {
+            if (unmounted) return;
+
+            resolve(r);
+          })
+          .catch(e => {
+            if (unmounted) return;
+
+            reject(e);
+          });
+      }),
+    );
+
+    return () => {
+      unmounted = true;
+    };
+  }, []);
+}
+
+export function useChildWindowParams(key?: string) {
+  const { WindowsService } = Services;
+  const params = useMemo(() => WindowsService.getChildWindowQueryParams(), []);
+  return key ? params[key] : params;
+}
+
+export function useOneOffWindowParams(key?: string) {
+  const { WindowsService } = Services;
+  const params = useMemo(() => {
+    const windowId = Util.getCurrentUrlParams().windowId;
+    return WindowsService.getWindowOptions(windowId);
+  }, []);
+  return key ? params[key] : params;
 }

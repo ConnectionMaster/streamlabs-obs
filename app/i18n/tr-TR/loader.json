@@ -1,0 +1,19 @@
+{
+  "Sources are what we call media like text, images, video & audio feeds.": "Kaynaklar metin, görsel, video ve ses beslemeleri gibi medya unsurlarıdır.",
+  "Undo works in the Editor. Just hit Ctrl + Z!": "Editörde işleri geri almak. Sadece Ctrl + Z'ye basın!",
+  "Studio Mode is a powerful way to curate a professional-quality stream.": "Stüdyo Modu, profesyonel kalitede bir yayın yapmanın güçlü bir yoludur.",
+  "Cloudbot is a chatbot that can help you moderate your stream.": "Cloudbot, yayınınızı denetlemenize yardımcı olabilecek bir sohbet robotudur.",
+  "Set Hotkeys from your settings to control your stream with your keyboard.": "Yayınınızı klavyenizle kontrol etmek için ayarlarınızdan Kısayol tuşları ayarlayın.",
+  "With Game Overlay you can view chat messages while gaming without switching screens.": "Oyun Katmanı ile oyun oynarken ekran değiştirmeden sohbet mesajlarını görüntüleyebilirsiniz.",
+  "The editor is fully customizable. Try repositioning things from the Layout Editor.": "Editör tamamen özelleştirilebilir. Düzen Editöründen öğeleri yeniden konumlandırmayı deneyin.",
+  "Studio Mode allows you to customize a scene while you are live before your viewers can see it.": "Stüdyo Modu, siz canlı yayındayken bir sahneyi izleyicileriniz görmeden önce özelleştirmenizi sağlar.",
+  "With the Highlighter, you can save clips during your stream and publish them to YouTube.": "Highlighter ile yayınınız sırasında klipleri kaydedebilir ve bunları YouTube'da yayınlayabilirsiniz.",
+  "You can login to Streamlabs from any device, and we'll load your scenes from the cloud.": "Streamlabs'a herhangi bir cihazdan giriş yapabilirsiniz; sahnelerinizi buluttan yükleyeceğiz.",
+  "As your scenes get more complex, try managing your sources in folders.": "Sahneleriniz daha karmaşık hale geldikçe, kaynaklarınızı klasörlerde yönetmeyi deneyin.",
+  "To fine-tune the positioning of a source, select it from the editor then press any arrow key.": "Bir kaynağın konumunu detaylı şekilde ayarlamak için onu editörden seçin ve ardından herhangi bir ok tuşuna basın.",
+  "Right-click a source, then choose \"Properties\" to view its advanced settings.": "Bir kaynağa sağ tıklayın, ardından gelişmiş ayarlarını görüntülemek için \"Özellikler\" seçimini yapın.",
+  "You can position your chat panel to be either on the left or right side of your screen.": "Sohbet panelinizi ekranınızın solunda veya sağında olacak şekilde konumlandırabilirsiniz.",
+  "Right-click on your camera source to add filters to your webcam.": "Web kameranıza filtre eklemek için kamera kaynağınıza sağ tıklayın.",
+  "You can add and edit stinger transitions by clicking the settings cog near your scene collections.": "Sahne koleksiyonlarınızın yanındaki ayarlar çarkına tıklayarak anında geçişler ekleyebilir ve düzenleyebilirsiniz.",
+  "To crop your webcam, press Alt then drag the bounding box.": "Web kameranızı kırpmak için Alt tuşuna basın ve sınırlayıcı kutuyu sürükleyin."
+}

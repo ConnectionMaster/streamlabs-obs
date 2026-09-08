@@ -1,14 +1,14 @@
-import { test, TExecutionContext, useSpectron } from '../helpers/spectron';
-import { ApiClient, getClient } from '../helpers/api-client';
+import { test, TExecutionContext, useWebdriver } from '../helpers/webdriver';
+import { ApiClient, getApiClient } from '../helpers/api-client';
 import { IJsonRpcResponse } from '../../app/services/api/jsonrpc';
 import { cloneDeep } from 'lodash';
 
-useSpectron({ pauseIfFailed: true });
+useWebdriver();
 
 // Test all API requests that streamdeck device does right after connection
 // tested on Streamdeck v4.5.0
 test('Connect streamdeck device', async t => {
-  const api = await getClient();
+  const api = await getApiClient();
 
   api.sendJson(
     '{"id":11,"jsonrpc":"2.0","method":"makeSceneActive","params":{"args":["scene_2f630094-c23f-4e5c-b311-6bd2982ea43c"],"resource":"ScenesService"}}\n' +
@@ -292,7 +292,7 @@ async function waitForResponse(
   expectedMessages: IJsonRpcResponse<any>[],
 ) {
   expectedMessages = cloneDeep(expectedMessages);
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     api.messageReceived.subscribe(message => {
       const messageInd = expectedMessages.findIndex(mess => mess.id === message.id);
       if (messageInd === -1) return;

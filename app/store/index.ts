@@ -8,10 +8,11 @@ import { IMutation } from 'services/api/jsonrpc';
 import Util from 'services/utils';
 import { InternalApiService } from 'services/api/internal-api';
 import cloneDeep from 'lodash/cloneDeep';
+import * as remote from '@electron/remote';
 
 Vue.use(Vuex);
 
-const { ipcRenderer, remote } = electron;
+const { ipcRenderer } = electron;
 
 const debug = process.env.NODE_ENV !== 'production';
 
@@ -92,10 +93,14 @@ export function createStore(): Store<any> {
   const servicesManager: ServicesManager = ServicesManager.instance;
 
   // TODO: This is bad and I should feel bad
+  // TODO: index
+  // @ts-ignore
   window['servicesManager'] = servicesManager;
 
   const statefulServices = servicesManager.getStatefulServicesAndMutators();
   Object.keys(statefulServices).forEach(serviceName => {
+    // TODO: index
+    // @ts-ignore
     statefulServiceModules[serviceName] = getModule(statefulServices[serviceName]);
   });
 
@@ -121,7 +126,6 @@ export function createStore(): Store<any> {
 export function commitMutation(mutation: IMutation) {
   if (appliedForeignMutations.has(mutation.id)) return;
   appliedForeignMutations.add(mutation.id);
-
   store.commit(
     mutation.type,
     Object.assign({}, mutation.payload, {

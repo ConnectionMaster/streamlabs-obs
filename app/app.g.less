@@ -1,6 +1,6 @@
+@import "./styles/foundation";
 @import "../node_modules/overlayscrollbars/css/OverlayScrollbars.css";
 @import "../node_modules/vue-multiselect/dist/vue-multiselect.min.css";
-@import './styles/antd.less';
 @import "./styles/index";
 @import "./styles/checkboxes";
 @import "./styles/tables";
@@ -11,21 +11,7 @@
 @import "./styles/sl-vue-tree";
 @import "./styles/tooltips";
 @import "./styles/animations";
-
-html {
-  height: 100%;
-}
-
-body {
-  font-family: 'Roboto', sans-serif;
-  font-size: 14px;
-  overflow: hidden;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  background-color: var(--background);
-}
+@import "./styles/loader.less";
 
 :not(input):not(textarea),
 :not(input):not(textarea)::after,
@@ -35,6 +21,10 @@ body {
 }
 .selectable * {
   user-select: text;
+}
+
+::selection {
+  background: var(--button) !important;
 }
 
 .main {
@@ -102,6 +92,11 @@ label {
   color: var(--action-button-text);
   padding: 0 4px;
   line-height: 16px;
+}
+
+.whisper {
+  font-style: italic;
+  opacity: 0.7;
 }
 
 a,
@@ -251,6 +246,7 @@ a,
   align-self: center;
   display: flex;
   z-index: 10;
+  top: -6px;
   .padding-h-sides();
   .radius();
   .shadow();
@@ -286,6 +282,10 @@ a,
     font-size: 14px;
     vertical-align: middle;
     color: var(--icon);
+  }
+
+  &:hover {
+    cursor: pointer;
   }
 
   &.is-active,
@@ -468,16 +468,6 @@ select {
   transition: all 0.3s ease;
 }
 
-.slidedown-enter-active, .slidedown-leave-active {
-  transition: opacity .5s, max-height .5s;
-  max-height: 100px;
-  overflow: hidden;
-}
-.slidedown-enter, .slidedown-leave-to {
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-}
 
 .zoom-enter-active, .zoom-leave-active {
   transition: transform .3s, opacity .5s;

@@ -22,4 +22,14 @@ yarn-error.log
 .env
 .awcache/
 AGREEMENT
+LICENSES
 license_en.txt
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+chromedriver.log
+shared-resources/ai-highlighter/*
