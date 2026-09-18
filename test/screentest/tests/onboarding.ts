@@ -1,17 +1,18 @@
-import { useSpectron, test, focusMain } from '../../helpers/spectron';
+import { useWebdriver, test } from '../../helpers/webdriver';
 import { disableGifAnimations, makeScreenshots, useScreentest } from '../screenshoter';
-import { logIn } from '../../helpers/spectron/user';
+import { logIn } from '../../helpers/webdriver/user';
 import { spawnSync } from 'child_process';
 import { sleep } from '../../helpers/sleep';
+import { focusMain } from '../../helpers/modules/core';
 const path = require('path');
 const _7z = require('7zip')['7z'];
 
-useSpectron({ skipOnboarding: false });
+useWebdriver({ skipOnboarding: false });
 useScreentest();
 
 test('Onboarding steps', async t => {
   const app = t.context.app;
-  await focusMain(t);
+  await focusMain();
 
   // Wait for the auth screen to appear
   await (await app.client.$('h1=Connect')).waitForDisplayed();
@@ -19,10 +20,6 @@ test('Onboarding steps', async t => {
   await logIn(t, 'twitch', { prime: false }, false, true);
   await sleep(1000);
   await (await t.context.app.client.$('span=Skip')).click();
-
-  await (await app.client.$('h1=Choose your Streamlabs plan')).waitForDisplayed({ timeout: 15000 });
-  await makeScreenshots(t, 'Prime');
-  await (await app.client.$('div=Choose Starter')).click();
 
   await (await app.client.$('h2=Start Fresh')).waitForDisplayed();
   await makeScreenshots(t, 'Start fresh or import from OBS');
@@ -36,14 +33,19 @@ test('Onboarding steps', async t => {
   await makeScreenshots(t, 'Add a Theme');
   await (await app.client.$('button=Skip')).click();
 
-  await (await app.client.$('h1=Optimize')).waitForDisplayed();
-  await makeScreenshots(t, 'Before optimize');
-  await (await app.client.$('button=Start')).click();
-  await (await app.client.$('h1=Optimizing... 33%')).waitForDisplayed();
-  await makeScreenshots(t, 'Optimization progress');
+  // temporarily disable auto config until migrate to new api
+  // await (await app.client.$('h1=Optimize')).waitForDisplayed();
+  // await makeScreenshots(t, 'Before optimize');
+  // await (await app.client.$('button=Start')).click();
+  // await (await app.client.$('h1=Optimizing... 33%')).waitForDisplayed();
+  // await makeScreenshots(t, 'Optimization progress');
+
+  await (await app.client.$('h1=Choose your Streamlabs plan')).waitForDisplayed({ timeout: 15000 });
+  await makeScreenshots(t, 'Ultra');
+  await (await app.client.$('div=Current Plan')).click();
 
   // success?
-  await (await app.client.$('h2=Sources')).waitForDisplayed({ timeout: 60000 });
+  await (await app.client.$('span=Sources')).waitForDisplayed({ timeout: 60000 });
   await makeScreenshots(t, 'Onboarding completed');
   t.pass();
 });
@@ -75,7 +77,7 @@ test('OBS Importer', async t => {
   await (await client.$('h2=Start')).click();
 
   // success?
-  await (await client.$('h2=Sources')).waitForDisplayed({ timeout: 60000 });
+  await (await client.$('span=Sources')).waitForDisplayed({ timeout: 60000 });
   await makeScreenshots(t, 'Import from OBS is completed');
   t.pass();
 });

@@ -3,7 +3,7 @@ import Vue from 'vue';
 export function createProps<TProps extends new () => any>(
   propsClass: TProps,
 ): Dictionary<{ default: any }> {
-  const propsObj = {};
+  const propsObj: Dictionary<{ default: TProps }> = {};
   const props = new propsClass();
   Object.keys(props).forEach((key: string) => {
     propsObj[key] = { default: props[key] };
@@ -27,9 +27,7 @@ export function required<TPropType>() {
   return (null as unknown) as TPropType;
 }
 
-export default abstract class TsxComponent<
-  TProps extends { value: unknown } | any = {}
-> extends Vue {
+export default abstract class TsxComponent<TProps extends Dictionary<any> = {}> extends Vue {
   private vueTsxProps: Readonly<{
     slot?: string;
     ref?: string;
@@ -41,8 +39,6 @@ export default abstract class TsxComponent<
     name?: string;
   }> &
     Readonly<TProps>;
-
-  value: TProps['value'];
 
   get props(): TProps {
     return this.$props as Readonly<TProps>;

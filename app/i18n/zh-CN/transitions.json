@@ -7,6 +7,7 @@
   "Fade to Color": "褪色",
   "Luma Wipe": "亮度转场",
   "Stinger": "Stinger",
+  "Shuffle": "随机",
   "Transition": "过渡",
   "Duration": "持续时间",
   "Add Transition": "添加过渡",
@@ -26,5 +27,9 @@
   "This scene transition is managed by an App and cannot be edited.": "此场景过渡由应用程序管理，无法进行编辑。",
   "Global Transition": "全局过渡",
   "Edit": "编辑",
-  "Live": "直播"
+  "Live": "直播",
+  "Transitions": "过渡",
+  "Connections": "连接",
+  "Softness": "柔和度",
+  "Invert": "反转"
 }

@@ -7,7 +7,6 @@
   "End Goal": "結束目標",
   "Starting Amount": "開始金額",
   "End After": "結束期限",
-  "Include resubs?": "包括重新訂閱嗎？",
   "Layout": "版面",
   "Background Color": "背景顏色",
   "Bar Color": "橫條顏色",
@@ -16,12 +15,15 @@
   "Bar Text Color": "橫條文字顏色",
   "Bar Thickness": "橫條厚度",
   "Font Family": "字型家族",
-  "Stars Goal": "開始目標",
   "Facebook Stars": "Facebook 明星",
-  "Supporter Goal": "支援者目標",
   "Facebook Supporters": "Facebook 支援者",
   "Facebook chat": "Facebook 聊天室",
   "Member Goal": "會員目標",
-  "Streamlabs Charity Goal": "Streamlabs Charity Goal",
-  "Streamlabs Charity Donations": "Streamlabs Charity Donations"
+  "Streamlabs Charity Goal": "Streamlabs 慈善目標",
+  "Streamlabs Charity Donations": "Streamlabs 慈善捐贈",
+  "Charity donations": "慈善贊助",
+  "Goal Settings": "目標設定",
+  "Must be in MM/DD/YYYY format.": "必須採用年/月/日格式。",
+  "Condensed": "濃縮",
+  "Count Power-Ups": "Count Power-Ups"
 }

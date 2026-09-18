@@ -3,7 +3,6 @@
   "Includes": "包括",
   "Show Followers": "显示关注者",
   "Show Subscribers": "显示订阅者",
-  "Show donations": "显示打赏",
   "Show Cheers": "显示欢呼",
   "Show Moderators": "显示主持人",
   "Followers": "关注者",
@@ -28,8 +27,9 @@
   "Speed of the rolling credits.": "积分滚动速度。",
   "Roll Time": "滚动时间",
   "Duration of the rolling credits.": "积分滚动持续时间。",
-  "Show Donations": "Show Donations",
+  "Show Power-Ups": "Show Power-Ups",
+  "Show Donations": "显示捐赠",
   "Show Subscriptions": "显示订阅者",
-  "Show Members": "Show Members",
+  "Show Members": "显示会员",
   "Show Super Chats": "显示超级聊天者"
 }

@@ -1,0 +1,19 @@
+{
+  "Sources are what we call media like text, images, video & audio feeds.": "ソースは、テキスト、画像、動画、オーディオフィードなどのメディアです。",
+  "Undo works in the Editor. Just hit Ctrl + Z!": "エディタには取り消し機能があります。Ctrl + Z を押すだけです！",
+  "Studio Mode is a powerful way to curate a professional-quality stream.": "スタジオモードは、プロ品質のストリームをキュレートするためのパワフルな機能です。",
+  "Cloudbot is a chatbot that can help you moderate your stream.": "Cloudbot は、ストリームを管理するのに役立つチャットボットです。",
+  "Set Hotkeys from your settings to control your stream with your keyboard.": "設定からホットキーを設定して、キーボードを使ってストリームをコントロール。",
+  "With Game Overlay you can view chat messages while gaming without switching screens.": "ゲームオーバーレイによって、画面を切り替えずに、ゲーミングをしながらチャットメッセージを確認できます。",
+  "The editor is fully customizable. Try repositioning things from the Layout Editor.": "エディタは完全にカスタマイズ可能です。レイアウトエディタから、アイテムを再配置してみましょう。",
+  "Studio Mode allows you to customize a scene while you are live before your viewers can see it.": "スタジオ モードによって、視聴者向けに表示する前に、ライブ中にシーンをカスタマイズすることができます。",
+  "With the Highlighter, you can save clips during your stream and publish them to YouTube.": "Highlighter を使って、ストリーム中にクリップを保存して、YouTube で公開できます。",
+  "You can login to Streamlabs from any device, and we'll load your scenes from the cloud.": "あらゆるデバイスから Streamlabs にログインして、クラウドからシーンを読み込むことができます。",
+  "As your scenes get more complex, try managing your sources in folders.": "シーンが複雑になったら、フォルダーでソースを管理してみましょう。",
+  "To fine-tune the positioning of a source, select it from the editor then press any arrow key.": "ソースの配置を微調整するには、エディタでソースを選択してから、矢印キーを押します。",
+  "Right-click a source, then choose \"Properties\" to view its advanced settings.": "ソースを右クリックしてから、[プロパティ] を選んで、その詳細設定を表示します。",
+  "You can position your chat panel to be either on the left or right side of your screen.": "画面の左側または右側にチャットパネルを配置できます。",
+  "Right-click on your camera source to add filters to your webcam.": "カメラソースを右クリックして、ウェブカメラにフィルターを追加。",
+  "You can add and edit stinger transitions by clicking the settings cog near your scene collections.": "シーンコレクションの近くにある設定歯車をクリックして、Stinger トランジションの追加と編集ができます。",
+  "To crop your webcam, press Alt then drag the bounding box.": "ウェブカメラをトリミングするには、Alt を押してからバウンディングボックスをドラッグします。"
+}

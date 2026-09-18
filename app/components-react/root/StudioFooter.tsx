@@ -1,0 +1,409 @@
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import cx from 'classnames';
+import { EStreamQuality } from '../../services/performance';
+import { EStreamingState, EReplayBufferState, ERecordingState } from '../../services/streaming';
+import { Services } from '../service-provider';
+import { $t } from '../../services/i18n';
+import { useDebounce, useVuex } from '../hooks';
+import styles from './StudioFooter.m.less';
+import PerformanceMetrics from '../shared/PerformanceMetrics';
+import TestWidgets from './TestWidgets';
+import StartStreamingButton from './StartStreamingButton';
+import NotificationsArea from './NotificationsArea';
+import { Tooltip } from 'antd';
+import { confirmAsync } from 'components-react/modals';
+import RecordingSwitcher from 'components-react/windows/go-live/RecordingSwitcher';
+import { EAvailableFeatures } from 'services/incremental-rollout';
+import { KevinChatIcon } from 'components-react/shared/icons';
+import KevinApprovalBubble from 'components-react/agent/KevinApprovalBubble';
+import { KevinAnalytics } from 'components-react/agent/kevin-analytics';
+
+function StudioFooterComponent() {
+  const {
+    StreamingService,
+    WindowsService,
+    UsageStatisticsService,
+    NavigationService,
+    RecordingModeService,
+    PerformanceService,
+    SettingsService,
+    UserService,
+    KevinSupportService,
+  } = Services;
+
+  const {
+    streamingStatus,
+    isLoggedIn,
+    supportsScheduling,
+    streamQuality,
+    recordingModeEnabled,
+    replayBufferEnabled,
+    replayBufferStatus,
+    isReplayBufferActive,
+    isLiveOutputEditingEnabled,
+    hasPendingApproval,
+  } = useVuex(
+    () => ({
+      streamingStatus: StreamingService.views.streamingStatus,
+      isLoggedIn: UserService.views.isLoggedIn,
+      supportsScheduling: StreamingService.views.supports('stream-schedule'),
+      streamQuality: PerformanceService.views.streamQuality,
+      recordingModeEnabled: RecordingModeService.views.isRecordingModeEnabled,
+      replayBufferEnabled: SettingsService.views.values.Output.RecRB,
+      replayBufferStatus: StreamingService.views.replayBufferStatus,
+      isReplayBufferActive: StreamingService.views.isReplayBufferActive,
+      isLiveOutputEditingEnabled: StreamingService.views.isLiveOutputEditingEnabled,
+      // Same predicate the bubble uses: nothing to flag while the streamer is
+      // already looking at the chat, where the card lives.
+      hasPendingApproval:
+        KevinSupportService.state.pendingApprovals.length > 0 &&
+        !WindowsService.state['kevin-support']?.isFocused,
+    }),
+    false,
+  );
+
+  const replayBufferOffline = useMemo(() => {
+    return replayBufferStatus === EReplayBufferState.Offline;
+  }, [replayBufferStatus]);
+
+  const replayBufferStopping = useMemo(() => {
+    return replayBufferStatus === EReplayBufferState.Stopping;
+  }, [replayBufferStatus]);
+
+  const replayBufferSaving = useMemo(() => {
+    return replayBufferStatus === EReplayBufferState.Saving;
+  }, [replayBufferStatus]);
+
+  const performanceIconClassName = useMemo(() => {
+    if (!streamingStatus || streamingStatus === EStreamingState.Offline) {
+      return '';
+    }
+
+    if (streamingStatus === EStreamingState.Reconnecting || streamQuality === EStreamQuality.POOR) {
+      return 'warning';
+    }
+
+    if (streamQuality === EStreamQuality.FAIR) {
+      return 'info';
+    }
+
+    return 'success';
+  }, [streamingStatus, streamQuality]);
+
+  const openScheduleStream = useCallback(() => {
+    NavigationService.actions.navigate('StreamScheduler');
+  }, []);
+
+  const openMetricsWindow = useCallback(() => {
+    WindowsService.actions.showWindow({
+      componentName: 'AdvancedStatistics',
+      title: $t('Performance Metrics'),
+      size: { width: 700, height: 550 },
+      resizable: true,
+      maximizable: false,
+      minWidth: 500,
+      minHeight: 400,
+    });
+    UsageStatisticsService.actions.recordFeatureUsage('PerformanceStatistics');
+  }, []);
+
+  const kevinAnchorRef = useRef<HTMLDivElement>(null);
+
+  // The dot is the whole notification wherever the bubble is suppressed, so it
+  // needs a text equivalent rather than being colour alone.
+  const kevinLabel = hasPendingApproval
+    ? $t('Streamlabs Desktop Support — approval needed')
+    : $t('Streamlabs Desktop Support');
+
+  const openKevinSupport = useCallback(() => {
+    // A one-off window, not showWindow(): there is only one shared `child` window,
+    // so showWindow would close whatever the user already had open. Support needs
+    // to sit alongside the thing being asked about. The fixed windowId means a
+    // second click restores and focuses the existing window instead of duplicating.
+    WindowsService.actions.createOneOffWindow(
+      {
+        componentName: 'KevinSupport',
+        title: $t('Streamlabs Desktop Support'),
+        queryParams: {},
+        size: { width: 900, height: 640, minWidth: 560, minHeight: 420 },
+      },
+      'kevin-support',
+    );
+    // Tracked on the click, not on the window's mount effect: the fixed windowId
+    // means a second click only refocuses, so the component never remounts and
+    // the reach for support would go unrecorded.
+    KevinAnalytics.chatOpened();
+    UsageStatisticsService.actions.recordFeatureUsage('KevinSupportChat');
+  }, []);
+
+  const toggleReplayBuffer = useCallback(() => {
+    if (replayBufferStatus === EReplayBufferState.Offline) {
+      StreamingService.actions.startReplayBuffer();
+    } else {
+      StreamingService.actions.stopReplayBuffer();
+    }
+  }, [replayBufferStatus]);
+
+  const saveReplay = useCallback(() => {
+    if (replayBufferSaving || replayBufferStopping) {
+      return;
+    }
+    StreamingService.actions.saveReplay();
+  }, [replayBufferSaving, replayBufferStopping]);
+
+  const openEditStream = useCallback(() => {
+    if (streamingStatus === EStreamingState.Live) {
+      StreamingService.actions.showEditStream();
+    }
+  }, [streamingStatus]);
+
+  const showRecordingModeDisableModal = useCallback(async () => {
+    const result = await confirmAsync({
+      title: $t('Enable Live Streaming?'),
+      content: (
+        <p>
+          {$t(
+            'Streamlabs is currently in recording mode, which hides live streaming features. Would you like to enable live streaming features? You can disable them again in General settings.',
+          )}
+        </p>
+      ),
+      okText: $t('Enable Streaming'),
+    });
+
+    if (result) {
+      RecordingModeService.actions.setRecordingMode(false);
+    }
+  }, []);
+
+  return (
+    <div className={cx('footer', styles.footer)}>
+      <div className={cx('flex flex--center flex--grow flex--justify-start', styles.footerLeft)}>
+        <Tooltip placement="left" title={$t('Open Performance Window')}>
+          <i
+            className={cx(
+              'icon-leaderboard-4',
+              'metrics-icon',
+              styles.metricsIcon,
+              performanceIconClassName,
+            )}
+            onClick={openMetricsWindow}
+          />
+        </Tooltip>
+        <PerformanceMetrics mode="limited" className="performance-metrics" />
+        {isLoggedIn && (
+          // The wrapper exists only to give the approval bubble something to
+          // measure; the bubble positions itself `fixed`, since the footer clips.
+          <div className={styles.kevinAnchor} ref={kevinAnchorRef}>
+            <KevinApprovalBubble anchorRef={kevinAnchorRef} />
+            <Tooltip placement="top" title={kevinLabel}>
+              <button
+                type="button"
+                aria-label={kevinLabel}
+                className={styles.kevinIcon}
+                onClick={openKevinSupport}
+              >
+                <KevinChatIcon />
+                {/* The bubble can't draw over an Electron BrowserView, so on any
+                    page that mounts one this dot is the only approval signal. */}
+                {hasPendingApproval && <span className={styles.kevinBadge} />}
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        <NotificationsArea />
+      </div>
+
+      <div className={styles.navRight}>
+        <div className={styles.navItem}>{isLoggedIn && <TestWidgets />}</div>
+        {recordingModeEnabled && (
+          <button className="button button--trans" onClick={showRecordingModeDisableModal}>
+            {$t('Looking to stream?')}
+          </button>
+        )}
+        {!recordingModeEnabled && <RecordingButton />}
+        {replayBufferEnabled && replayBufferOffline && (
+          <div className={styles.navItem}>
+            <Tooltip placement="left" title={$t('Start Replay Buffer')}>
+              <button className="circle-button" onClick={toggleReplayBuffer}>
+                <i className="icon-replay-buffer" />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        {isReplayBufferActive && (
+          <div className={cx(styles.navItem, styles.replayButtonGroup)}>
+            <Tooltip placement="left" title={$t('Stop')}>
+              <button
+                className={cx('circle-button', styles.leftReplay, 'button--soft-warning')}
+                onClick={toggleReplayBuffer}
+              >
+                {replayBufferStopping ? (
+                  <i className="fa fa-spinner fa-pulse" />
+                ) : (
+                  <i className="fa fa-stop" />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip placement="right" title={$t('Save Replay')}>
+              <button className={cx('circle-button', styles.rightReplay)} onClick={saveReplay}>
+                {replayBufferSaving ? (
+                  <i className="fa fa-spinner fa-pulse" />
+                ) : (
+                  <i className="icon-save" />
+                )}
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        {supportsScheduling && (
+          <div className={styles.navItem}>
+            <Tooltip placement="left" title={$t('Schedule Stream')}>
+              <button className="circle-button" onClick={openScheduleStream}>
+                <i className="icon-date" />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+        {isLiveOutputEditingEnabled && streamingStatus === EStreamingState.Live && (
+          <div className={styles.navItem}>
+            <button
+              style={{ minWidth: '130px' }}
+              className={'button button--action'}
+              onClick={openEditStream}
+              data-name="ManageStreamButton"
+            >
+              {$t('Manage Stream')}
+            </button>
+          </div>
+        )}
+        {!recordingModeEnabled && (
+          <div className={styles.navItem}>
+            <StartStreamingButton />
+          </div>
+        )}
+        {recordingModeEnabled && <RecordingButton />}
+      </div>
+    </div>
+  );
+}
+
+const RecordingButton = memo(() => {
+  const { StreamingService, DualOutputService, HighlighterService } = Services;
+
+  const { recordingStatus, isDualOutputMode, useAiHighlighter } = useVuex(() => ({
+    recordingStatus: StreamingService.views.recordingStatus,
+    isDualOutputMode: DualOutputService.views.dualOutputMode,
+    useAiHighlighter: HighlighterService.views.useAiHighlighter,
+  }));
+
+  const toggleRecording = useCallback(() => {
+    StreamingService.actions.toggleRecording();
+  }, []);
+
+  const showLoadingSpinner = useMemo(
+    () =>
+      [ERecordingState.Starting, ERecordingState.Stopping, ERecordingState.Writing].includes(
+        recordingStatus,
+      ),
+    [recordingStatus],
+  );
+
+  const isRecording = useMemo(() => recordingStatus === ERecordingState.Recording, [
+    recordingStatus,
+  ]);
+
+  return (
+    <>
+      <RecordingTimer isRecording={isRecording} />
+      <div className={styles.navItem}>
+        <Tooltip
+          placement="left"
+          title={
+            <RecordingTooltipTitle
+              isRecording={isRecording}
+              isDualOutputMode={isDualOutputMode}
+              useAiHighlighter={useAiHighlighter}
+            />
+          }
+        >
+          <button
+            className={cx(styles.recordButton, 'record-button', {
+              active: isRecording,
+            })}
+            onClick={useDebounce(200, toggleRecording)}
+          >
+            <span>{showLoadingSpinner ? <i className="fa fa-spinner fa-pulse" /> : <>REC</>}</span>
+          </button>
+        </Tooltip>
+      </div>
+    </>
+  );
+});
+
+const RecordingTimer = memo((p: { isRecording: boolean }) => {
+  const { StreamingService } = Services;
+  const [recordingTime, setRecordingTime] = useState('00:00:00');
+
+  useEffect(() => {
+    let recordingTimeout: number | undefined;
+    if (p.isRecording) {
+      recordingTimeout = window.setTimeout(() => {
+        setRecordingTime(StreamingService.formattedDurationInCurrentRecordingState);
+      }, 1000);
+    } else if (recordingTime !== '00:00:00') {
+      setRecordingTime('00:00:00');
+    }
+    return () => clearTimeout(recordingTimeout);
+  }, [p.isRecording, recordingTime]);
+
+  if (!p.isRecording) return <></>;
+  return <div className={cx(styles.navItem, styles.recordTime)}>{recordingTime}</div>;
+});
+
+const RecordingTooltipTitle = memo(
+  (p: { isRecording: boolean; isDualOutputMode: boolean; useAiHighlighter: boolean }) => {
+    const tooltipText = useMemo(() => {
+      if (p.useAiHighlighter && !p.isRecording) {
+        return $t('AI Highlighter is enabled. Recording will start when stream starts.');
+      }
+      if (p.useAiHighlighter && p.isRecording) {
+        return $t('Stop Recording');
+      }
+      if (p.isDualOutputMode && !p.isRecording && !p.useAiHighlighter) {
+        return $t('Start Recording');
+      }
+      if (p.isDualOutputMode && p.isRecording && !p.useAiHighlighter) {
+        return $t('Stop Recording');
+      }
+      if (!p.isDualOutputMode && !p.useAiHighlighter && !p.isRecording) {
+        return $t('Start Recording');
+      }
+
+      return $t('Stop Recording');
+    }, [p.isRecording, p.isDualOutputMode, p.useAiHighlighter]);
+
+    const showRecordingSwitcher = useMemo(() => {
+      // TODO: Comment in when ready for testing
+      // if (
+      //   Services.IncrementalRolloutService.views.featureIsEnabled(
+      //     EAvailableFeatures.verticalRecording,
+      //   ) ||
+      //   Services.IncrementalRolloutService.views.featureIsEnabled(
+      //     EAvailableFeatures.dualOutputRecording,
+      //   )
+      // ) {
+      //   return p.isDualOutputMode && !p.isRecording && !p.useAiHighlighter;
+      // }
+
+      return false;
+    }, [p.isDualOutputMode, p.isRecording, p.useAiHighlighter]);
+
+    return showRecordingSwitcher ? (
+      <RecordingSwitcher label={tooltipText} />
+    ) : (
+      <span>{tooltipText}</span>
+    );
+  },
+);
+
+export default memo(StudioFooterComponent);

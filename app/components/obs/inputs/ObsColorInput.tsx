@@ -22,7 +22,7 @@ class ObsColorInput extends ObsInput<IObsInput<number>> {
   @debounce(500)
   setValue(hex: string) {
     const rgba = this.hexToRGB(hex);
-    if (!Object.keys(rgba).every(key => rgba[key] === this.obsColor[key])) {
+    if (!Object.keys(rgba).every((key: keyof typeof rgba) => rgba[key] === this.obsColor[key])) {
       const intColor = Utils.rgbaToInt(rgba.r, rgba.g, rgba.b, rgba.a);
       this.emitInput({ ...this.value, value: intColor });
     }
@@ -34,10 +34,12 @@ class ObsColorInput extends ObsInput<IObsInput<number>> {
 
   get hexColor() {
     const rgba = Utils.intToRgba(this.value.value);
-    return `#${this.intTo2hexDigit(rgba.r) +
+    return `#${
+      this.intTo2hexDigit(rgba.r) +
       this.intTo2hexDigit(rgba.g) +
       this.intTo2hexDigit(rgba.b) +
-      this.intTo2hexDigit(rgba.a)}`;
+      this.intTo2hexDigit(rgba.a)
+    }`;
   }
 
   get obsColor(): IColor {

@@ -2,7 +2,7 @@
 // be required by the main electron process.
 
 const { autoUpdater } = require('electron-updater');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 
 class Updater {
   // startApp is a callback that will start the app.  Ideally this
@@ -12,14 +12,36 @@ class Updater {
   // the auto updater.  Pre-initializing the mainWindow is now a
   // good option either, since then closing the auto updater will
   // orphan the main process in the background.
-  constructor(startApp) {
+  constructor(startApp, channel) {
     this.startApp = startApp;
+    if (process.arch === 'arm64') {
+      this.channel = 'arm64-' + channel;
+    } else {
+      this.channel = channel;
+    }
   }
 
   run() {
+    const osVersion = require('os').release();
+    // Darwin 21 == macOS 12 (Monterey), the minimum supported by Electron 38+.
+    // Anything below this cannot launch the app, so refuse the update rather than
+    // let the user install a build their OS will not run.
+    if (osVersion && Number(osVersion.substring(0, 2)) < 21) {
+      dialog.showMessageBoxSync({
+        message:
+          'Streamlabs Desktop requires macOS 12 (Monterey) or later. Your version of macOS is no longer supported, so this update cannot be installed.',
+        type: 'error',
+      });
+      app.exit();
+      return;
+    }
+
     this.updateState = {};
 
     this.bindListeners();
+
+    // Redirect to new channel for Streamlabs Desktop
+    autoUpdater.channel = `desktop-${this.channel}`;
 
     autoUpdater.checkForUpdates().catch(() => {
       // This usually means there is no internet connection.
@@ -84,7 +106,8 @@ class Updater {
       frame: false,
       resizable: false,
       show: false,
-      webPreferences: { nodeIntegration: true },
+      webPreferences: { nodeIntegration: true, enableRemoteModule: true, contextIsolation: false },
+      backgroundColor: '#17242d',
     });
 
     browserWindow.on('ready-to-show', () => {

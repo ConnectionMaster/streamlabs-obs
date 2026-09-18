@@ -1,0 +1,15 @@
+{
+  "Stream Shift": "Stream Shift",
+  "Stay uninterrupted by switching between devices mid stream. Works between Desktop and Mobile App.": "Não percas o ritmo ao alternar entre dispositivos a meio da transmissão. Funciona entre o computador e a aplicação móvel.",
+  "Claim Stream": "Reclamar transmissão",
+  "Another stream detected": "Outra transmissão detetada",
+  "Stream successfully switched": "Transmissão alternada com sucesso",
+  "Stream Shift cannot be used with Dual Output": "O Stream Shift não pode ser usado com Dual Output.",
+  "Your stream has been successfully switched to Streamlabs Desktop. Enjoy your stream!": "A tua transmissão foi alternada com sucesso para o Streamlabs Desktop. Diverte-te na tua transmissão!",
+  "Your stream has been successfully switched to Streamlabs Mobile. Enjoy your stream!": "A tua transmissão foi alternada com sucesso para o Streamlabs Mobile. Diverte-te na tua transmissão!",
+  "Your stream has been switched to Streamlabs Desktop from another device. Enjoy your stream!": "A tua transmissão foi alternada para o Streamlabs Desktop a partir de outro dispositivo. Diverte-te na tua transmissão!",
+  "Switch to Streamlabs Desktop": "Alternar para Streamlabs Desktop",
+  "Upgrade to Ultra to switch streams between devices.": "Atualiza para o Ultra para alternar transmissões entre dispositivos.",
+  "Force Start": "Forçar início",
+  "A stream on another device has been detected. Would you like to switch your stream to Streamlabs Desktop? If you do not wish to continue this stream, please end it from the current streaming source. If you're sure you're not live and it has been incorrectly detected, choose \"Force Start\" below.": "Foi detetada uma transmissão noutro dispositivo. Queres alternar a tua transmissão para o Streamlabs Desktop? Se não quiseres continuar com esta transmissão, termina-a a partir da fonte de transmissão atual. Se tiveres a certeza de que não estás a transmitir em direto e de que houve um erro na deteção, escolhe \"Forçar início\" abaixo."
+}

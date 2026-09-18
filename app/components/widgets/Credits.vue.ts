@@ -24,6 +24,8 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
   }
 
   optionIterable(map: Dictionary<string>) {
+    // TODO: index
+    // @ts-ignore
     return Object.keys(map).filter(option => this.wData.settings[option] != null);
   }
 
@@ -33,6 +35,7 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
       followers: $t('Show Followers'),
       subscribers: $t('Show Subscribers'),
       bits: $t('Show Cheers'),
+      power_ups: $t('Show Power-Ups'),
       moderators: $t('Show Moderators'),
       // Youtube
       subscriptions: $t('Show Subscriptions'),
@@ -47,6 +50,7 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
       followers_change: $t('Followers'),
       subscribers_change: $t('Subscribers & Resubs'),
       bits_change: $t('Cheers'),
+      power_ups_change: $t('Power-Ups'),
       mods_change: $t('Moderators'),
       // Youtube
       subscriptions_change: $t('Subscriptions'),
@@ -63,9 +67,11 @@ export default class Credits extends WidgetSettings<ICreditsData, CreditsService
     return this.service.getMetadata(this.themeOptions);
   }
 
-  navItems = [
-    { value: 'manage-credits', label: $t('Manage Credits') },
-    { value: 'visual', label: $t('Visual Settings') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-credits', label: $t('Manage Credits') },
+      { value: 'visual', label: $t('Visual Settings') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 }

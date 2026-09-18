@@ -7,7 +7,6 @@
   "End Goal": "Tujuan Akhir",
   "Starting Amount": "Jumlah Awal",
   "End After": "Akhiri Setelah",
-  "Include resubs?": "Sertakan langganan ulang?",
   "Layout": "Tata Letak",
   "Background Color": "Warna Latar Belakang",
   "Bar Color": "Warna Bilah",
@@ -16,12 +15,15 @@
   "Bar Text Color": "Warna Teks Bilah",
   "Bar Thickness": "Ketebalan Bilah",
   "Font Family": "Keluarga Font",
-  "Stars Goal": "Tujuan Bintang",
   "Facebook Stars": "Bintang Facebook",
-  "Supporter Goal": "Tujuan Pendukung",
   "Facebook Supporters": "Pendukung Facebook",
   "Facebook chat": "Obrolan Facebook",
   "Member Goal": "Tujuan Anggota",
-  "Streamlabs Charity Goal": "Streamlabs Charity Goal",
-  "Streamlabs Charity Donations": "Streamlabs Charity Donations"
+  "Streamlabs Charity Goal": "Tujuan Amal Streamlabs",
+  "Streamlabs Charity Donations": "Donasi Amal Streamlabs",
+  "Charity donations": "Donasi Amal",
+  "Goal Settings": "Goal Settings",
+  "Must be in MM/DD/YYYY format.": "Must be in MM/DD/YYYY format.",
+  "Condensed": "Condensed",
+  "Count Power-Ups": "Count Power-Ups"
 }

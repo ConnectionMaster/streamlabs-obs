@@ -31,7 +31,8 @@ export declare type TObsType =
   | 'OBS_PROPERTY_EDITABLE_LIST'
   | 'OBS_PROPERTY_BUTTON'
   | 'OBS_PROPERTY_BITMASK'
-  | 'OBS_INPUT_RESOLUTION_LIST';
+  | 'OBS_INPUT_RESOLUTION_LIST'
+  | 'OBS_PROPERTY_UNIT';
 
 /**
  * OBS values that frontend application can change
@@ -43,13 +44,15 @@ export declare type TObsValue = number | string | boolean | IObsFont | TObsStrin
  */
 export interface IObsInput<TValueType> {
   value: TValueType;
+  currentValue?: TValueType;
   name: string;
   description: string;
   showDescription?: boolean;
   enabled?: boolean;
   visible?: boolean;
   masked?: boolean;
-  type?: TObsType;
+  type: TObsType;
+  subType?: TObsType | string;
 }
 
 export declare type TObsFormData = (IObsInput<TObsValue> | IObsListInput<TObsValue>)[];
@@ -65,6 +68,7 @@ export interface IObsListOption<TValue> {
 
 export interface IObsPathInputValue extends IObsInput<string> {
   filters: IElectronOpenDialogFilter[];
+  defaultPath: string;
 }
 
 export interface IObsNumberInputValue extends IObsInput<number> {
@@ -79,6 +83,8 @@ export interface IObsSliderInputValue extends IObsNumberInputValue {
 
 export interface IObsTextInputValue extends IObsInput<string> {
   multiline: boolean;
+  infoField: boolean;
+  infoType?: obs.ETextInfoType;
 }
 
 export interface IObsBitmaskInput extends IObsInput<number> {
@@ -178,6 +184,7 @@ export function obsValuesToInputValues(
     prop.masked = !!obsProp.masked;
     prop.enabled = !!obsProp.enabled;
     prop.visible = !!obsProp.visible;
+    prop.description = $translateIfExist(obsProp.description);
 
     if (options.disabledFields && options.disabledFields.includes(prop.name)) {
       prop.visible = false;
@@ -190,7 +197,7 @@ export function obsValuesToInputValues(
         for (const listOption of obsProp.values || []) {
           listOptions.push({
             value: listOption[Object.keys(listOption)[0]],
-            description: $translateIfExist(Object.keys(listOption)[0]),
+            description: Object.keys(listOption)[0],
           });
         }
       }
@@ -395,6 +402,8 @@ export function getPropertiesFormData(obsSource: obs.ISource): TObsFormData {
     if (isTextProperty(obsProp)) {
       Object.assign(formItem as IObsTextInputValue, {
         multiline: obsProp.details.type === obs.ETextType.Multiline,
+        infoField: obsProp.details.type === obs.ETextType.TextInfo,
+        infoType: obsProp.details.infoType,
       });
     }
 
@@ -442,7 +451,7 @@ export function setPropertiesFormData(
 
     if (property.type === 'OBS_PROPERTY_FONT') {
       settings['custom_font'] = (property.value as IObsFont).path;
-      delete settings[property.name]['path'];
+      delete (settings[property.name] as IObsFont).path;
     }
   });
 
@@ -459,7 +468,7 @@ export function setPropertiesFormData(
     const listProp = prop as IObsListInput<TObsValue>;
 
     // Special case a misbehaving plugin on mac
-    if (obsSource.id === 'av_capture_input' && listProp.value === -1) return;
+    if (obsSource.id === 'macos_avcapture' && listProp.value === -1) return;
 
     if (!listProp.options.length) return;
     const optionExists = !!listProp.options.find(option => option.value === listProp.value);

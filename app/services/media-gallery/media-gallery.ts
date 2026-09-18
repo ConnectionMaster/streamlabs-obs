@@ -18,6 +18,40 @@ export interface IMediaGalleryFile {
   prime?: boolean;
 }
 
+interface IMediaGalleryStockFile {
+  type: string;
+  href: string;
+  filename: string;
+}
+
+interface IMediaGalleryStockImageFile extends IMediaGalleryStockFile {
+  type: 'image';
+  thumb: string;
+  // Game Pulse / Reactive properties
+  tags?: string[];
+  event?: string;
+  style?: string;
+}
+
+interface IMediaGalleryStockAudioFile extends IMediaGalleryStockFile {
+  type: 'audio';
+  duration: string;
+  length?: string;
+  group?: string;
+  tag?: string;
+}
+
+type TMediaGalleryStockFilesResponse =
+  | {
+      success: true;
+      message: string;
+      data: {
+        images: IMediaGalleryStockImageFile[];
+        audios: IMediaGalleryStockAudioFile[];
+      };
+    }
+  | { success: false; message: string };
+
 interface IMediaGalleryLimits {
   maxUsage: number;
   maxFileSize: number;
@@ -32,7 +66,7 @@ interface IMediaGalleryProps {
   filter: 'audio' | 'image';
 }
 
-const fileTypeMap = {
+const fileTypeMap: Dictionary<string> = {
   mp3: 'audio',
   wav: 'audio',
   ogg: 'audio',
@@ -42,10 +76,11 @@ const fileTypeMap = {
   jpeg: 'image',
   webm: 'image',
   svg: 'image',
+  mp4: 'video',
 };
 
 const DEFAULT_MAX_USAGE = 1024 * Math.pow(1024, 2);
-const DEFAULT_MAX_FILE_SIZE = 25 * Math.pow(1024, 2);
+const DEFAULT_MAX_FILE_SIZE = 50 * Math.pow(1024, 2);
 
 export class MediaGalleryService extends Service {
   @Inject() private userService: UserService;
@@ -91,10 +126,7 @@ export class MediaGalleryService extends Service {
     filePaths.forEach((path: string) => {
       const contents = fs.readFileSync(path);
       const name = path.split('\\').pop();
-      const ext = name
-        .toLowerCase()
-        .split('.')
-        .pop();
+      const ext = name.toLowerCase().split('.').pop();
       const file = new File([contents], name, { type: `${fileTypeMap[ext]}/${ext}` });
       formData.append('uploads[]', file);
     });
@@ -104,7 +136,7 @@ export class MediaGalleryService extends Service {
       method: 'POST',
     });
 
-    await fetch(req);
+    await jfetch(req);
     return this.fetchGalleryInfo();
   }
 
@@ -146,8 +178,29 @@ export class MediaGalleryService extends Service {
     audios: Array<IMediaGalleryFile>;
     images: Array<IMediaGalleryFile>;
   }> {
-    const req = this.formRequest('api/v5/slobs/widget/alertbox/stock-media');
-    return jfetch(req);
+    const req = this.formRequest('api/v5/media/desktop/gallery/stock-media?alert_panels=true');
+    const data: TMediaGalleryStockFilesResponse = await jfetch(req);
+    if (data.success) {
+      return {
+        images: data.data.images.map(item => ({
+          href: item.href,
+          filename: item.filename,
+          type: 'image',
+          size: 0,
+          isStock: true,
+        })),
+        audios: data.data.audios.map(item => ({
+          href: item.href,
+          filename: item.filename,
+          type: 'audio',
+          size: 0,
+          isStock: true,
+        })),
+      };
+    }
+
+    console.error('Failed to fetch stock media', data.message);
+    return { images: [], audios: [] };
   }
 
   private async fetchFiles(): Promise<IMediaGalleryFile[]> {
@@ -156,11 +209,8 @@ export class MediaGalleryService extends Service {
 
     const uploads = files.map(item => {
       const filename = decodeURIComponent(item.href.split(/[\\/]/).pop());
-      const ext = filename
-        .toLowerCase()
-        .split('.')
-        .pop();
-      const type = fileTypeMap[ext];
+      const ext = filename.toLowerCase().split('.').pop();
+      const type = fileTypeMap[ext] === 'video' ? 'image' : fileTypeMap[ext];
       const size = item.size || 0;
 
       return { ...item, filename, type, size, isStock: false };
@@ -179,7 +229,7 @@ export class MediaGalleryService extends Service {
           maxFileSize: resp.body.max_allowed_upload_fize_size,
         };
       });
-    } catch (e) {
+    } catch (e: unknown) {
       return {
         maxUsage: DEFAULT_MAX_USAGE,
         maxFileSize: DEFAULT_MAX_FILE_SIZE,

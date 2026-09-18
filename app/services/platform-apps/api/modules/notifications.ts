@@ -3,7 +3,7 @@ import { Inject } from 'services/core/injector';
 import { Subject } from 'rxjs';
 import { INotificationsServiceApi } from 'services/notifications';
 
-type TIssueCode = 'FRAMES_LAGGED' | 'FRAMES_SKIPPED' | 'FRAMES_DROPPED';
+type TIssueCode = 'FRAMES_LAGGED' | 'FRAMES_SKIPPED' | 'FRAMES_DROPPED' | 'HIGH_CPU_USAGE';
 
 enum ENotificationType {
   INFO = 'INFO',
@@ -17,6 +17,8 @@ enum ENotificationSubType {
   DROPPED = 'DROPPED',
   LAGGED = 'LAGGED',
   SKIPPED = 'SKIPPED',
+  NEWS = 'NEWS',
+  CPU = 'CPU',
 }
 
 interface INotificationOptions {
