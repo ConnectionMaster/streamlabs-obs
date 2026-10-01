@@ -7,10 +7,10 @@ import { SelectionService } from 'services/selection';
 import { Inject } from 'services/core/injector';
 import { ENudgeDirection } from './commands/nudge-items';
 import { SceneCollectionsService } from 'services/scene-collections';
-import electron from 'electron';
 import Utils from 'services/utils';
 import { BehaviorSubject } from 'rxjs';
 import { UsageStatisticsService } from 'services/usage-statistics';
+import * as remote from '@electron/remote';
 
 const COMMANDS = { ...commands };
 
@@ -72,9 +72,9 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
   executeCommand<TCommand extends keyof typeof COMMANDS>(
     commandType: TCommand,
     // eslint-disable-next-line prettier/prettier
-    ...commandArgs: ConstructorParameters<(typeof COMMANDS)[TCommand]>
+    ...commandArgs: ConstructorParameters<typeof COMMANDS[TCommand]>
   ): // eslint-disable-next-line prettier/prettier
-    ReturnType<InstanceType<(typeof COMMANDS)[TCommand]>['execute']> {
+  ReturnType<InstanceType<typeof COMMANDS[TCommand]>['execute']> {
     // Executing any command clears out the redo history, since we are
     // creating a new branch in the timeline.
     this.redoHistory = [];
@@ -121,7 +121,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
   @shortcut('Ctrl+Z')
   undo() {
-    if (this.state.operationInProgress) return;
+    if (this.state.operationInProgress || this.undoHistory.length < 1) return;
 
     this.usageStatisticsService.recordFeatureUsage('Undo');
 
@@ -134,7 +134,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
       try {
         ret = command.rollback();
-      } catch (e) {
+      } catch (e: unknown) {
         this.handleUndoRedoError(true, e);
         return;
       }
@@ -168,7 +168,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
       try {
         ret = command.execute();
-      } catch (e) {
+      } catch (e: unknown) {
         this.handleUndoRedoError(false, e);
         return;
       }
@@ -191,7 +191,7 @@ export class EditorCommandsService extends StatefulService<IEditorCommandsServic
 
   private handleUndoRedoError(undo: boolean, e: any) {
     console.error(`Error performing ${undo ? 'undo' : 'redo'} operation`, e);
-    electron.remote.dialog.showMessageBox(Utils.getMainWindow(), {
+    remote.dialog.showMessageBox(Utils.getMainWindow(), {
       title: 'Error',
       message: `An error occurred while ${undo ? 'undoing' : 'redoing'} the operation.`,
       type: 'error',

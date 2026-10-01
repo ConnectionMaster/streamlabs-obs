@@ -1,0 +1,19 @@
+{
+  "Sources are what we call media like text, images, video & audio feeds.": "Jako zdroje nazýváme média, jako je text, obrázky, video a audio kanály.",
+  "Undo works in the Editor. Just hit Ctrl + Z!": "Příkaz zpět funguje v Editoru. Stačí stisknout Ctrl + Z!",
+  "Studio Mode is a powerful way to curate a professional-quality stream.": "Režim Studio představuje efektivní způsob, jak pořádat stream v profesionální kvalitě.",
+  "Cloudbot is a chatbot that can help you moderate your stream.": "Cloudbot je chatbot, který vám pomůže moderovat váš stream.",
+  "Set Hotkeys from your settings to control your stream with your keyboard.": "Chcete-li ovládat svůj stream pomocí klávesnice, nastavte v nastavení klávesové zkratky.",
+  "With Game Overlay you can view chat messages while gaming without switching screens.": "S funkcí Překrytí ve hře můžete zobrazit zprávy chatu během hraní bez přepínání obrazovek.",
+  "The editor is fully customizable. Try repositioning things from the Layout Editor.": "Editor je plně přizpůsobitelný. Zkuste změnit polohu věcí v Editoru rozvržení.",
+  "Studio Mode allows you to customize a scene while you are live before your viewers can see it.": "Režim Studio umožňuje přizpůsobit scénu během živého vysílání, než ji uvidí vaši diváci.",
+  "With the Highlighter, you can save clips during your stream and publish them to YouTube.": "Pomocí funkce Highlighter můžete ukládat klipy během streamu a publikovat je na YouTube.",
+  "You can login to Streamlabs from any device, and we'll load your scenes from the cloud.": "Do Streamlabs se můžete přihlásit z libovolného zařízení – vaše scény načteme z cloudu.",
+  "As your scenes get more complex, try managing your sources in folders.": "Jelikož se scény stávají čím dál složitější, zkuste spravovat zdroje ve složkách.",
+  "To fine-tune the positioning of a source, select it from the editor then press any arrow key.": "Chcete-li doladit umístění zdroje, vyberte jej v editoru a stiskněte libovolnou klávesu se šipkou.",
+  "Right-click a source, then choose \"Properties\" to view its advanced settings.": "Klikněte pravým tlačítkem myši na zdroj a poté výběrem „Vlastnosti“ zobrazte jeho pokročilá nastavení.",
+  "You can position your chat panel to be either on the left or right side of your screen.": "Panel chatu můžete umístit na levou nebo pravou stranu obrazovky.",
+  "Right-click on your camera source to add filters to your webcam.": "Kliknutím pravým tlačítkem myši na zdroj kamery přidáte filtry do webové kamery.",
+  "You can add and edit stinger transitions by clicking the settings cog near your scene collections.": "Přechody typu stinger můžete přidávat a upravovat kliknutím na ozubené kolečko nastavení umístěné v blízkosti kolekcí scén.",
+  "To crop your webcam, press Alt then drag the bounding box.": "Chcete-li webovou kameru oříznout, stiskněte klávesu Alt a přetáhněte ohraničovací rámeček."
+}

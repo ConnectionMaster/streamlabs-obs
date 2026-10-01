@@ -3,7 +3,6 @@
   "Includes": "Incluye",
   "Show Followers": "Mostrar seguidores",
   "Show Subscribers": "Mostrar suscriptores",
-  "Show donations": "Mostrar donaciones",
   "Show Cheers": "Mostrar saludos",
   "Show Moderators": "Mostrar moderadores",
   "Followers": "Seguidores",
@@ -28,8 +27,9 @@
   "Speed of the rolling credits.": "Velocidad de los créditos.",
   "Roll Time": "Tiempo de reproducción",
   "Duration of the rolling credits.": "Duración de los créditos.",
-  "Show Donations": "Show Donations",
+  "Show Power-Ups": "Show Power-Ups",
+  "Show Donations": "Mostrar donaciones",
   "Show Subscriptions": "Mostrar suscripciones",
-  "Show Members": "Show Members",
+  "Show Members": "Mostrar miembros",
   "Show Super Chats": "Mostrar Súper chats"
 }

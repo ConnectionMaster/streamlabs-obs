@@ -1,0 +1,19 @@
+{
+  "Sources are what we call media like text, images, video & audio feeds.": "Nous désignons par sources le contenu multimédia tel que le texte, les images, ainsi que les flux vidéo et audio.",
+  "Undo works in the Editor. Just hit Ctrl + Z!": "La fonction d'annulation fonctionne dans l'éditeur. Appuyez simplement sur Ctrl + Z!",
+  "Studio Mode is a powerful way to curate a professional-quality stream.": "Le mode Studio est un moyen efficace d'aboutir à un stream de qualité professionnelle.",
+  "Cloudbot is a chatbot that can help you moderate your stream.": "Cloudbot est un agent conversationnel qui peut vous aider dans la modération de votre stream.",
+  "Set Hotkeys from your settings to control your stream with your keyboard.": "Configurez vos touches de raccourci depuis les paramètres afin de contrôler votre stream avec le clavier.",
+  "With Game Overlay you can view chat messages while gaming without switching screens.": "Avec la superposition de jeu, vous pouvez afficher les messages de vos conversations pendant vos parties sans avoir besoin de basculer sur un nouvel écran.",
+  "The editor is fully customizable. Try repositioning things from the Layout Editor.": "L'éditeur est entièrement personnalisable. Essayer de réorganiser les éléments depuis l'éditeur de disposition.",
+  "Studio Mode allows you to customize a scene while you are live before your viewers can see it.": "Le mode Studio vous permet de personnaliser une scène pendant votre stream et avant que vos spectateurs ne puissent la voir.",
+  "With the Highlighter, you can save clips during your stream and publish them to YouTube.": "Avec la fonction Highlighter, vous pouvez enregistrer des clips pendant votre stream, puis les publier YouTube.",
+  "You can login to Streamlabs from any device, and we'll load your scenes from the cloud.": "Vous pouvez vous connecter à Streamlabs depuis n'importe quel dispositif, puis télécharger vos scènes depuis le Cloud.",
+  "As your scenes get more complex, try managing your sources in folders.": "Nous vous conseillons de gérer vos sources dans des dossiers lorsque vos scènes deviennent plus élaborées.",
+  "To fine-tune the positioning of a source, select it from the editor then press any arrow key.": "Pour affiner le positionnement de la source, sélectionnez-la dans l'éditeur, puis appuyez sur n'importe quelle touche fléchée.",
+  "Right-click a source, then choose \"Properties\" to view its advanced settings.": "Faites un clic droit sur une source, puis sélectionnez \"Propriétés\" pour accéder à ses paramètres avancés.",
+  "You can position your chat panel to be either on the left or right side of your screen.": "Vous pouvez positionner l'encart dédié à votre chat sur la gauche ou la droite de votre écran.",
+  "Right-click on your camera source to add filters to your webcam.": "Faites un clic droit sur la source de votre caméra afin d'ajouter des filtres à votre webcam.",
+  "You can add and edit stinger transitions by clicking the settings cog near your scene collections.": "Vous pouvez ajouter et modifier les transitions en cliquant sur le bouton des paramètres, en forme d'écrou, près de vos collections de scènes.",
+  "To crop your webcam, press Alt then drag the bounding box.": "Pour rogner votre webcam, appuyez sur Alt, puis faites glisser la boîte de rognage."
+}

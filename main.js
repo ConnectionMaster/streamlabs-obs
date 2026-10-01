@@ -1,6 +1,22 @@
 const appStartTime = Date.now();
 let lastEventTime = 0;
 
+// On macOS, writing to a closed stdout/stderr pipe throws EPIPE. Replace write with a noop
+process.stdout.on('error', err => {
+  if (err.code === 'EPIPE') {
+    process.stdout.write = (...args) => true;
+  } else {
+    throw err;
+  }
+});
+process.stderr.on('error', err => {
+  if (err.code === 'EPIPE') {
+    process.stderr.write = (...args) => true;
+  } else {
+    throw err;
+  }
+});
+
 ////////////////////////////////////////////////////////////////////////////////
 // Set Up Environment Variables
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,15 +45,15 @@ const {
   crashReporter,
   dialog,
   webContents,
+  desktopCapturer,
+  MessageChannelMain,
 } = require('electron');
 const path = require('path');
-const rimraf = require('rimraf');
+const remote = require('@electron/remote/main');
+const fs = require('fs');
 
 // Game overlay is Windows only
 let overlay;
-if (process.platform === 'win32') {
-  overlay = require('game-overlay');
-}
 
 // We use a special cache directory for running tests
 if (process.env.SLOBS_CACHE_DIR) {
@@ -47,25 +63,35 @@ if (process.env.SLOBS_CACHE_DIR) {
 app.setPath('userData', path.join(app.getPath('appData'), 'slobs-client'));
 
 if (process.argv.includes('--clearCacheDir')) {
-  rimraf.sync(app.getPath('userData'));
+  try {
+    // This could block for a while, but should ensure that the crash handler
+    // is no longer able to interfere with cache removal.
+    fs.rmSync(app.getPath('userData'), {
+      force: true,
+      recursive: true,
+      maxRetries: 5,
+      retryDelay: 500,
+    });
+  } catch (e) {}
 }
 
 // This ensures that only one copy of our app can run at once.
-const gotTheLock = app.requestSingleInstanceLock();
+// additionalData preserves the secondary process arguments exactly; Electron's argv event may
+// reorder them or append Chromium switches.
+const gotTheLock = app.requestSingleInstanceLock({ relaunchArgs: process.argv.slice(1) });
 
 if (!gotTheLock) {
   app.quit();
   return;
 }
 
-const fs = require('fs');
 const bootstrap = require('./updater/build/bootstrap.js');
 const bundleUpdater = require('./updater/build/bundle-updater.js');
+const { createShutdownCoordinator } = require('./app/util/shutdown-coordinator');
 const uuid = require('uuid/v4');
 const semver = require('semver');
 const windowStateKeeper = require('electron-window-state');
 const pid = require('process').pid;
-const crashHandler = require('crash-handler');
 
 app.commandLine.appendSwitch('force-ui-direction', 'ltr');
 app.commandLine.appendSwitch(
@@ -73,8 +99,7 @@ app.commandLine.appendSwitch(
   'streamlabs.com,youtube.com,twitch.tv,facebook.com,mixer.com',
 );
 
-// Remove this when all backend module are on NAPI
-app.allowRendererProcessReuse = false;
+process.env.IPC_UUID = `slobs-${uuid()}`;
 
 /* Determine the current release channel we're
  * on based on name. The channel will always be
@@ -189,7 +214,7 @@ function humanFileSize(bytes, si) {
 }
 
 console.log('=================================');
-console.log('Streamlabs OBS');
+console.log('Streamlabs Desktop');
 console.log(`Version: ${process.env.SLOBS_VERSION}`);
 console.log(`OS: ${os.platform()} ${os.release()}`);
 console.log(`Arch: ${process.arch}`);
@@ -200,6 +225,15 @@ console.log(`Free: ${humanFileSize(os.freemem(), false)}`);
 console.log('=================================');
 
 app.on('ready', () => {
+  /* Load React DevTools in dev mode */
+  if (process.env.NODE_ENV === 'development') {
+    const reactDevToolsPath = path.join(__dirname, 'vendor', 'react-devtools');
+    session.defaultSession
+      .loadExtension(reactDevToolsPath, { allowFileAccess: true })
+      .then(() => console.log('Installed React DevTools'))
+      .catch(err => console.log('Error installing React DevTools', err));
+  }
+
   // Detect when running from an unwritable location like a DMG image (will break updater)
   if (process.platform === 'darwin') {
     try {
@@ -208,8 +242,8 @@ app.on('ready', () => {
       // This error code indicates a read only file system
       if (e.code === 'EROFS') {
         dialog.showErrorBox(
-          'Streamlabs OBS',
-          'Please run Streamlabs OBS from your Applications folder. Streamlabs OBS cannot run directly from this disk image.',
+          'Streamlabs Desktop',
+          'Please run Streamlabs Desktop from your Applications folder. Streamlabs Desktop cannot run directly from this disk image.',
         );
         app.exit();
       }
@@ -241,14 +275,25 @@ app.on('ready', () => {
 // closing the windows before exit.
 let allowMainWindowClose = false;
 let shutdownStarted = false;
-let appShutdownTimeout;
+let shutdownCoordinator;
 
 global.indexUrl = `file://${__dirname}/index.html`;
 
+function forceShutdown(reason) {
+  console.warn(`[Shutdown] Force exiting application: ${reason}`);
+  allowMainWindowClose = true;
+
+  BrowserWindow.getAllWindows().forEach(window => {
+    if (!window.isDestroyed()) window.destroy();
+  });
+
+  app.exit(0);
+}
+
 function openDevTools() {
-  childWindow.webContents.openDevTools({ mode: 'undocked' });
-  mainWindow.webContents.openDevTools({ mode: 'undocked' });
-  workerWindow.webContents.openDevTools({ mode: 'undocked' });
+  childWindow.webContents.openDevTools({ mode: 'detach' });
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+  workerWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
 // TODO: Clean this up
@@ -257,8 +302,25 @@ const waitingVuexStores = [];
 let workerInitFinished = false;
 
 async function startApp() {
+  const crashHandler = require('crash-handler');
   const isDevMode = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test';
   const crashHandlerLogPath = app.getPath('userData');
+
+  shutdownCoordinator = createShutdownCoordinator({
+    logger: console,
+    onForceShutdown: forceShutdown,
+    onRelaunch: args => {
+      if (args) {
+        app.relaunch({ args });
+      } else {
+        app.relaunch();
+      }
+    },
+  });
+
+  if (process.platform === 'win32') {
+    overlay = require('game_overlay');
+  }
 
   await bundleUpdater(__dirname);
 
@@ -267,15 +329,43 @@ async function startApp() {
     process.env.SLOBS_VERSION,
     isDevMode.toString(),
     crashHandlerLogPath,
+    process.env.IPC_UUID,
   );
   crashHandler.registerProcess(pid, false);
+
+  ipcMain.on('register-in-crash-handler', (event, arg) => {
+    crashHandler.registerProcess(arg.pid, arg.critical);
+  });
+
+  ipcMain.on('unregister-in-crash-handler', (event, arg) => {
+    crashHandler.unregisterProcess(arg.pid);
+  });
+
+  remote.initialize();
+
+  // Resolve remote.require() from this file rather than letting @electron/remote
+  // pick the context itself.
+  //
+  // @electron/remote branches on `process.mainModule` being undefined to decide how
+  // to resolve modules. That assumption held around Electron 28, but Electron 43
+  // defines `process.mainModule` again -- as Electron's own internal module, whose
+  // `paths` array is empty -- so it takes the legacy branch and every
+  // remote.require() fails with "Cannot find module ... Require stack: - electron".
+  // Still present in @electron/remote 2.1.3.
+  //
+  // Setting `returnValue` on the documented `remote-require` event short-circuits
+  // that logic. `require` here resolves from main.js, which has the correct paths.
+  // Affects game_overlay, node-libuiohook, and node-window-rendering.
+  app.on('remote-require', (event, webContents, moduleName) => {
+    event.returnValue = require(moduleName);
+  });
 
   const Raven = require('raven');
 
   function handleFinishedReport() {
     dialog.showErrorBox(
       'Something Went Wrong',
-      'An unexpected error occured and Streamlabs OBS must be shut down.\n' +
+      'An unexpected error occured and Streamlabs Desktop must be shut down.\n' +
         'Please restart the application.',
     );
 
@@ -283,39 +373,60 @@ async function startApp() {
   }
 
   if (pjson.env === 'production') {
-    Raven.config('https://6971fa187bb64f58ab29ac514aa0eb3d@sentry.io/251674', {
+    Raven.config(pjson.sentryFrontendDSN, {
       release: process.env.SLOBS_VERSION,
     }).install((err, initialErr, eventId) => {
       handleFinishedReport();
     });
 
-    crashReporter.start({
-      productName: 'streamlabs-obs',
-      companyName: 'streamlabs',
-      ignoreSystemCrashHandler: true,
-      submitURL:
-        'https://sentry.io/api/1283430/minidump/?sentry_key=01fc20f909124c8499b4972e9a5253f2',
-      extra: {
-        'sentry[release]': pjson.version,
-        processType: 'main',
-      },
-    });
+    const submitURL = process.env.SLOBS_PREVIEW
+      ? pjson.sentryBackendClientPreviewURL
+      : pjson.sentryBackendClientURL;
+
+    if (submitURL) {
+      crashReporter.start({
+        productName: 'streamlabs-obs',
+        companyName: 'streamlabs',
+        ignoreSystemCrashHandler: true,
+        submitURL,
+        extra: {
+          processType: 'main',
+        },
+        globalExtra: {
+          'sentry[release]': pjson.version,
+          'sentry[user][ip_address]': '{{auto}}',
+        },
+      });
+    }
   }
 
   workerWindow = new BrowserWindow({
     show: false,
-    webPreferences: { nodeIntegration: true, enableRemoteModule: true },
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
+
+  remote.enable(workerWindow.webContents);
 
   // setTimeout(() => {
   workerWindow.loadURL(`${global.indexUrl}?windowId=worker`);
   // }, 10 * 1000);
+
+  if (process.env.SLOBS_PRODUCTION_DEBUG) {
+    workerWindow.webContents.once('dom-ready', () => {
+      workerWindow.webContents.openDevTools({ mode: 'detach' });
+    });
+  }
 
   // All renderers should use ipcRenderer.sendTo to send to communicate with
   // the worker.  This still gets proxied via the main process, but eventually
   // we will refactor this to not use electron IPC, which will make it much
   // more efficient.
   ipcMain.on('getWorkerWindowId', event => {
+    if (workerWindow.isDestroyed()) {
+      // prevent potential race-condition issues on app close
+      // https://github.com/streamlabs/desktop/pull/4239
+      return;
+    }
     event.returnValue = workerWindow.webContents.id;
   });
 
@@ -329,23 +440,31 @@ async function startApp() {
     minHeight: 600,
     width: mainWindowState.width,
     height: mainWindowState.height,
-    x: mainWindowState.x,
-    y: mainWindowState.y,
+    x: mainWindowState.isMaximized ? mainWindowState.displayBounds.x : mainWindowState.x,
+    y: mainWindowState.isMaximized ? mainWindowState.displayBounds.y : mainWindowState.y,
     show: false,
     frame: false,
     titleBarStyle: 'hidden',
-    title: 'Streamlabs OBS',
+    title: 'Streamlabs Desktop',
     backgroundColor: '#17242D',
     webPreferences: {
       nodeIntegration: true,
       webviewTag: true,
-      enableRemoteModule: true,
+      contextIsolation: false,
     },
   });
+
+  remote.enable(mainWindow.webContents);
 
   // setTimeout(() => {
   mainWindow.loadURL(`${global.indexUrl}?windowId=main`);
   // }, 5 * 1000)
+
+  if (process.env.SLOBS_PRODUCTION_DEBUG) {
+    mainWindow.webContents.once('dom-ready', () => {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    });
+  }
 
   mainWindowState.manage(mainWindow);
 
@@ -354,15 +473,8 @@ async function startApp() {
   mainWindow.on('close', e => {
     if (!shutdownStarted) {
       shutdownStarted = true;
+      shutdownCoordinator.beginShutdown();
       workerWindow.send('shutdown');
-
-      // We give the worker window 10 seconds to acknowledge a request
-      // to shut down.  Otherwise, we just close it.
-      appShutdownTimeout = setTimeout(() => {
-        allowMainWindowClose = true;
-        if (!mainWindow.isDestroyed()) mainWindow.close();
-        if (!workerWindow.isDestroyed()) workerWindow.close();
-      }, 10 * 1000);
     }
 
     if (!allowMainWindowClose) e.preventDefault();
@@ -386,11 +498,24 @@ async function startApp() {
     }
   });
 
+  app.on('quit', () => {
+    shutdownCoordinator.finishShutdown();
+  });
+
   ipcMain.on('acknowledgeShutdown', () => {
-    if (appShutdownTimeout) clearTimeout(appShutdownTimeout);
+    shutdownCoordinator.acknowledgeShutdown();
   });
 
   ipcMain.on('shutdownComplete', () => {
+    // OBS initialization can fail before the normal close path starts shutdown.
+    // Enter the coordinator state before recording completion so the final exit is bounded too.
+    if (!shutdownStarted) {
+      shutdownStarted = true;
+      shutdownCoordinator.beginShutdown();
+    }
+
+    if (!shutdownCoordinator.completeShutdown()) return;
+
     allowMainWindowClose = true;
     mainWindow.close();
     workerWindow.close();
@@ -398,7 +523,10 @@ async function startApp() {
 
   workerWindow.on('closed', () => {
     session.defaultSession.flushStorageData();
-    session.defaultSession.cookies.flushStore(() => app.quit());
+    session.defaultSession.cookies
+      .flushStore()
+      .catch(error => console.log('[Shutdown] Failed to flush cookie store', error))
+      .finally(() => app.quit());
   });
 
   // Pre-initialize the child window
@@ -410,13 +538,22 @@ async function startApp() {
     backgroundColor: '#17242D',
     webPreferences: {
       nodeIntegration: true,
-      enableRemoteModule: true,
+      backgroundThrottling: false,
+      contextIsolation: false,
     },
   });
+
+  remote.enable(childWindow.webContents);
 
   childWindow.removeMenu();
 
   childWindow.loadURL(`${global.indexUrl}?windowId=child`);
+
+  if (process.env.SLOBS_PRODUCTION_DEBUG) {
+    childWindow.webContents.once('dom-ready', () => {
+      childWindow.webContents.openDevTools({ mode: 'detach' });
+    });
+  }
 
   // The child window is never closed, it just hides in the
   // background until it is needed.
@@ -428,8 +565,6 @@ async function startApp() {
       e.preventDefault();
     }
   });
-
-  if (process.env.SLOBS_PRODUCTION_DEBUG) openDevTools();
 
   // simple messaging system for services between windows
   // WARNING! renderer windows use synchronous requests and will be frozen
@@ -514,7 +649,18 @@ if (fs.existsSync(haDisableFile)) app.disableHardwareAcceleration();
 
 app.setAsDefaultProtocolClient('slobs');
 
-app.on('second-instance', (event, argv, cwd) => {
+app.on('second-instance', (event, argv, cwd, additionalData) => {
+  if (shutdownStarted) {
+    // The triggering process has already failed to acquire the single-instance lock and will exit.
+    // Schedule one replacement with its arguments, then let the watchdog arbitrate this shutdown.
+    const relaunchArgs =
+      additionalData && Array.isArray(additionalData.relaunchArgs)
+        ? additionalData.relaunchArgs
+        : argv.slice(1);
+    if (shutdownCoordinator) shutdownCoordinator.scheduleRelaunch(relaunchArgs);
+    return;
+  }
+
   // Check for protocol links in the argv of the other process
   argv.forEach(arg => {
     if (arg.match(/^slobs:\/\//)) {
@@ -573,7 +719,7 @@ app.on('ready', () => {
 
       bootstrap(updateInfo, startApp, app.exit);
     } else {
-      new Updater(startApp).run();
+      new Updater(startApp, releaseChannel).run();
     }
   } else {
     startApp();
@@ -644,7 +790,7 @@ ipcMain.on('vuex-mutation', (event, mutation) => {
 });
 
 ipcMain.on('restartApp', () => {
-  app.relaunch();
+  shutdownCoordinator.scheduleRelaunch();
   // Closing the main window starts the shut down sequence
   mainWindow.close();
 });
@@ -685,16 +831,6 @@ ipcMain.on('webContents-preventNavigation', (e, id) => {
   });
 });
 
-ipcMain.on('webContents-preventPopup', (e, id) => {
-  const contents = webContents.fromId(id);
-
-  if (contents.isDestroyed()) return;
-
-  contents.on('new-window', e => {
-    e.preventDefault();
-  });
-});
-
 ipcMain.on('webContents-bindYTChat', (e, id) => {
   const contents = webContents.fromId(id);
 
@@ -708,6 +844,17 @@ ipcMain.on('webContents-bindYTChat', (e, id) => {
       e.preventDefault();
     }
   });
+});
+
+ipcMain.on('webContents-enableRemote', (e, id) => {
+  const contents = webContents.fromId(id);
+
+  if (contents.isDestroyed()) return;
+
+  remote.enable(contents);
+
+  // Needed otherwise the renderer will lock up
+  e.returnValue = null;
 });
 
 ipcMain.on('getMainWindowWebContentsId', e => {
@@ -769,3 +916,22 @@ function measure(msg, time) {
   if (delta > 2000) console.log('------------------');
   console.log(msg, delta + 'ms');
 }
+
+ipcMain.handle('DESKTOP_CAPTURER_GET_SOURCES', (event, opts) => desktopCapturer.getSources(opts));
+
+// Message channel handling
+const channels = {};
+
+ipcMain.handle('create-message-channel', () => {
+  const id = uuid();
+  channels[id] = new MessageChannelMain();
+  return id;
+});
+
+ipcMain.on('request-message-channel-in', (e, id) => {
+  e.senderFrame.postMessage(`port-${id}`, null, [channels[id].port1]);
+});
+
+ipcMain.on('request-message-channel-out', (e, id) => {
+  e.senderFrame.postMessage(`port-${id}`, null, [channels[id].port2]);
+});

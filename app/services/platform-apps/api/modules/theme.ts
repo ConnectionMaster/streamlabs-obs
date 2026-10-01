@@ -11,6 +11,12 @@ enum ETheme {
 const themeTable = {
   'day-theme': ETheme.Day,
   'night-theme': ETheme.Night,
+  'prime-light': ETheme.Day,
+  'prime-dark': ETheme.Night,
+  'golive-day-theme': ETheme.Day,
+  'golive-night-theme': ETheme.Night,
+  'golive-prime-light': ETheme.Day,
+  'golive-prime-dark': ETheme.Night,
 };
 
 export class ThemeModule extends Module {
@@ -24,6 +30,8 @@ export class ThemeModule extends Module {
 
     this.customizationService.settingsChanged.subscribe(patch => {
       if (patch.theme != null) {
+        // TODO: index
+        // @ts-ignore
         this.themeChanged.next(themeTable[patch.theme]);
       }
     });
@@ -34,6 +42,8 @@ export class ThemeModule extends Module {
 
   @apiMethod()
   getTheme(): ETheme {
+    // TODO: index
+    // @ts-ignore
     return themeTable[this.customizationService.currentTheme];
   }
 }

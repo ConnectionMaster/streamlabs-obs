@@ -7,7 +7,6 @@
   "End Goal": "End Goal",
   "Starting Amount": "Start belopp",
   "End After": "Sluta efter",
-  "Include resubs?": "Inkludera återkommande prenumeranter?",
   "Layout": "Layout",
   "Background Color": "Bakgrundsfärg",
   "Bar Color": "Bandfärg",
@@ -16,12 +15,15 @@
   "Bar Text Color": "Band Textfärg",
   "Bar Thickness": "Band Tjocklek",
   "Font Family": "Teckensnittsfamilj",
-  "Stars Goal": "Stars Goal",
   "Facebook Stars": "Facebook Stars",
-  "Supporter Goal": "Supporter Goal",
   "Facebook Supporters": "Facebook Supporters",
   "Facebook chat": "Facebook chat",
   "Member Goal": "Member Goal",
   "Streamlabs Charity Goal": "Streamlabs Charity Goal",
-  "Streamlabs Charity Donations": "Streamlabs Charity Donations"
+  "Streamlabs Charity Donations": "Streamlabs Charity Donations",
+  "Charity donations": "Charity donations",
+  "Goal Settings": "Goal Settings",
+  "Must be in MM/DD/YYYY format.": "Must be in MM/DD/YYYY format.",
+  "Condensed": "Condensed",
+  "Count Power-Ups": "Count Power-Ups"
 }

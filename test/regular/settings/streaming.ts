@@ -1,49 +1,58 @@
-import { focusChild, focusMain, test, useSpectron } from '../../helpers/spectron';
-import { logIn } from '../../helpers/spectron/user';
-import { getFormInput } from '../../helpers/spectron/forms';
-import { goLive, stopStream } from '../../helpers/spectron/streaming';
-import { showSettings } from '../../helpers/spectron/settings';
-import { FormMonkey } from '../../helpers/form-monkey';
+import { test, useWebdriver } from '../../helpers/webdriver';
+import { logIn } from '../../helpers/webdriver/user';
+import {
+  goLive,
+  stopStream,
+  waitForStreamStart,
+  waitForStreamStop,
+} from '../../helpers/modules/streaming';
+import { showSettingsWindow } from '../../helpers/modules/settings/settings';
+import { click } from '../../helpers/modules/core';
+import { assertFormContains, readFields, useForm } from '../../helpers/modules/forms';
 
-useSpectron();
+useWebdriver();
 
 test('Populates stream settings after go live', async t => {
-  const { app } = t.context;
-
   await logIn(t);
-  await goLive(t);
-  await stopStream(t);
-  await showSettings(t, 'Stream');
-  await (await app.client.$('a=Stream to custom ingest')).click();
-  const form = new FormMonkey(t);
-  t.true(
-    await form.includesByTitles({
+  await goLive();
+  await stopStream();
+  await showSettingsWindow('Stream');
+  await click('a=Stream to custom ingest');
+
+  await assertFormContains(
+    {
       'Stream Type': 'Streaming Services',
       Service: 'Twitch',
       Server: 'Auto (Recommended)',
-    }),
+    },
+    'title',
   );
+
+  t.pass();
 });
 
 test('Populates stream key after go live', async t => {
-  const { app } = t.context;
+  const user = await logIn(t);
 
-  await logIn(t);
-  await goLive(t);
-  await stopStream(t);
-  await showSettings(t, 'Stream');
-  await (await app.client.$('a=Stream to custom ingest')).click();
+  // make sure all required fields are filled for platforms
+  if (user.type === 'twitch') {
+    await goLive({
+      title: 'Test title',
+      twitchGame: 'Fortnite',
+    });
+  } else {
+    await goLive();
+  }
 
-  // Test that we can toggle show stream key, also helps us fetch the value
-  await (await app.client.$('button=Show')).click();
-  t.false(await (await app.client.$('input[type=password]')).isExisting());
+  await waitForStreamStart();
+  await stopStream();
+  await waitForStreamStop();
+  await showSettingsWindow('Stream');
+  await click('a=Stream to custom ingest');
 
   // Check that is a somewhat valid Twitch stream key
-  const streamKey = await getFormInput(t, 'Stream key');
+  const formData = (await readFields()) as { key: string };
+  const streamKey = formData.key;
   t.true(streamKey.startsWith('live_'));
   t.true(streamKey.length > 40);
-
-  // Test that we can hide back the stream key
-  await (await app.client.$('button=Hide')).click();
-  t.true(await (await app.client.$('input[type=password]')).isExisting());
 });

@@ -23,6 +23,7 @@ interface ITipJarSettings extends IWidgetSettings {
   types: {
     tips: { enabled: boolean; minimum_amount?: number; tiers: ITipDarTierData[] };
     twitch_bits: { enabled: boolean; minimum_amount?: number };
+    twitch_power_ups: { enabled: boolean; minimum_amount?: number };
     twitch_follows: { enabled: boolean; image_src?: string };
     twitch_resubs: { enabled: boolean; minimum_amount?: number };
     twitch_subs: { enabled: boolean; minimum_amount?: number };
@@ -44,14 +45,16 @@ export class TipJarService extends WidgetSettingsService<ITipJarData> {
   static initialState = WIDGET_INITIAL_STATE;
 
   getApiSettings() {
+    const host = this.getHost();
     return {
       type: WidgetType.TipJar,
-      url: WidgetDefinitions[WidgetType.TipJar].url(this.getHost(), this.getWidgetToken()),
-      previewUrl: `https://${this.getHost()}/widgets/tip-jar/v1/${this.getWidgetToken()}?simulate=1`,
-      dataFetchUrl: `https://${this.getHost()}/api/v5/slobs/widget/tipjar`,
-      settingsSaveUrl: `https://${this.getHost()}/api/v5/slobs/widget/tipjar`,
+      url: WidgetDefinitions[WidgetType.TipJar].url(host, this.getWidgetToken()),
+      previewUrl: `https://${host}/widgets/tip-jar/v1/${this.getWidgetToken()}?simulate=1`,
+      webSettingsUrl: `https://${host}/dashboard#/widgets/jar`,
+      dataFetchUrl: `https://${host}/api/v5/slobs/widget/tipjar`,
+      settingsSaveUrl: `https://${host}/api/v5/slobs/widget/tipjar`,
       settingsUpdateEvent: 'tipJarSettingsUpdate',
-      testers: ['Follow', 'Subscription', 'Donation', 'Bits', 'Host'],
+      testers: ['Follow', 'Subscription', 'Donation', 'Bits'],
     };
   }
 

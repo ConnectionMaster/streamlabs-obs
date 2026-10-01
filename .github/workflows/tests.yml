@@ -1,0 +1,296 @@
+name: 'Frontend Tests'
+
+on:
+  push:
+    branches: [staging, master]
+  pull_request:
+    branches: [staging, master]
+    types: [synchronize, opened, reopened]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CI: true
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  testable-changes:
+    name: 'Detect Changes Requiring Testing'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        id: filter
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            src:
+              - '!app/i18n/**'
+              - '!.github/instructions/**'
+              - '!**/*.md'
+              - '!*.yml'
+              - '!package.json'
+              - '!yarn.lock'
+            deps:
+              - '{package.json,yarn.lock}'
+    outputs:
+      has-testable-changes: ${{ steps.filter.outputs.src }}
+      has-dependency-changes: ${{ steps.filter.outputs.deps }}
+
+  prepare-frontend-tests:
+    name: 'Prepare Frontend Tests'
+    needs: testable-changes
+    if: needs.testable-changes.outputs.has-testable-changes == 'true' || needs.testable-changes.outputs.has-dependency-changes == 'true' || github.event_name == 'push'
+    runs-on: windows-2022
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: 'yarn'
+      - name: 'Install Dependencies'
+        run: yarn install --immutable 2>&1
+      - name: 'Install Visual Studio Redistributable DLLs'
+        run: |
+          $url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+          $output = "$env:TEMP\vc_redist.x64.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output
+          Start-Process -FilePath $output -ArgumentList "/install", "/quiet", "/norestart" -Wait
+        shell: powershell
+      - name: 'Install Electron'
+        run: node node_modules/electron/install.js
+      - name: 'Compile Assets'
+        run: yarn ci:compile
+      - name: 'Package Test Build'
+        run: 7z a -t7z -mx=1 -bb0 "$env:RUNNER_TEMP\frontend-test-build.7z" . '-xr!.git'
+        shell: powershell
+      - name: 'Upload Test Build'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-build
+          path: ${{ runner.temp }}/frontend-test-build.7z
+          compression-level: 0
+          retention-days: 1
+  verify-binary:
+    name: 'Verify Game Capture Binary Signatures'
+    needs: [testable-changes, prepare-frontend-tests]
+    if: needs.testable-changes.outputs.has-testable-changes == 'true' || needs.testable-changes.outputs.has-dependency-changes == 'true' || github.event_name == 'push'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: 'Download Test Build'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-test-build
+          path: ${{ runner.temp }}/frontend-test-artifact
+      - name: 'Prepare Test Runner'
+        run: |
+          $projectDirectory = Join-Path $env:RUNNER_TEMP 'frontend-test-project'
+          New-Item -ItemType Directory -Force -Path $projectDirectory | Out-Null
+          7z x "$env:RUNNER_TEMP\frontend-test-artifact\frontend-test-build.7z" "-o$projectDirectory" -y -bb0
+          Set-Location $projectDirectory
+
+          if (-not (Test-Path package.json)) {
+            throw "Test build does not contain package.json at $projectDirectory"
+          }
+        shell: powershell
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+      - name: 'Run Game Capture Binary Signature Verification'
+        run: node scripts/ci/verify_game_signatures.js
+        working-directory: ${{ runner.temp }}/frontend-test-project
+      - name: 'Verify HEVC Encoder is present'
+        run: |
+          if ! output=$(./ffmpeg.exe -hide_banner -encoders 2>/dev/null | grep hevc); then
+            echo "HEVC encoder not found in ffmpeg encoders list. This may indicate that the HEVC encoder is missing or not properly configured."
+            exit 1
+          fi
+          echo "HEVC encoder found: $output"
+        working-directory: ${{ runner.temp }}/frontend-test-project/node_modules/obs-studio-node
+        shell: bash
+  test:
+    name: 'Frontend Tests'
+    needs: prepare-frontend-tests
+    runs-on: [self-hosted, desktop-frontend]
+    timeout-minutes: 80
+
+    strategy:
+      matrix:
+        chunk: [1, 2, 3, 4]
+      max-parallel: 4
+      fail-fast: false
+
+    steps:
+      # The desktop resolution is an INPUT to this job, not something it controls. The virtual machine's desktop resolution
+      # must be of a minimum size to launch the Electron app and  run the e2e tests successfully. Otherwise there will be
+      # false negatives.
+
+      # `scripts/ci/install.ps1` installs Amazon DCV Server and writes `console-session-default-layout = 1920x1080` and
+      # `min-head-resolution = (1920, 1080)` (8ae2f79bd, #6103). DCV supplies an AWS Indirect Display Device that supersedes
+      # the Microsoft Basic Display Adapter.
+      #
+      # Verifying the provisioning above actually took effect is necessary to prevent investigation of failure that have nothing
+      # to do with the actual test.
+
+      # This is ported from the Azure assertion (59b259a74). 43 of its 48 PowerShell lines are byte-identical; the five that differ
+      # are two deliberate changes:
+      #
+      #   1-3. The logging command, which is host-specific:
+      #          Azure:  Write-Host "##vso[task.logissue type=error]..."  /  type=warning
+      #          Here:   Write-Host "::error::..."                        /  ::warning::
+      #        Both raise an annotation on the run summary rather than burying it in the step
+      #        log. ('agent' also became 'runner' in the prose of two of them.)
+      #   4-5. The adapter read (and the comment above it) filters to a head that reports a
+      #        resolution. Under DCV there are now TWO video controllers - the active Indirect
+      #        Display Device and the inactive Basic Display Adapter - and a bare
+      #        'Select-Object -First 1' can pick the inactive one, which reports nothing and
+      #        makes the mismatch warning below fire on every run.
+      #
+      # Otherwise left alone on purpose, so it stays diffable against the Azure original.
+      - name: 'Assert usable screen resolution'
+        run: |
+          $sessionName = $env:SESSIONNAME
+          Write-Host "session     : $sessionName"
+
+          # The hardware adapter / console framebuffer. Prefer a head that actually reports a
+          # resolution: under DCV the inactive Basic Display Adapter is still enumerated, and
+          # picking it makes the mismatch warning below fire on every run. Fall back to the
+          # unfiltered first entry so this can never leave $c null.
+          $c = Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentHorizontalResolution -gt 0 } | Select-Object -First 1
+          if (-not $c) { $c = Get-CimInstance Win32_VideoController | Select-Object -First 1 }
+          $adapter = $c.Name
+          $hwW = $c.CurrentHorizontalResolution
+          $hwH = $c.CurrentVerticalResolution
+          Write-Host "adapter     : $adapter"
+          Write-Host "adapter res : $hwW x $hwH"
+
+          # What a GUI process in THIS session actually sees, which is what Electron gets
+          # when it creates the main window. Under RDP, or with a virtual display driver
+          # active, this differs from the adapter reading - so assert on this one.
+          $w = $null
+          $h = $null
+          try {
+            Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $w = $b.Width
+            $h = $b.Height
+            Write-Host "session res : $w x $h"
+          } catch {
+            Write-Host "session res : unavailable, falling back to the adapter reading"
+            Write-Host $_.Exception.Message
+            $w = $hwW
+            $h = $hwH
+          }
+
+          if ($w -ne $hwW -or $h -ne $hwH) {
+            Write-Host "::warning::Session resolution $w x $h differs from the adapter $hwW x $hwH. The runner is probably not on the console session. Tests will use the session value."
+          }
+
+          # The app's main window defaults to 1600x1000 (main.js). The e2e harness never
+          # sets a window size, so tests inherit the desktop. Below this the window is
+          # clamped toward its 800x600 minimum and UI tests fail misleadingly.
+          $minW = 1600
+          $minH = 1000
+
+          if ($null -eq $w -or $null -eq $h -or $w -eq 0 -or $h -eq 0) {
+            Write-Host "::error::Could not determine the screen resolution for this session."
+            exit 1
+          }
+          if ($w -lt $minW -or $h -lt $minH) {
+            Write-Host "::error::Desktop is $w x $h but the app's main window needs $minW x $minH. Tests would run in a clamped window and fail misleadingly. Fix the runner display driver rather than lowering this threshold."
+            exit 1
+          }
+          Write-Host "OK - desktop is large enough for the app's default window."
+        # Required, and easy to forget: this workflow sets 'defaults.run.shell: bash' at the top, so a PowerShell step has to opt in.
+        # Azure needed no equivalent - there '- powershell:' was its own step type, which is why the port changes shape without changing the body.
+        shell: powershell
+      - name: 'Download Test Build'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-test-build
+          path: ${{ runner.temp }}/frontend-test-artifact
+      - name: 'Prepare Test Runner'
+        run: |
+          'obs64','crash-handler','crash-handler-process','chromedriver','electron' | ForEach-Object {
+            Get-Process -Name $_ -ErrorAction Ignore | Stop-Process -Force -ErrorAction Ignore
+          }
+          Remove-Item -Recurse -Force "$env:TEMP\slobs-test*" -ErrorAction Ignore
+
+          $projectDirectory = Join-Path $env:RUNNER_TEMP 'frontend-test-project'
+          New-Item -ItemType Directory -Force -Path $projectDirectory | Out-Null
+          7z x "$env:RUNNER_TEMP\frontend-test-artifact\frontend-test-build.7z" "-o$projectDirectory" -y -bb0
+          Set-Location $projectDirectory
+
+          if (-not (Test-Path package.json)) {
+            throw "Test build does not contain package.json at $projectDirectory"
+          }
+        shell: powershell
+      - name: 'Run Tests'
+        run: yarn ci:tests
+        working-directory: ${{ runner.temp }}/frontend-test-project
+        env:
+          SLOBS_TEST_USER_POOL_TOKEN: ${{ secrets.SLOBS_TEST_USER_POOL_TOKEN }}
+          BROWSER_SOURCE_HARDWARE_ACCELERATION: 'OFF'
+          SLOBS_TEST_STREAM_KEY: ${{ secrets.SLOBS_TEST_STREAM_KEY }}
+          SLOBS_TEST_RUN_CHUNK: '${{ matrix.chunk }}/4'
+
+  es-lint-strict-nulls:
+    name: 'Check ESLint and Strict Nulls Regression'
+    needs: testable-changes
+    if: needs.testable-changes.outputs.has-testable-changes == 'true' || github.event_name == 'push'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: 'yarn'
+      - name: 'Install Dependencies'
+        run: yarn install --immutable 2>&1
+      - name: 'ESLint'
+        run: yarn eslint
+      - name: 'Check regressions in files with strictNullChecks'
+        run: yarn compile:strictnulls
+
+  # mac-os:
+  #   name: 'MacOS'
+  #   runs-on: macOs-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: 'Install Dependencies'
+  #       run: yarn install --immutable --network-timeout 1000000 2>&1
+  #     - name: 'Install Electron'
+  #       run: node node_modules/electron/install.js
+  #     - name: 'ESLint'
+  #       run: yarn eslint
+  #     - name: 'Compile Assets'
+  #       run: yarn ci:compile
+
+  results:
+    name: 'CI Results'
+    if: always()
+    # Note: every required job in this workflow must be accounted in the results collation
+    # to work properly as a required check
+    needs: [testable-changes, prepare-frontend-tests, verify-binary, test, es-lint-strict-nulls]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Check CI Results'
+        run: |
+          if ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}; then
+            echo "One or more required jobs failed or were cancelled."
+            exit 1
+          fi
+          echo "All required jobs succeeded or were skipped."

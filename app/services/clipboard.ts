@@ -19,6 +19,8 @@ import { SceneCollectionsService } from 'services/scene-collections';
 import { EditorCommandsService } from 'services/editor-commands';
 import { IFilterData } from 'services/editor-commands/commands/paste-filters';
 import { NavigationService } from 'services/navigation';
+import { DualOutputService } from './dual-output';
+import { VideoSettingsService } from './settings-v2';
 import { byOS, OS } from 'util/operating-systems';
 const { clipboard } = electron;
 
@@ -146,6 +148,8 @@ export class ClipboardService extends StatefulService<IClipboardState> {
   @Inject() private sceneCollectionsService: SceneCollectionsService;
   @Inject() private editorCommandsService: EditorCommandsService;
   @Inject() private navigationService: NavigationService;
+  @Inject() private dualOutputService: DualOutputService;
+  @Inject() private videoSettingsService: VideoSettingsService;
 
   get views() {
     return new ClipboardViews(this.state);
@@ -160,8 +164,30 @@ export class ClipboardService extends StatefulService<IClipboardState> {
 
   @shortcut('Ctrl+C')
   copy() {
-    this.SET_SCENE_ITEMS_IDS(this.selectionService.views.globalSelection.getIds());
-    this.SET_SCENE_ITEMS_SCENE(this.scenesService.views.activeScene.id);
+    clipboard.clear();
+    this.clear();
+
+    const activeSceneId = this.scenesService.views.activeScene.id;
+    const ids = new Set(this.selectionService.views.globalSelection.getIds());
+    /**
+     * For dual output scenes, also copy the corresponding nodes
+     * but don't add them to the selection so that they can still be
+     * manipulated in the display/source selector independently
+     */
+    if (this.dualOutputService.views.hasNodeMap(activeSceneId)) {
+      this.selectionService.views.globalSelection.getIds().forEach(id => {
+        const dualOutputNodeId = this.dualOutputService.views.getDualOutputNodeId(
+          id,
+          activeSceneId,
+        );
+        if (dualOutputNodeId && !ids.has(dualOutputNodeId)) {
+          ids.add(dualOutputNodeId);
+        }
+      });
+    }
+
+    this.SET_SCENE_ITEMS_IDS(Array.from(ids));
+    this.SET_SCENE_ITEMS_SCENE(activeSceneId);
   }
 
   @shortcut('Ctrl+V')
@@ -353,9 +379,9 @@ export class ClipboardService extends StatefulService<IClipboardState> {
 
       const itemModel = node.item as ISceneItem & ISource;
 
+      const display = node.settings?.display ?? node?.item?.display;
       // add sceneItem and apply settings
-      const sceneItem = scene.addSource(sourceIdMap[itemModel.sourceId]);
-      sceneItem.setSettings(node.settings);
+      const sceneItem = scene.addSource(sourceIdMap[itemModel.sourceId], { display });
 
       // set parent for item
       if (itemModel.parentId) sceneItem.setParent(folderIdMap[itemModel.parentId]);
@@ -455,16 +481,21 @@ export class ClipboardService extends StatefulService<IClipboardState> {
   private getFiles() {
     return byOS({
       [OS.Windows]: () => {
-        // electron clipboard doesn't support file system
-        // use .NET API instead
-        return execSync(
-          'Powershell -command Add-Type -AssemblyName System.Windows.Forms;' +
-            '[System.Windows.Forms.Clipboard]::GetFileDropList()',
-        )
-          .toString()
-          .split('\n')
-          .filter(fineName => fineName)
-          .map(fileName => fileName.trim());
+        try {
+          // electron clipboard doesn't support file system
+          // use .NET API instead
+          return execSync(
+            'Powershell -command Add-Type -AssemblyName System.Windows.Forms;' +
+              '[System.Windows.Forms.Clipboard]::GetFileDropList()',
+          )
+            .toString()
+            .split('\n')
+            .filter(fineName => fineName)
+            .map(fileName => fileName.trim());
+        } catch (e: unknown) {
+          console.error('Error fetching clipboard files from powershell', e);
+          return [];
+        }
       },
       // We don't support this on mac for now
       [OS.Mac]: [],

@@ -1,10 +1,12 @@
 {
   "Add Category": "Adicionar Categoria",
+  "Add Section": "Adicionar secção",
+  "DONUT": "DONUT",
   "Clear All": "Limpar tudo",
   "Manage Spin Wheel": "Gerir roleta",
   "Categories": "Categorias",
   "Section Weights": "Larguras de secção",
-  "Font Settings": "Configurações de fonte",
+  "Font Settings": "Definições do tipo de letra",
   "Border": "Margem",
   "Ticker": "Ticker",
   "Center Image": "Imagem central",
@@ -16,7 +18,7 @@
   "Font": "Tipo de letra",
   "Font Size": "Tamanho da letra",
   "Font Color": "Cor da letra",
-  "Font Weight": "Espessura da fonte",
+  "Font Weight": "Espessura do tipo de letra",
   "Label Height": "Altura da etiqueta",
   "Label Width": "Largura da etiqueta",
   "Border Color": "Cor da margem",
@@ -29,5 +31,6 @@
   "Center Image Size": "Tamanho da imagem central",
   "Center Image Border Enabled": "Margem da imagem central ativado",
   "Center Image Border Color": "Cor do margem da imagem central",
-  "Center Image Border Width": "Largura da margem da imagem central"
+  "Center Image Border Width": "Largura da margem da imagem central",
+  "Add categories before adding new sections.": "Add categories before adding new sections."
 }

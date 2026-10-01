@@ -16,6 +16,7 @@ const nameMap = () => ({
   tips: $t('Tips & Donations'),
   twitch_follows: $t('Twitch Follows'),
   twitch_bits: $t('Twitch Bits'),
+  twitch_power_ups: $t('Twitch Power-Ups'),
   twitch_subs: $t('Twitch Subs'),
   twitch_resubs: $t('Twitch Resubs'),
   youtube_subscribers: $t('YouTube Subscriptions'),
@@ -29,6 +30,7 @@ const nameMap = () => ({
   facebook_shares: $t('Facebook Shares'),
   facebook_stars: $t('Facebook Stars'),
   facebook_supports: $t('Facebook Supports'),
+  facebook_support_gifters: $t('Facebook Support Gifters'),
 });
 
 const mediaGalleryInputs = {
@@ -47,7 +49,7 @@ const mediaGalleryInputs = {
 })
 export default class TipJar extends WidgetSettings<ITipJarData, TipJarService> {
   @Inject() userService: UserService;
-  @Inject() hostsService: HostsService;
+  @Inject() hostsService!: HostsService;
 
   textColorTooltip = $t('A hex code for the base text color.');
 
@@ -57,19 +59,23 @@ export default class TipJar extends WidgetSettings<ITipJarData, TipJarService> {
 
   jarSrc = `https://${this.hostsService.cdn}/static/tip-jar/jars/glass-`;
   inputOptions: { description: string; value: string }[] = [];
-  navItems = [
-    { value: 'manage-jar', label: $t('Manage Jar') },
-    { value: 'font', label: $t('Font Settings') },
-    { value: 'images', label: $t('Images') },
-    { value: 'source', label: $t('Source') },
-  ];
+  get navItems() {
+    return [
+      { value: 'manage-jar', label: $t('Manage Jar') },
+      { value: 'font', label: $t('Font Settings') },
+      { value: 'images', label: $t('Images') },
+      { value: 'source', label: $t('Source') },
+    ];
+  }
 
-  titleFromKey(key: string) {
+  titleFromKey(key: keyof typeof nameMap) {
     return nameMap()[key];
   }
 
   get iterableTypes() {
-    return Object.keys(this.wData.settings.types).filter(key => key !== '_id');
+    return Object.keys(this.wData.settings.types).filter(
+      key => key !== '_id' && key !== 'priority',
+    );
   }
 
   get platform() {
@@ -77,8 +83,11 @@ export default class TipJar extends WidgetSettings<ITipJarData, TipJarService> {
   }
 
   get mediaGalleryInputs() {
-    if (!mediaGalleryInputs[this.platform]) return [];
-    return mediaGalleryInputs[this.platform];
+    if (!Object.keys(mediaGalleryInputs).includes(this.platform)) {
+      return [];
+    }
+
+    return mediaGalleryInputs[this.platform as keyof typeof mediaGalleryInputs];
   }
 
   afterFetch() {

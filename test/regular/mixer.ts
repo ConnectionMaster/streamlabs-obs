@@ -1,20 +1,20 @@
-import { useSpectron, focusMain, test } from '../helpers/spectron';
+import { useWebdriver, test } from '../helpers/webdriver';
 import {
   addSource,
   selectSource,
   clickRemoveSource,
   addExistingSource,
-} from '../helpers/spectron/sources';
-import { addScene } from '../helpers/spectron/scenes';
-
-useSpectron();
+} from '../helpers/modules/sources';
+import { addScene } from '../helpers/modules/scenes';
+import { click, focusChild, focusMain, waitForDisplayed } from '../helpers/modules/core';
+useWebdriver();
 
 test('Adding and removing a AudioSource', async t => {
   const app = t.context.app;
 
-  await addSource(t, 'Media Source', 'Source With Audio');
-  await addSource(t, 'Color Source', 'Source Without Audio');
-  await focusMain(t);
+  await addSource('Media File', 'Source With Audio');
+  await addSource('Color Block', 'Source Without Audio');
+  await focusMain();
 
   t.true(
     await (await (await app.client.$('.mixer-panel')).$('div=Source With Audio')).isExisting(),
@@ -23,8 +23,8 @@ test('Adding and removing a AudioSource', async t => {
     await (await (await app.client.$('.mixer-panel')).$('div=Source Without Audio')).isExisting(),
   );
 
-  await selectSource(t, 'Source With Audio');
-  await clickRemoveSource(t);
+  await selectSource('Source With Audio');
+  await clickRemoveSource('Source With Audio');
 
   await (await (await app.client.$('.mixer-panel')).$('div=Source With Audio')).waitForExist({
     timeout: 5000,
@@ -35,18 +35,26 @@ test('Adding and removing a AudioSource', async t => {
 test('Nested scenes should provide audio sources to mixer', async t => {
   const app = t.context.app;
 
-  await addSource(t, 'Media Source', 'Nested Media Source');
-  await focusMain(t);
+  await addSource('Media File', 'Nested Media Source');
+  await focusMain();
 
-  await addScene(t, 'New Scene');
-  await addSource(t, 'Media Source', 'Simple Media Source');
-  await addExistingSource(t, 'Scene', 'Scene');
+  await addScene('New Scene');
+  await addSource('Media File', 'Simple Media Source');
+  await addExistingSource('Scene', 'Scene');
 
-  await focusMain(t);
+  await focusMain();
   t.true(
     await (await (await app.client.$('.mixer-panel')).$('div=Simple Media Source')).isExisting(),
   );
   t.true(
     await (await (await app.client.$('.mixer-panel')).$('div=Nested Media Source')).isExisting(),
   );
+});
+
+test('Advanced audio', async t => {
+  await click('[role="show-advanced-audio"]');
+  await focusChild();
+  await click('span=Global Settings');
+  await waitForDisplayed('label=Audio Monitoring Device');
+  t.pass();
 });

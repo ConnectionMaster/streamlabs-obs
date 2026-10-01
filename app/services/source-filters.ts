@@ -19,23 +19,32 @@ import { EOrderMovement } from 'obs-studio-node';
 import { Subject } from 'rxjs';
 import { UsageStatisticsService } from './usage-statistics';
 import { getSharedResource } from 'util/get-shared-resource';
-import { ViewHandler } from 'services/core/stateful-service';
+import { mutation, StatefulService, ViewHandler } from 'services/core/stateful-service';
 import { byOS, OS } from 'util/operating-systems';
+import Vue from 'vue';
+import { InitAfter } from 'services';
+import uuid from 'uuid/v4';
 
 export type TSourceFilterType =
   | 'mask_filter'
+  | 'mask_filter_v2'
   | 'crop_filter'
   | 'gain_filter'
   | 'color_filter'
+  | 'color_filter_v2'
   | 'scale_filter'
   | 'scroll_filter'
   | 'gpu_delay'
   | 'color_key_filter'
+  | 'color_key_filter_v2'
   | 'clut_filter'
   | 'sharpness_filter'
+  | 'sharpness_filter_v2'
   | 'chroma_key_filter'
+  | 'chroma_key_filter_v2'
   | 'async_delay_filter'
   | 'noise_suppress_filter'
+  | 'noise_suppress_filter_v2'
   | 'noise_gate_filter'
   | 'compressor_filter'
   | 'vst_filter'
@@ -43,7 +52,19 @@ export type TSourceFilterType =
   | 'invert_polarity_filter'
   | 'limiter_filter'
   | 'expander_filter'
-  | 'shader_filter';
+  | 'shader_filter'
+  | 'mediasoupconnector_afilter'
+  | 'mediasoupconnector_vfilter'
+  | 'mediasoupconnector_vsfilter'
+  | 'hdr_tonemap_filter'
+  | 'nvidia_audiofx_filter'
+  | 'nv_greenscreen_filter'
+  | 'nv_blur_filter'
+  | 'nv_background_blur_filter'
+  | 'luma_key_filter'
+  | 'luma_key_filter_v2'
+  | 'upward_compressor_filter'
+  | 'basic_eq_filter';
 
 interface ISourceFilterType {
   type: TSourceFilterType;
@@ -58,6 +79,9 @@ export interface ISourceFilter {
   type: TSourceFilterType;
   visible: boolean;
   settings: Dictionary<TObsValue>;
+  displayType: EFilterDisplayType;
+  // old value of how we stored visible
+  enabled?: boolean;
 }
 
 export interface ISourceFilterIdentifier {
@@ -65,7 +89,26 @@ export interface ISourceFilterIdentifier {
   name: string;
 }
 
-class SourceFiltersViews extends ViewHandler<{}> {
+interface IFiltersServiceState {
+  filters: {
+    [sourceId: string]: ISourceFilter[] | undefined;
+  };
+  types: ISourceFilterType[];
+}
+
+/**
+ * Determines how the filter is displayed in the UI.
+ * Normal = A filter manually added by the user
+ * Preset = A visual preset selected from the dropdown
+ * Hidden = A filter automatically added but hidden from the user, i.e. Guest Cam
+ */
+export enum EFilterDisplayType {
+  Normal = 'normal',
+  Preset = 'preset',
+  Hidden = 'hidden',
+}
+
+class SourceFiltersViews extends ViewHandler<IFiltersServiceState> {
   get presetFilterOptions() {
     return [
       { title: $t('None'), value: '' },
@@ -82,6 +125,15 @@ class SourceFiltersViews extends ViewHandler<{}> {
     ];
   }
 
+  get presetFilterOptionsReact() {
+    return this.presetFilterOptions.map(opt => ({
+      label: opt.title,
+      // Empty string doesn't play nicely with our react list input
+      // due to it being a falsey value in JS.
+      value: opt.value === '' ? 'none' : opt.value,
+    }));
+  }
+
   get presetFilterMetadata() {
     return metadata.list({
       options: this.presetFilterOptions,
@@ -91,80 +143,30 @@ class SourceFiltersViews extends ViewHandler<{}> {
   }
 
   parsePresetValue(path: string) {
-    return path.match(/luts\\[a-z_]+.png$/)[0];
-  }
-}
+    const match = path.match(/luts[\\\/][a-z_]+.png$/);
 
-export class SourceFiltersService extends Service {
-  @Inject() private sourcesService: SourcesService;
-  @Inject() private windowsService: WindowsService;
-  @Inject() private usageStatisticsService: UsageStatisticsService;
-
-  filterAdded = new Subject<ISourceFilterIdentifier>();
-  filterRemoved = new Subject<ISourceFilterIdentifier>();
-  filterUpdated = new Subject<ISourceFilterIdentifier>();
-  filtersReordered = new Subject<void>();
-
-  get views() {
-    return new SourceFiltersViews({});
+    return match ? match[0] : null;
   }
 
-  getTypesList(): IObsListOption<TSourceFilterType>[] {
-    const obsAvailableTypes = obs.FilterFactory.types();
-    const allowlistedTypes: IObsListOption<TSourceFilterType>[] = [
-      { description: $t('Image Mask/Blend'), value: 'mask_filter' },
-      { description: $t('Crop/Pad'), value: 'crop_filter' },
-      { description: $t('Gain'), value: 'gain_filter' },
-      { description: $t('Color Correction'), value: 'color_filter' },
-      { description: $t('Scaling/Aspect Ratio'), value: 'scale_filter' },
-      { description: $t('Scroll'), value: 'scroll_filter' },
-      { description: $t('Render Delay'), value: 'gpu_delay' },
-      { description: $t('Color Key'), value: 'color_key_filter' },
-      { description: $t('Apply LUT'), value: 'clut_filter' },
-      { description: $t('Sharpen'), value: 'sharpness_filter' },
-      { description: $t('Chroma Key'), value: 'chroma_key_filter' },
-      { description: $t('Video Delay (Async)'), value: 'async_delay_filter' },
-      { description: $t('Noise Suppression'), value: 'noise_suppress_filter' },
-      { description: $t('Noise Gate'), value: 'noise_gate_filter' },
-      { description: $t('Compressor'), value: 'compressor_filter' },
-      { description: $t('VST 2.x Plugin'), value: 'vst_filter' },
-      { description: $t('Face Mask Plugin'), value: 'face_mask_filter' },
-      { description: $t('Invert Polarity'), value: 'invert_polarity_filter' },
-      { description: $t('Limiter'), value: 'limiter_filter' },
-      { description: $t('Expander'), value: 'expander_filter' },
-      { description: $t('Shader'), value: 'shader_filter' },
-    ];
-
-    return allowlistedTypes.filter(type => obsAvailableTypes.includes(type.value));
+  filtersBySourceId(sourceId: string, includeHidden = false) {
+    return this.state.filters[sourceId].filter(
+      f => f.displayType === EFilterDisplayType.Normal || includeHidden,
+    );
   }
 
-  getTypes(): ISourceFilterType[] {
-    const typesList = this.getTypesList();
-    const types: ISourceFilterType[] = [];
+  getFilter(sourceId: string, filterName: string) {
+    return this.filtersBySourceId(sourceId, true).find(f => f.name === filterName);
+  }
 
-    obs.FilterFactory.types().forEach((type: TSourceFilterType) => {
-      const listItem = typesList.find(item => item.value === type);
-      if (!listItem) {
-        console.warn(`filter ${type} is not found in available types`);
-        return;
-      }
-      const description = listItem.description;
-      const flags = obs.Global.getOutputFlagsFromId(type);
-      types.push({
-        type,
-        description,
-        audio: !!(obs.ESourceOutputFlags.Audio & flags),
-        video: !!(obs.ESourceOutputFlags.Video & flags),
-        async: !!(obs.ESourceOutputFlags.Async & flags),
-      });
-    });
-
-    return types;
+  presetFilterBySourceId(sourceId: string) {
+    return this.filtersBySourceId(sourceId, true).find(
+      f => f.displayType === EFilterDisplayType.Preset,
+    );
   }
 
   getTypesForSource(sourceId: string): ISourceFilterType[] {
-    const source = this.sourcesService.views.getSource(sourceId);
-    return this.getTypes().filter(filterType => {
+    const source = this.getServiceViews(SourcesService).getSource(sourceId);
+    return this.state.types.filter(filterType => {
       if (filterType.type === 'face_mask_filter') return false;
 
       /* Audio filters can be applied to audio sources. */
@@ -187,11 +189,106 @@ export class SourceFiltersService extends Service {
     });
   }
 
+  suggestName(sourceId: string, filterName: string): string {
+    return namingHelpers.suggestName(
+      filterName,
+      (name: string) => !!this.state.filters[sourceId].find(f => f.name === name),
+    );
+  }
+}
+
+@InitAfter('SourcesService')
+export class SourceFiltersService extends StatefulService<IFiltersServiceState> {
+  @Inject() private sourcesService: SourcesService;
+  @Inject() private windowsService: WindowsService;
+  @Inject() private usageStatisticsService: UsageStatisticsService;
+
+  static initialState: IFiltersServiceState = { filters: {}, types: [] };
+
+  filterAdded = new Subject<ISourceFilterIdentifier>();
+  filterRemoved = new Subject<ISourceFilterIdentifier>();
+  filterUpdated = new Subject<ISourceFilterIdentifier>();
+  filtersReordered = new Subject<void>();
+
+  init() {
+    this.sourcesService.sourceAdded.subscribe(s => {
+      if (!this.state.filters[s.sourceId]) this.SET_FILTERS(s.sourceId, []);
+    });
+
+    this.sourcesService.sourceRemoved.subscribe(s => {
+      this.REMOVE_FILTERS(s.sourceId);
+    });
+
+    this.SET_TYPES(this.getTypes());
+  }
+
+  get views() {
+    return new SourceFiltersViews(this.state);
+  }
+
+  /**
+   * Called once at startup to load available types from OBS.
+   * External code should access type list via the Vuex store.
+   */
+  private getTypes() {
+    const obsAvailableTypes = obs.FilterFactory.types();
+    const allowlistedTypes: IObsListOption<TSourceFilterType>[] = [
+      { description: $t('Image Mask/Blend'), value: 'mask_filter_v2' },
+      { description: $t('Crop/Pad'), value: 'crop_filter' },
+      { description: $t('Gain'), value: 'gain_filter' },
+      { description: $t('Color Correction'), value: 'color_filter_v2' },
+      { description: $t('Scaling/Aspect Ratio'), value: 'scale_filter' },
+      { description: $t('Scroll'), value: 'scroll_filter' },
+      { description: $t('Render Delay'), value: 'gpu_delay' },
+      { description: $t('Color Key'), value: 'color_key_filter_v2' },
+      { description: $t('Apply LUT'), value: 'clut_filter' },
+      { description: $t('Sharpen'), value: 'sharpness_filter_v2' },
+      { description: $t('Chroma Key'), value: 'chroma_key_filter_v2' },
+      { description: $t('Video Delay (Async)'), value: 'async_delay_filter' },
+      { description: $t('Noise Suppression'), value: 'noise_suppress_filter_v2' },
+      { description: $t('NVIDIA Audio Effects'), value: 'nvidia_audiofx_filter' },
+      { description: $t('Noise Gate'), value: 'noise_gate_filter' },
+      { description: $t('Compressor'), value: 'compressor_filter' },
+      { description: $t('VST 2.x Plugin'), value: 'vst_filter' },
+      { description: $t('Face Mask Plugin'), value: 'face_mask_filter' },
+      { description: $t('Invert Polarity'), value: 'invert_polarity_filter' },
+      { description: $t('Limiter'), value: 'limiter_filter' },
+      { description: $t('Expander'), value: 'expander_filter' },
+      { description: $t('Shader'), value: 'shader_filter' },
+      { description: $t('HDR Tone Mapping (Override)'), value: 'hdr_tonemap_filter' },
+      { description: $t('NVIDIA Background Removal'), value: 'nv_greenscreen_filter' },
+      { description: $t('NVIDIA Blur Filter'), value: 'nv_blur_filter' },
+      {
+        description: $t('NVIDIA Background Blur Filter'),
+        value: 'nv_background_blur_filter',
+      },
+      { description: $t('Luma Key'), value: 'luma_key_filter_v2' },
+      { description: $t('Upward Compressor'), value: 'upward_compressor_filter' },
+      { description: $t('3-Band Equalizer'), value: 'basic_eq_filter' },
+    ];
+    const allowedAvailableTypes = allowlistedTypes.filter(type =>
+      obsAvailableTypes.includes(type.value),
+    );
+
+    return allowedAvailableTypes.map(type => {
+      const flags = obs.Global.getOutputFlagsFromId(type.value);
+
+      return {
+        type: type.value,
+        description: type.description,
+        audio: !!(obs.ESourceOutputFlags.Audio & flags),
+        video: !!(obs.ESourceOutputFlags.Video & flags),
+        async: !!(obs.ESourceOutputFlags.Async & flags),
+      };
+    });
+  }
+
   add(
     sourceId: string,
     filterType: TSourceFilterType,
     filterName: string,
     settings?: Dictionary<TObsValue>,
+    displayType: EFilterDisplayType = EFilterDisplayType.Normal,
   ) {
     const source = this.sourcesService.views.getSource(sourceId);
     const obsFilter = obs.FilterFactory.create(filterType, filterName, settings || {});
@@ -205,9 +302,33 @@ export class SourceFiltersService extends Service {
     // We need to release one
     obsFilter.release();
 
-    if (this.presetFilter(sourceId)) {
+    this.SET_FILTERS(sourceId, [
+      ...(this.state.filters[sourceId] ?? []),
+      {
+        name: filterName,
+        type: filterType,
+        visible: true,
+        settings: filterReference.settings,
+        displayType,
+      },
+    ]);
+
+    // This filter will have been added to the end of the list, so we need
+    // to get it back in the order of normal -> preset -> hidden
+    const numHiddenFilters = this.views
+      .filtersBySourceId(sourceId, true)
+      .filter(f => f.displayType === EFilterDisplayType.Hidden).length;
+    const numPresetFilters = this.views
+      .filtersBySourceId(sourceId, true)
+      .filter(f => f.displayType === EFilterDisplayType.Preset).length;
+
+    if (displayType === EFilterDisplayType.Normal) {
+      this.setOrder(sourceId, filterName, -1 * (numHiddenFilters + numPresetFilters));
+    }
+
+    if (displayType === EFilterDisplayType.Preset) {
+      this.setOrder(sourceId, filterName, -1 * numHiddenFilters);
       this.usageStatisticsService.recordFeatureUsage('PresetFilter');
-      this.setOrder(sourceId, '__PRESET', 1);
     }
     this.filterAdded.next({ sourceId, name: filterName });
 
@@ -227,58 +348,81 @@ export class SourceFiltersService extends Service {
   remove(sourceId: string, filterName: string) {
     const obsFilter = this.getObsFilter(sourceId, filterName);
     const source = this.sourcesService.views.getSource(sourceId);
+
+    this.SET_FILTERS(
+      sourceId,
+      this.state.filters[sourceId].filter(f => f.name !== filterName),
+    );
+
     source.getObsInput().removeFilter(obsFilter);
     this.filterRemoved.next({ sourceId, name: filterName });
   }
 
   setPropertiesFormData(sourceId: string, filterName: string, properties: TObsFormData) {
     if (!filterName) return;
-    setPropertiesFormData(this.getObsFilter(sourceId, filterName), properties);
+    const obsFilter = this.getObsFilter(sourceId, filterName);
+
+    setPropertiesFormData(obsFilter, properties);
+    this.UPDATE_FILTER(sourceId, { name: filterName, settings: obsFilter.settings });
     this.filterUpdated.next({ sourceId, name: filterName });
   }
 
-  getFilters(sourceId: string): ISourceFilter[] {
-    return this.sourcesService.views
-      .getSource(sourceId)
-      .getObsInput()
-      .filters.map(obsFilter => ({
-        visible: obsFilter.enabled,
-        name: obsFilter.name,
-        type: obsFilter.id as TSourceFilterType,
-        settings: obsFilter.settings,
-      }));
+  setSettings(sourceId: string, filterName: string, settings: Dictionary<TObsValue>) {
+    if (!filterName) return;
+    const obsFilter = this.getObsFilter(sourceId, filterName);
+
+    obsFilter.update(settings);
+
+    this.UPDATE_FILTER(sourceId, { name: filterName, settings });
   }
 
-  presetFilter(sourceId: string): ISourceFilter {
-    return this.getFilters(sourceId).find((filter: ISourceFilter) => filter.name === '__PRESET');
+  getFilters(sourceId: string): ISourceFilter[] {
+    return this.views.filtersBySourceId(sourceId);
+  }
+
+  /**
+   * Loads the provided filter data into the store. This is only
+   * really called when loading a scene collection.
+   * @param sourceId The id of the source to load
+   * @param filters The filter data
+   */
+  loadFilterData(sourceId: string, filters: ISourceFilter[]): void {
+    this.SET_FILTERS(sourceId, filters);
   }
 
   addPresetFilter(sourceId: string, path: string) {
-    const preset = this.presetFilter(sourceId);
+    const preset = this.views.presetFilterBySourceId(sourceId);
     if (preset) {
-      this.setPropertiesFormData(sourceId, '__PRESET', [
-        { name: 'image_path', value: getSharedResource(path), options: null, description: null },
+      this.setPropertiesFormData(sourceId, preset.name, [
+        {
+          name: 'image_path',
+          value: getSharedResource(path),
+          options: null,
+          description: null,
+          type: 'OBS_PROPERTY_PATH',
+        },
       ]);
     } else {
-      // Funky name to attempt avoiding namespace collisions with user-set filters
-      this.add(sourceId, 'clut_filter', '__PRESET', { image_path: getSharedResource(path) });
+      this.add(
+        sourceId,
+        'clut_filter',
+        uuid(),
+        { image_path: getSharedResource(path) },
+        EFilterDisplayType.Preset,
+      );
     }
+  }
+
+  removePresetFilter(sourceId: string) {
+    const preset = this.views.presetFilterBySourceId(sourceId);
+
+    if (preset) this.remove(sourceId, preset.name);
   }
 
   setVisibility(sourceId: string, filterName: string, visible: boolean) {
     this.getObsFilter(sourceId, filterName).enabled = visible;
+    this.UPDATE_FILTER(sourceId, { name: filterName, visible });
     this.filterUpdated.next({ sourceId, name: filterName });
-  }
-
-  getAddNewFormData(sourceId: string) {
-    const availableTypesList = this.getTypesForSource(sourceId).map(filterType => {
-      return { description: filterType.description, value: filterType.type };
-    });
-
-    return {
-      type: availableTypesList[0].value,
-      name: $t('New filter'),
-    };
   }
 
   getPropertiesFormData(sourceId: string, filterName: string): TObsFormData {
@@ -302,6 +446,11 @@ export class SourceFiltersService extends Service {
   }
 
   setOrder(sourceId: string, filterName: string, delta: number) {
+    // Reorder in the store
+    const from = this.state.filters[sourceId].findIndex(f => f.name === filterName);
+    const to = from + delta;
+    this.REORDER_FILTERS(sourceId, from, to);
+
     const obsFilter = this.getObsFilter(sourceId, filterName);
     const obsInput = this.sourcesService.views.getSource(sourceId).getObsInput();
     const movement = delta > 0 ? EOrderMovement.Down : EOrderMovement.Up;
@@ -313,10 +462,10 @@ export class SourceFiltersService extends Service {
   }
 
   showSourceFilters(sourceId: string, selectedFilterName = '') {
-    const sourceDisplayName = this.sourcesService.views.getSource(sourceId).name;
+    const source = this.sourcesService.views.getSource(sourceId);
     this.windowsService.showWindow({
       componentName: 'SourceFilters',
-      title: `${$t('Source filters')} (${sourceDisplayName})`,
+      title: $t('Filters for %{sourceName}', { sourceName: source.name }),
       queryParams: { sourceId, selectedFilterName },
       size: {
         width: 800,
@@ -325,22 +474,36 @@ export class SourceFiltersService extends Service {
     });
   }
 
-  showAddSourceFilter(sourceId: string) {
-    this.windowsService.showWindow({
-      componentName: 'AddSourceFilter',
-      title: $t('Add source filter'),
-      queryParams: { sourceId },
-      size: {
-        width: 600,
-        height: 500,
-      },
-    });
+  getObsFilter(sourceId: string, filterName: string): obs.IFilter {
+    return this.sourcesService.views.getSource(sourceId).getObsInput().findFilter(filterName);
   }
 
-  private getObsFilter(sourceId: string, filterName: string): obs.IFilter {
-    return this.sourcesService.views
-      .getSource(sourceId)
-      .getObsInput()
-      .findFilter(filterName);
+  @mutation()
+  SET_FILTERS(sourceId: string, filters: ISourceFilter[]) {
+    Vue.set(this.state.filters, sourceId, [...filters]);
+  }
+
+  @mutation()
+  UPDATE_FILTER(sourceId: string, patch: Partial<ISourceFilter>) {
+    const filter = this.state.filters[sourceId].find(f => f.name === patch.name);
+
+    Object.assign(filter, patch);
+  }
+
+  @mutation()
+  REMOVE_FILTERS(sourceId: string) {
+    Vue.delete(this.state.filters, sourceId);
+  }
+
+  @mutation()
+  REORDER_FILTERS(sourceId: string, from: number, to: number) {
+    const filter = this.state.filters[sourceId][from];
+    this.state.filters[sourceId].splice(from, 1);
+    this.state.filters[sourceId].splice(to, 0, filter);
+  }
+
+  @mutation()
+  SET_TYPES(types: ISourceFilterType[]) {
+    this.state.types = types;
   }
 }

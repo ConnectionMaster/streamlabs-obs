@@ -1,0 +1,77 @@
+.action-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+  vertical-align: middle;
+  font-size: 18px;
+  color: var(--title);
+}
+
+// Only indent the message when an icon is present, so it lines up under the title
+// instead of hanging off to the left of it.
+.action-modal-icon + :global(.ant-modal-confirm-title) + :global(.ant-modal-confirm-content) {
+  margin-left: 23px;
+}
+
+.action-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1003 !important; // show above resize bars
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 80%;
+  width: 100%;
+
+  &:global(.ant-modal-confirm .ant-modal-body) {
+    padding: 0px;
+  }
+
+  :global(div.ant-modal-content) {
+    box-shadow: none;
+    height: unset !important;
+  }
+
+  :global(.ant-modal-confirm-body .ant-modal-confirm-title) {
+    display: inline-block;
+    font-size: 19px;
+    line-height: unset;
+    vertical-align: middle;
+  }
+
+  :global(.ant-modal-confirm-btns) {
+    display: none;
+  }
+}
+
+.action-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.info-alert {
+  color: #72d5ff;
+  width: 600px;
+  border-radius: 4px;
+  margin: 0 auto;
+  text-align: left !important;
+
+  :global(.ant-message-info) {
+    display: flex;
+    align-items: center;
+  }
+
+  :global(.ant-message-info .anticon) {
+    color: #72d5ff;
+    margin-right: 10px;
+  }
+}
+
+.alert-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}

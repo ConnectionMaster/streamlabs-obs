@@ -10,7 +10,7 @@
   "Push to Hide %{sourcename}": "Stisknutím skrýt %{sourcename}",
   "Mute": "Ztlumit",
   "Unmute": "Zrušit ztlumení",
-  "Push to Mute": "Stisknutím ztlumit\n",
+  "Push to Mute": "Stisknutím ztlumit",
   "Push to Talk": "Stisknutím mluvit",
   "Enable Studio Mode": "Povolit režim Studio",
   "Disable Studio Mode": "Zakázat režim Studio",
@@ -22,6 +22,12 @@
   "Restart": "Restartovat",
   "Next Slide": "Další snímek",
   "Previous Slide": "Předchozí snímek",
-  "Toggle Performance Mode": "Toggle Performance Mode",
-  "Skip Alert": "Přeskočit upozornění"
+  "Toggle Performance Mode": "Aktivovat režim výkonu",
+  "Skip Alert": "Přeskočit upozornění",
+  "Start Virtual Camera": "Spuštění virtuální kamery",
+  "Stop Virtual Camera": "Zastavení virtuální kamery",
+  "To use hotkeys on Mac, go to System Settings > Security > Accessibility and toggle on for Streamlabs Desktop.": "Chcete-li v počítači Mac používat klávesové zkratky, přejděte do Nastavení systému > Zabezpečení > Zpřístupnění a zapněte možnost Streamlabs Desktop.",
+  "Learn more here": "Více informací zde",
+  "<color>Pro tip:</color> set Markers in Hotkeys settings to timestamp your recordings. <link>Set up here</link>": "<color>Tip pro profesionály:</color> nastavte v nastavení klávesových zkratek značky, abyste mohli nahrávky označit časovou značkou. <link>Nastavit zde</link>",
+  "Markers": "Značky"
 }

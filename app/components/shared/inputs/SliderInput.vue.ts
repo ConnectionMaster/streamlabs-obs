@@ -5,7 +5,6 @@ import { Slider } from 'streamlabs-beaker';
 import { CustomizationService } from 'services/customization';
 import { Inject } from 'services/core/injector';
 import { ISliderMetadata } from './index';
-import { isString } from 'util';
 
 @Component({
   components: { Slider },
@@ -29,6 +28,18 @@ export default class SliderInput extends BaseInput<number, ISliderMetadata> {
 
   timeout: number | void = null;
 
+  unbind: () => void;
+
+  mounted() {
+    this.unbind = this.customizationService.state.bindProps(this, {
+      theme: 'theme',
+    });
+  }
+
+  destroyed() {
+    this.unbind();
+  }
+
   /**
    * Updates the local value that is used during the display processs.
    * @param value The value that will be displayed on the interface.
@@ -39,7 +50,7 @@ export default class SliderInput extends BaseInput<number, ISliderMetadata> {
     const parsedValue = Number(value);
 
     // Dislay a empty string if and only if the user deletes all of the input field.
-    if ((isNaN(parsedValue) && isString(value)) || (isString(value) && value === '')) {
+    if ((isNaN(parsedValue) && typeof value === 'string') || value === '') {
       // preview only, when there is no input or just a negative symbol.
       this.localValue = value.trim() !== '-' ? '' : value;
     } else if (parsedValue < this.min) {
@@ -89,9 +100,7 @@ export default class SliderInput extends BaseInput<number, ISliderMetadata> {
     };
   }
 
-  get theme() {
-    return this.customizationService.currentTheme;
-  }
+  theme = 'night-theme';
 
   handleKeydown(event: KeyboardEvent) {
     if (event.code === 'ArrowUp') this.updateValue(this.value + this.interval);
